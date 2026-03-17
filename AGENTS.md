@@ -49,6 +49,12 @@ name = "data-designer-my-plugin"
 my-plugin = "data_designer_my_plugin.plugin:plugin"
 ```
 
+# Understanding DataDesigner
+
+If in doubt, refer to the DataDesigner codebase and implementation over documentation.
+Rather than conducting slow review via Github urls, clone the latest (or appropriate) release of DataDesigner to a permission-allowed, accessible tmp directory for exploration.
+
+
 # Development Workflow
 
 When creating or updating a plugin, make your edits within a worktree.
