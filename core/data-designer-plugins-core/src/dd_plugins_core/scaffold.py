@@ -43,7 +43,7 @@ version = "0.1.0"
 description = "Data Designer {slug} plugin"
 requires-python = ">=3.10"
 dependencies = [
-    "data-designer",
+    "data-designer>=0.5.3",
 ]
 
 [project.entry-points."data_designer.plugins"]
