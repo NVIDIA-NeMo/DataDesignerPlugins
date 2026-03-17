@@ -7,6 +7,10 @@ stages:
   - validate
   - catalog
 
+default:
+  tags:
+    - pages
+
 variables:
   UV_SYSTEM_PYTHON: "1"
 
