@@ -7,7 +7,7 @@ First-class NVIDIA-provided plugins for [NeMo Data Designer](https://github.com/
 ```bash
 git clone git@gitlab-master.nvidia.com:etramel/data-designer-plugins.git
 cd data-designer-plugins
-uv sync --all-packages
+make sync
 ```
 
 Create a new plugin:
@@ -16,28 +16,61 @@ Create a new plugin:
 uv run ddp new my-plugin
 ```
 
-This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, tests, and CODEOWNERS. Run `uv run ddp --help` to see all available repo management commands. See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full authoring guide.
+This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, tests, and CODEOWNERS. See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full authoring guide.
 
 ## Repository Structure
 
 ```
 data-designer-plugins/
-├── core/                     # Monorepo management tooling (scaffold, catalog, license headers, etc.)
-├── plugins/                  # One directory per plugin (auto-discovered by uv)
-│   └── data-designer-template/   # Reference implementation
-└── docs/                     # Authoring guide, plugin catalog
+├── core/                          # Monorepo management tooling (ddp CLI)
+├── plugins/                       # One directory per plugin (auto-discovered by uv)
+│   └── data-designer-template/    # Reference implementation
+└── docs/                          # Authoring guide, plugin catalog
 ```
 
 Each plugin is an independent Python package with its own `pyproject.toml`, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
 
 ## Development
 
+Use the repo's `Makefile` targets for all development tasks:
+
 ```bash
-uv sync --all-packages          # Install everything
-uv run pytest plugins/ -v       # Test all plugins
-uv run ruff check .             # Lint
-uv run ruff format --check .    # Format check
+make sync               # Install all packages (uv sync --all-packages)
+make lint               # Lint and format check (ruff)
+make format             # Auto-fix lint issues and reformat
+make test               # Test each plugin in an isolated venv
+make validate           # Run assert_valid_plugin on all entry points
+make check              # Verify catalog, CODEOWNERS, and license headers are up to date
+make all                # lint + test + validate + check (full local CI)
 ```
+
+To test a single plugin in isolation:
+
+```bash
+make test-plugin PLUGIN=data-designer-my-plugin
+```
+
+If you change plugin metadata or ownership, regenerate derived files:
+
+```bash
+make catalog                  # Regenerate docs/catalog.md
+make codeowners               # Regenerate CODEOWNERS
+make update-license-headers   # Fix SPDX headers
+```
+
+## The `ddp` CLI
+
+The `ddp` command manages the monorepo. Run `uv run ddp --help` to see all subcommands:
+
+| Command | Description |
+|---------|-------------|
+| `ddp new <name>` | Scaffold a new plugin |
+| `ddp validate` | Validate all installed plugins |
+| `ddp catalog` | Generate plugin catalog to stdout |
+| `ddp codeowners` | Aggregate CODEOWNERS to stdout |
+| `ddp license-headers` | Add or check SPDX license headers |
+| `ddp bump <plugin> <part>` | Bump a plugin's semantic version |
+| `ddp check-release <plugin> <version>` | Validate plugin metadata for release |
 
 ## Releasing
 
