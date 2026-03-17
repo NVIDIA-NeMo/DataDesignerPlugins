@@ -26,55 +26,27 @@ plugins/data-designer-my-plugin/
 
 ## 2. Implement
 
-Three files need your logic:
+Plugins are self-contained and fairly freeform. You have the space to craft your plugin as you see fit and accordingly
+to your own needs, conventions, and dependencies. However, to get you started, the scaffold initialization provides you
+with the following starting point.
 
-**config.py**: Subclass `SingleColumnConfig`. Define your `column_type` as a `Literal` string, add config parameters, and declare column dependencies.
-
-```python
-from typing import Literal
-from data_designer.config.base import SingleColumnConfig
-
-class MyPluginColumnConfig(SingleColumnConfig):
-    column_type: Literal["my-plugin"] = "my-plugin"
-
-    source_column: str
-    threshold: float = 0.5
-
-    @staticmethod
-    def get_column_emoji() -> str:
-        return "🔌"
-
-    @property
-    def required_columns(self) -> list[str]:
-        return [self.source_column]
-
-    @property
-    def side_effect_columns(self) -> list[str]:
-        return []
-```
-
-**impl.py**: Subclass a generator base class and implement `generate()`.
-
-```python
-from data_designer.engine.column_generators.generators.base import ColumnGeneratorFullColumn
-from data_designer_my_plugin.config import MyPluginColumnConfig
-
-class MyPluginColumnGenerator(ColumnGeneratorFullColumn[MyPluginColumnConfig]):
-    def generate(self, data: pd.DataFrame) -> pd.DataFrame:
-        data[self.config.name] = data[self.config.source_column] * self.config.threshold
-        return data
-```
-
-Two base classes are available.
-
-`ColumnGeneratorFullColumn` receives and returns a `pd.DataFrame`. Use it for vectorized column operations. `ColumnGeneratorCellByCell` receives and returns a `dict` (one row) and supports `max_parallel_requests` for concurrency. Use it for row-level transforms, especially model calls.
-
+**config.py**: Subclass any required configuration types that will be required to build a DataDesigner config.
+**impl.py**: Subclass any required types and implement the logic of your plugin.
 **plugin.py** is already wired by the scaffolder. Update the qualified names only if you rename your classes.
 
 ## 3. Test
 
+Run tests for your plugin only using the repo's isolated test target:
+
 ```bash
-uv sync --all-packages
+make test-plugin PLUGIN=data-designer-my-plugin
+```
+
+This installs your plugin into a temporary venv and runs its test suite in isolation, without touching other plugins.
+
+For a faster feedback loop during development you can also run pytest directly:
+
+```bash
 uv run pytest plugins/data-designer-my-plugin/tests/ -v
 ```
 
