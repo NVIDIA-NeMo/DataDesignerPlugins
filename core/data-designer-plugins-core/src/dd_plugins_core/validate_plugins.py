@@ -10,6 +10,7 @@ import sys
 
 
 def main() -> None:
+    """Discover and validate all installed data_designer.plugins entry points."""
     from data_designer.engine.testing.utils import assert_valid_plugin
 
     eps = importlib.metadata.entry_points(group="data_designer.plugins")

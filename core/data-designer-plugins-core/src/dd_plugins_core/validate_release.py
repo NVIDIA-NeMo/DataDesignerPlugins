@@ -6,24 +6,21 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-try:
-    import tomllib
-except ModuleNotFoundError:
-    try:
-        import tomli as tomllib  # type: ignore[no-redef]
-    except ModuleNotFoundError:
-        print(
-            "Error: Python 3.11+ (tomllib) or the 'tomli' package is required.\nInstall with: pip install tomli",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+from dd_plugins_core._repo import find_repo_root, load_toml
 
 REQUIRED_FIELDS = ("description", "license", "readme", "authors")
 
 
 def main() -> int:
+    """Validate that a plugin's pyproject.toml is release-ready.
+
+    Expects two positional CLI arguments: ``<plugin-name>`` and
+    ``<tag-version>``.
+
+    Returns:
+        Exit code (0 for success, 1 for validation failure, 2 for usage error).
+    """
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <plugin-name> <tag-version>", file=sys.stderr)
         return 2
@@ -31,7 +28,7 @@ def main() -> int:
     plugin_name = sys.argv[1]
     tag_version = sys.argv[2]
 
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = find_repo_root()
     toml_path = repo_root / "plugins" / plugin_name / "pyproject.toml"
 
     # 1. Check pyproject.toml exists
@@ -39,8 +36,7 @@ def main() -> int:
         print(f"Error: {toml_path} not found", file=sys.stderr)
         return 1
 
-    with open(toml_path, "rb") as f:
-        data = tomllib.load(f)
+    data = load_toml(toml_path)
 
     project = data.get("project", {})
     errors: list[str] = []

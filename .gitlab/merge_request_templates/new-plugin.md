@@ -9,6 +9,6 @@
 - [ ] `assert_valid_plugin(plugin)` passes
 - [ ] Unit tests included and passing (`uv run pytest plugins/<plugin-dir>/tests/ -v`)
 - [ ] Plugin installs standalone (`uv pip install -e plugins/<plugin-dir>`)
-- [ ] `docs/catalog.md` regenerated (`python tools/generate_catalog.py > docs/catalog.md`)
+- [ ] `docs/catalog.md` regenerated (`uv run generate-catalog > docs/catalog.md`)
 - [ ] Per-plugin `CODEOWNERS` file included (auto-created by `scaffold-plugin`)
 - [ ] NVIDIA copyright headers on all files

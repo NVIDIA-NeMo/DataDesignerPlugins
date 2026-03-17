@@ -11,9 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SPDX_HEADER = """\
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0"""
+from dd_plugins_core._repo import SPDX_HEADER
 
 
 def to_underscored(slug: str) -> str:

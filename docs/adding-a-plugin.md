@@ -91,8 +91,8 @@ def test_valid_plugin():
 ## 4. Regenerate Metadata
 
 ```bash
-python tools/generate_catalog.py > docs/catalog.md
-python tools/aggregate_codeowners.py > CODEOWNERS
+uv run generate-catalog > docs/catalog.md
+uv run aggregate-codeowners > CODEOWNERS
 ```
 
 CI will reject your MR if these are stale.
