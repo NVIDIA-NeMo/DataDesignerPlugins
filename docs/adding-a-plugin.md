@@ -1,95 +1,119 @@
 # Adding a Plugin
 
-## Quick Start
-
-The fastest way to create a plugin is with the scaffold tool:
+## 1. Scaffold
 
 ```bash
 uv run scaffold-plugin my-plugin
 ```
 
-This generates all required files including `pyproject.toml`, the source package, a test stub, and a `CODEOWNERS` file (auto-populated from your git config). See the printed output for next steps.
+Generates `plugins/data-designer-my-plugin/` with all required files. Your git email is auto-detected for the CODEOWNERS file.
 
-Alternatively, you can copy the template manually:
+Generated structure:
 
-1. Copy the template plugin:
-
-```bash
-cp -r plugins/data-designer-template plugins/data-designer-my-plugin
+```
+plugins/data-designer-my-plugin/
+├── pyproject.toml              # Package metadata + entry point registration
+├── CODEOWNERS                  # Plugin ownership (auto-populated)
+├── tests/
+│   └── test_plugin.py          # Validation test stub
+└── src/
+    └── data_designer_my_plugin/
+        ├── __init__.py
+        ├── config.py           # Column config (params, dependencies, emoji)
+        ├── impl.py             # Generation logic
+        └── plugin.py           # Wires config + impl for discovery
 ```
 
-2. Rename the Python package directory:
+## 2. Implement
 
-```bash
-mv plugins/data-designer-my-plugin/src/data_designer_template \
-   plugins/data-designer-my-plugin/src/data_designer_my_plugin
+Three files need your logic:
+
+**config.py**: Subclass `SingleColumnConfig`. Define your `column_type` as a `Literal` string, add config parameters, and declare column dependencies.
+
+```python
+from typing import Literal
+from data_designer.config.base import SingleColumnConfig
+
+class MyPluginColumnConfig(SingleColumnConfig):
+    column_type: Literal["my-plugin"] = "my-plugin"
+
+    source_column: str
+    threshold: float = 0.5
+
+    @staticmethod
+    def get_column_emoji() -> str:
+        return "🔌"
+
+    @property
+    def required_columns(self) -> list[str]:
+        return [self.source_column]
+
+    @property
+    def side_effect_columns(self) -> list[str]:
+        return []
 ```
 
-3. Update `plugins/data-designer-my-plugin/pyproject.toml`:
+**impl.py**: Subclass a generator base class and implement `generate()`.
 
-```toml
-[project]
-name = "data-designer-my-plugin"
-version = "0.1.0"
-description = "My custom Data Designer plugin"
-requires-python = ">=3.10"
-dependencies = [
-    "data-designer",
-]
+```python
+from data_designer.engine.column_generators.generators.base import ColumnGeneratorFullColumn
+from data_designer_my_plugin.config import MyPluginColumnConfig
 
-[project.entry-points."data_designer.plugins"]
-my-column-type = "data_designer_my_plugin.plugin:plugin"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/data_designer_my_plugin"]
-
-[tool.ruff]
-extend = "../../pyproject.toml"
+class MyPluginColumnGenerator(ColumnGeneratorFullColumn[MyPluginColumnConfig]):
+    def generate(self, data: pd.DataFrame) -> pd.DataFrame:
+        data[self.config.name] = data[self.config.source_column] * self.config.threshold
+        return data
 ```
 
-4. Implement the three Python files:
+Two base classes are available.
 
-- **`config.py`** — Subclass `SingleColumnConfig`. Set `column_type` as a `Literal` with your type slug. Define any config params, `required_columns`, and `side_effect_columns`.
-- **`impl.py`** — Subclass `ColumnGeneratorFullColumn[YourConfig]` (or `ColumnGeneratorCellByCell[YourConfig]` for row-by-row processing). Implement `generate()`.
-- **`plugin.py`** — Create a `Plugin` instance with fully-qualified names for your config and impl classes.
+`ColumnGeneratorFullColumn` receives and returns a `pd.DataFrame`. Use it for vectorized column operations. `ColumnGeneratorCellByCell` receives and returns a `dict` (one row) and supports `max_parallel_requests` for concurrency. Use it for row-level transforms, especially model calls.
 
-5. Test:
+**plugin.py** is already wired by the scaffolder. Update the qualified names only if you rename your classes.
+
+## 3. Test
 
 ```bash
 uv sync --all-packages
 uv run pytest plugins/data-designer-my-plugin/tests/ -v
 ```
 
-## Validation
-
-Use `assert_valid_plugin` to verify your plugin is wired correctly:
+The scaffolded test validates plugin structure via `assert_valid_plugin`. Add functional tests for your generation logic.
 
 ```python
 from data_designer.engine.testing.utils import assert_valid_plugin
 from data_designer_my_plugin.plugin import plugin
 
-assert_valid_plugin(plugin)
+def test_valid_plugin():
+    assert_valid_plugin(plugin)
 ```
 
-## Column Generator Types
-
-- **`ColumnGeneratorFullColumn`** — receives and returns a full `pd.DataFrame`. Use when the transform operates on the whole column at once.
-- **`ColumnGeneratorCellByCell`** — receives and returns a `dict` (single row). Use for row-level transforms, especially those involving model calls.
-
-## Entry Points
-
-Plugins register via `[project.entry-points."data_designer.plugins"]` in their `pyproject.toml`. The key is the plugin slug; the value points to the `Plugin` instance. Data Designer discovers plugins automatically at import time via this mechanism.
-
-## Code Ownership
-
-Each plugin has its own `CODEOWNERS` file (created automatically by `scaffold-plugin`). These per-plugin files are aggregated into the root `CODEOWNERS` by running:
+## 4. Regenerate Metadata
 
 ```bash
+python tools/generate_catalog.py > docs/catalog.md
 python tools/aggregate_codeowners.py > CODEOWNERS
 ```
 
-CI checks that the root file stays in sync. If you add or update a per-plugin `CODEOWNERS`, regenerate the root file before pushing.
+CI will reject your MR if these are stale.
+
+## 5. Submit
+
+```bash
+git checkout -b feature/my-plugin
+git add plugins/data-designer-my-plugin/ docs/catalog.md CODEOWNERS
+git commit -m "feat: add my-plugin"
+git push -u origin feature/my-plugin
+glab mr create
+```
+
+CI runs four checks on your MR: lint (ruff), isolated install + pytest per plugin, `assert_valid_plugin` on all entry points, and catalog/CODEOWNERS freshness.
+
+## Entry Point Discovery
+
+Plugins register via `[project.entry-points."data_designer.plugins"]` in `pyproject.toml`. The key is your column type slug; the value points to the `Plugin` instance. Data Designer discovers all installed plugins automatically through this mechanism.
+
+```toml
+[project.entry-points."data_designer.plugins"]
+my-plugin = "data_designer_my_plugin.plugin:plugin"
+```
