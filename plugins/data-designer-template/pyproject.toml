@@ -9,9 +9,21 @@ requires-python = ">=3.10"
 dependencies = [
     "data-designer>=0.5.3",
 ]
+license = "Apache-2.0"
+readme = "README.md"
+authors = [
+    {name = "NVIDIA Corporation"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+]
 
 [project.entry-points."data_designer.plugins"]
 text-transform = "data_designer_template.plugin:plugin"
+
+[project.urls]
+Repository = "https://gitlab-master.nvidia.com/etramel/data-designer-plugins"
 
 [build-system]
 requires = ["hatchling"]
