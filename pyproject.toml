@@ -43,7 +43,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["dd_plugins_core", "data_designer_template"]
+known-first-party = ["dd_plugins_core", "data_designer_agent_trace_turns", "data_designer_template"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
