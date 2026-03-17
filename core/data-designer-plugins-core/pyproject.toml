@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+name = "data-designer-plugins-core"
+version = "0.1.0"
+description = "Shared utilities for Data Designer plugins"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+scaffold-plugin = "dd_plugins_core.scaffold:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dd_plugins_core"]
+
+[tool.ruff]
+extend = "../../pyproject.toml"

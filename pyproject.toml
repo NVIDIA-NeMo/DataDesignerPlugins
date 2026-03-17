@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+name = "data-designer-plugins-workspace"
+version = "0.0.0"
+description = "First-class NVIDIA-provided Data Designer plugins"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.workspace]
+members = [
+    "core/data-designer-plugins-core",
+    "plugins/*",
+]
+
+[tool.uv]
+package = false
+required-version = ">=0.7.10"
+
+[tool.uv.sources]
+data-designer = { path = "../DataDesigner/packages/data-designer", editable = true }
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort (import sorting)
+    "ICN",   # flake8-import-conventions
+    "PIE",   # flake8-pie (misc lints)
+    "TID",   # flake8-tidy-imports (ban relative imports)
+    "UP006", # List[A] -> list[A]
+    "UP007", # Union[A, B] -> A | B
+    "UP045", # Optional[A] -> A | None
+]
+ignore = [
+    "ANN401",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dd_plugins_core", "data_designer_template"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.pytest.ini_options]
+testpaths = ["plugins"]
