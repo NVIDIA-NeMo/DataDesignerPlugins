@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test validate catalog codeowners check-catalog check-codeowners check all release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test validate catalog codeowners check-catalog check-codeowners check-license-headers update-license-headers check all release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -65,9 +65,15 @@ check-codeowners:
 	diff CODEOWNERS CODEOWNERS.new
 	@rm -f CODEOWNERS.new
 
+check-license-headers:
+	uv run python tools/update_license_headers.py --check
+
+update-license-headers:
+	uv run python tools/update_license_headers.py
+
 # ── Aggregate targets ────────────────────────────────────────────────────
 
-check: check-catalog check-codeowners
+check: check-catalog check-codeowners check-license-headers
 
 all: lint test validate check
 
