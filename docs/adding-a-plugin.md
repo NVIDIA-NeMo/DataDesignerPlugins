@@ -2,6 +2,16 @@
 
 ## Quick Start
 
+The fastest way to create a plugin is with the scaffold tool:
+
+```bash
+uv run scaffold-plugin my-plugin
+```
+
+This generates all required files including `pyproject.toml`, the source package, a test stub, and a `CODEOWNERS` file (auto-populated from your git config). See the printed output for next steps.
+
+Alternatively, you can copy the template manually:
+
 1. Copy the template plugin:
 
 ```bash
@@ -73,3 +83,13 @@ assert_valid_plugin(plugin)
 ## Entry Points
 
 Plugins register via `[project.entry-points."data_designer.plugins"]` in their `pyproject.toml`. The key is the plugin slug; the value points to the `Plugin` instance. Data Designer discovers plugins automatically at import time via this mechanism.
+
+## Code Ownership
+
+Each plugin has its own `CODEOWNERS` file (created automatically by `scaffold-plugin`). These per-plugin files are aggregated into the root `CODEOWNERS` by running:
+
+```bash
+python tools/aggregate_codeowners.py > CODEOWNERS
+```
+
+CI checks that the root file stays in sync. If you add or update a per-plugin `CODEOWNERS`, regenerate the root file before pushing.

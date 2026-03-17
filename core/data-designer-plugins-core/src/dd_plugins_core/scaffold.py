@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -128,6 +129,32 @@ plugin = Plugin(
 """
 
 
+def _discover_owner() -> str:
+    """Best-effort owner discovery from git config."""
+    for key in ("user.email", "user.name"):
+        try:
+            result = subprocess.run(
+                ["git", "config", key],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            value = result.stdout.strip()
+            if value:
+                return value
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return "# TODO: set owner (GitLab @username or email)"
+
+
+def generate_codeowners(owner: str) -> str:
+    return f"""\
+# Owner(s) of this plugin — used to generate the root CODEOWNERS file.
+# GitLab accepts @username or email format.
+* {owner}
+"""
+
+
 def generate_test(import_name: str) -> str:
     return f"""{SPDX_HEADER}
 
@@ -187,8 +214,10 @@ def main() -> None:
     test_dir.mkdir(parents=True)
 
     # Write files
+    owner = _discover_owner()
     files = {
         plugin_dir / "pyproject.toml": generate_pyproject(slug, import_name),
+        plugin_dir / "CODEOWNERS": generate_codeowners(owner),
         src_dir / "__init__.py": generate_init(),
         src_dir / "config.py": generate_config(slug, import_name, class_prefix),
         src_dir / "impl.py": generate_impl(slug, import_name, class_prefix),

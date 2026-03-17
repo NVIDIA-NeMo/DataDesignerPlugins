@@ -87,8 +87,8 @@ validate:
       "
 
 # ── Catalog ──────────────────────────────────────────────────────────────
-# Regenerate the plugin catalog and fail if it's stale.
-# Forces contributors to run `python tools/generate_catalog.py` locally.
+# Regenerate the plugin catalog and CODEOWNERS, fail if either is stale.
+# Forces contributors to run the generators locally.
 catalog:
   stage: catalog
   image: ghcr.io/astral-sh/uv:python3.10-bookworm
@@ -96,7 +96,10 @@ catalog:
     - uv sync --all-packages
     - uv run python tools/generate_catalog.py > docs/catalog.md.new
     - diff docs/catalog.md docs/catalog.md.new
+    - uv run python tools/aggregate_codeowners.py > CODEOWNERS.new
+    - diff CODEOWNERS CODEOWNERS.new
   artifacts:
     paths:
       - docs/catalog.md.new
+      - CODEOWNERS.new
     when: on_failure
