@@ -61,7 +61,7 @@ publish:
     - git fetch origin main
     - 'git merge-base --is-ancestor "${CI_COMMIT_SHA}" origin/main || { echo "ERROR: tagged commit is not on main"; exit 1; }'
     # Validate version match + metadata
-    - uv run validate-release "${PLUGIN_NAME}" "${TAG_VERSION}"
+    - uv run ddp check-release "${PLUGIN_NAME}" "${TAG_VERSION}"
     # CODEOWNERS check — tag pusher must be a listed owner
     - OWNERS=$(grep -v '^\s*#' "${PLUGIN_DIR}/CODEOWNERS" | grep -v '^\s*$' | awk '{for(i=2;i<=NF;i++) print $i}')
     - 'MATCH=0; for owner in $OWNERS; do [ "$owner" = "@${GITLAB_USER_LOGIN}" ] && MATCH=1; [ "$owner" = "${GITLAB_USER_EMAIL}" ] && MATCH=1; done; if [ "$MATCH" -eq 0 ]; then echo "ERROR: ${GITLAB_USER_LOGIN} is not listed in ${PLUGIN_DIR}/CODEOWNERS"; echo "Listed owners: $OWNERS"; exit 1; fi'

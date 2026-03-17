@@ -34,7 +34,7 @@ def main() -> None:
 
     lines = [
         "# Auto-generated from per-plugin CODEOWNERS files. Do not edit manually.",
-        "# Run: uv run aggregate-codeowners > CODEOWNERS",
+        "# Run: uv run ddp codeowners > CODEOWNERS",
         "",
         "# Infrastructure",
         "* @etramel",

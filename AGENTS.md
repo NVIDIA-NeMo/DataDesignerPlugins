@@ -26,7 +26,7 @@ Canonical scaffold flow:
 
 ```bash
 make sync
-uv run scaffold-plugin my-plugin
+uv run ddp new my-plugin
 ```
 
 This creates a package like:
@@ -149,7 +149,7 @@ Release facts:
 - Tags are per-plugin: `data-designer-my-plugin/v0.1.0`.
 - Release CI expects the tagged commit to be on `main`.
 - The tag pusher must be listed in that plugin's `CODEOWNERS`.
-- Pre-release versions (e.g. `0.2.0a1`) are not supported by `bump-version`; edit `pyproject.toml` manually for those.
+- Pre-release versions (e.g. `0.2.0a1`) are not supported by `ddp bump`; edit `pyproject.toml` manually for those.
 
 # References
 

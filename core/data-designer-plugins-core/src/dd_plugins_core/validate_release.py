@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 
 from dd_plugins_core._repo import find_repo_root, load_toml
@@ -12,21 +13,25 @@ from dd_plugins_core._repo import find_repo_root, load_toml
 REQUIRED_FIELDS = ("description", "license", "readme", "authors")
 
 
-def main() -> int:
+def main(args: list[str] | None = None) -> int:
     """Validate that a plugin's pyproject.toml is release-ready.
 
-    Expects two positional CLI arguments: ``<plugin-name>`` and
-    ``<tag-version>``.
+    Args:
+        args: CLI arguments to parse. Defaults to ``sys.argv[1:]``.
 
     Returns:
-        Exit code (0 for success, 1 for validation failure, 2 for usage error).
+        Exit code (0 for success, 1 for validation failure).
     """
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <plugin-name> <tag-version>", file=sys.stderr)
-        return 2
+    parser = argparse.ArgumentParser(
+        prog="validate-release",
+        description="Validate plugin metadata before a PyPI release.",
+    )
+    parser.add_argument("plugin_name", help="Plugin name (e.g. data-designer-my-plugin)")
+    parser.add_argument("tag_version", help="Expected version from the git tag")
+    parsed = parser.parse_args(args)
 
-    plugin_name = sys.argv[1]
-    tag_version = sys.argv[2]
+    plugin_name = parsed.plugin_name
+    tag_version = parsed.tag_version
 
     repo_root = find_repo_root()
     toml_path = repo_root / "plugins" / plugin_name / "pyproject.toml"

@@ -42,7 +42,7 @@ Always use the canonical scaffold tool. Never hand-create the plugin directory s
 
 ```bash
 make sync
-uv run scaffold-plugin <slug>
+uv run ddp new <slug>
 ```
 
 After scaffolding, read all generated files to see what the scaffold provides and what you need to modify.

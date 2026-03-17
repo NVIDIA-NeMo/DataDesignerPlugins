@@ -13,10 +13,10 @@ uv sync --all-packages
 Create a new plugin:
 
 ```bash
-uv run scaffold-plugin my-plugin
+uv run ddp new my-plugin
 ```
 
-This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, tests, and CODEOWNERS. See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full authoring guide.
+This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, tests, and CODEOWNERS. Run `uv run ddp --help` to see all available repo management commands. See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full authoring guide.
 
 ## Repository Structure
 

@@ -405,7 +405,7 @@ def process_directory(path: Path, check_only: bool = False) -> tuple[int, int, i
     return processed, updated, skipped, files_needing_update
 
 
-def cli() -> None:
+def cli(args: list[str] | None = None) -> None:
     """CLI entry point for license header management."""
     parser = argparse.ArgumentParser(description="Add or check license headers in Python and shell files")
     parser.add_argument(
@@ -413,7 +413,7 @@ def cli() -> None:
         action="store_true",
         help="Check if all files have correct license headers without modifying files",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     from dd_plugins_core._repo import find_repo_root
 

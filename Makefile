@@ -45,31 +45,31 @@ test:
 # Assert every installed plugin passes assert_valid_plugin.
 
 validate:
-	uv run validate-plugins
+	uv run ddp validate
 
 # ── Catalog & CODEOWNERS ─────────────────────────────────────────────────
 
 catalog:
-	uv run generate-catalog > docs/catalog.md
+	uv run ddp catalog > docs/catalog.md
 
 codeowners:
-	uv run aggregate-codeowners > CODEOWNERS
+	uv run ddp codeowners > CODEOWNERS
 
 check-catalog:
-	uv run generate-catalog > docs/catalog.md.new
+	uv run ddp catalog > docs/catalog.md.new
 	diff docs/catalog.md docs/catalog.md.new
 	@rm -f docs/catalog.md.new
 
 check-codeowners:
-	uv run aggregate-codeowners > CODEOWNERS.new
+	uv run ddp codeowners > CODEOWNERS.new
 	diff CODEOWNERS CODEOWNERS.new
 	@rm -f CODEOWNERS.new
 
 check-license-headers:
-	uv run update-license-headers --check
+	uv run ddp license-headers --check
 
 update-license-headers:
-	uv run update-license-headers
+	uv run ddp license-headers
 
 # ── Aggregate targets ────────────────────────────────────────────────────
 
@@ -86,13 +86,13 @@ PLUGIN_DIR = plugins/$(PLUGIN)
 
 bump:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi
-	uv run bump-version $(PLUGIN) $(PART)
+	uv run ddp bump $(PLUGIN) $(PART)
 
 validate-release:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi
 	@if [ ! -d "$(PLUGIN_DIR)" ]; then echo "ERROR: $(PLUGIN_DIR) not found"; exit 1; fi
 	@PLUGIN_VERSION=$$(uv run python -c "import tomllib; print(tomllib.load(open('$(PLUGIN_DIR)/pyproject.toml','rb'))['project']['version'])"); \
-	uv run validate-release "$(PLUGIN)" "$$PLUGIN_VERSION"
+	uv run ddp check-release "$(PLUGIN)" "$$PLUGIN_VERSION"
 
 test-plugin:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi

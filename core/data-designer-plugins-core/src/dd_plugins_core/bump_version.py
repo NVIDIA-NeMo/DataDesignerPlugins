@@ -120,11 +120,14 @@ def replace_version_in_file(toml_path: Path, old: str, new: str) -> None:
     toml_path.write_text(updated)
 
 
-def main() -> int:
+def main(args: list[str] | None = None) -> int:
     """Bump a plugin's semantic version in its pyproject.toml.
 
     Parses CLI arguments for the plugin name and version part to bump,
     then rewrites the version in-place and prints next-step instructions.
+
+    Args:
+        args: CLI arguments to parse. Defaults to ``sys.argv[1:]``.
 
     Returns:
         Exit code (0 for success, non-zero for errors).
@@ -139,7 +142,7 @@ def main() -> int:
         choices=("major", "minor", "patch"),
         help="Version component to bump",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     repo_root = find_repo_root()
     toml_path = repo_root / "plugins" / args.plugin / "pyproject.toml"

@@ -5,12 +5,10 @@
 
 from __future__ import annotations
 
-import sys
-
 from dd_plugins_core.validate_release import REQUIRED_FIELDS, main
 
 
-def test_valid_template_plugin_passes(monkeypatch: object) -> None:
+def test_valid_template_plugin_passes() -> None:
     """validate_release should pass for the template plugin with its actual version."""
     from dd_plugins_core._repo import find_repo_root, load_toml
 
@@ -18,14 +16,12 @@ def test_valid_template_plugin_passes(monkeypatch: object) -> None:
     data = load_toml(root / "plugins" / "data-designer-template" / "pyproject.toml")
     version = data["project"]["version"]
 
-    monkeypatch.setattr(sys, "argv", ["validate-release", "data-designer-template", version])  # type: ignore[attr-defined]
-    result = main()
+    result = main(["data-designer-template", version])
     assert result == 0
 
 
-def test_wrong_version_fails(monkeypatch: object) -> None:
-    monkeypatch.setattr(sys, "argv", ["validate-release", "data-designer-template", "99.99.99"])  # type: ignore[attr-defined]
-    result = main()
+def test_wrong_version_fails() -> None:
+    result = main(["data-designer-template", "99.99.99"])
     assert result == 1
 
 

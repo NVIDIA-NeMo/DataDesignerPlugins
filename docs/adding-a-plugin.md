@@ -3,10 +3,10 @@
 ## 1. Scaffold
 
 ```bash
-uv run scaffold-plugin my-plugin
+uv run ddp new my-plugin
 ```
 
-Generates `plugins/data-designer-my-plugin/` with all required files. Your git email is auto-detected for the CODEOWNERS file.
+Generates `plugins/data-designer-my-plugin/` with all required files. Your git email is auto-detected for the CODEOWNERS file. Run `uv run ddp --help` to see all available repo management commands.
 
 Generated structure:
 
@@ -63,8 +63,8 @@ def test_valid_plugin():
 ## 4. Regenerate Metadata
 
 ```bash
-uv run generate-catalog > docs/catalog.md
-uv run aggregate-codeowners > CODEOWNERS
+uv run ddp catalog > docs/catalog.md
+uv run ddp codeowners > CODEOWNERS
 ```
 
 CI will reject your MR if these are stale.

@@ -210,13 +210,13 @@ def find_plugins_dir() -> Path:
     return cwd / "plugins"
 
 
-def main() -> None:
+def main(args: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Scaffold a new Data Designer plugin")
     parser.add_argument(
         "name",
         help="Plugin name in kebab-case (e.g., my-cool-thing)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(args)
     slug: str = args.name
 
     error = validate_slug(slug)
