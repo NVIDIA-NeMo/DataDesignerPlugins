@@ -1,30 +1,143 @@
 # Data Designer Plugins
 
-# Creating a new plugin
+# Repo Facts
 
-If asked to create a new plugin, refer to README.md and docs/ for information on the development workflow for authoring.
-Use tooling provided by this project (`data-designer-plugins`) wherever possible. Defer to tooling before running custom commands.
+This repo is a `uv` workspace with shared tooling in `core/` and one independent package per plugin under `plugins/*`.
+The Python compatibility baseline here is 3.10+, not 3.11-only.
+Use `plugins/data-designer-template/` as the reference implementation before inventing new structure.
+
+Example layout:
+
+```text
+core/data-designer-plugins-core/
+plugins/data-designer-template/
+plugins/data-designer-my-plugin/
+tools/
+docs/
+```
+
+# Creating a New Plugin
+
+If asked to create a new plugin, use this repo's tooling first and refer to `README.md` and `docs/` only as supporting detail.
+Prefer the scaffold CLI over hand-creating files.
 All plugins should be entirely self-contained and manage themselves.
-Plugins should not depend on one another locally, however plugins may depend on publicly released pypi data-designer plugins. 
+Plugins should not depend on one another locally, however plugins may depend on publicly released PyPI `data-designer-*` plugins.
 
-# Releasing a plugin
+Canonical scaffold flow:
 
-Never release or publish a plugin-version version as a tag (or to PyPI) without being asked or having express permission from the user. 
+```bash
+make sync
+uv run scaffold-plugin my-plugin
+```
+
+This creates a package like:
+
+```text
+plugins/data-designer-my-plugin/
+src/data_designer_my_plugin/
+tests/test_plugin.py
+CODEOWNERS
+```
+
+Naming convention example:
+
+```toml
+[project]
+name = "data-designer-my-plugin"
+
+[project.entry-points."data_designer.plugins"]
+my-plugin = "data_designer_my_plugin.plugin:plugin"
+```
 
 # Development Workflow
 
-When creating or updating a plugin, make your edits within a worktree. 
+When creating or updating a plugin, make your edits within a worktree.
+Prefer the repo's canonical `Makefile` targets over ad hoc substitutes.
 Test your changes locally and ensure that you have a locally green CI by running the Makefile CI commands.
 Upon completion, submit a merge request using the `glab` cli.
 
+Canonical local workflow:
+
+```bash
+make sync
+make lint
+make test
+make validate
+make check
+make all
+```
+
+Notes:
+
+- `make test` installs each plugin in an isolated venv and runs its tests there.
+- `make validate` discovers installed `data_designer.plugins` entry points and runs `assert_valid_plugin`.
+- `make check` verifies generated metadata and SPDX headers.
+
+If you change plugin metadata or ownership, regenerate the derived files:
+
+```bash
+make catalog
+make codeowners
+make check-license-headers
+# or, to fix headers:
+make update-license-headers
+```
+
+Merge request example:
+
+```bash
+glab mr create
+```
+
 # Development Style
 
-Tests should be written around public interfaces. 
-Modern Python 3.11+ style type annotations should be used (e.g. builtins).
+Tests should be written around public interfaces.
+Use modern Python 3.10+ style type annotations such as `list[str]`, `A | B`, and `X | None`.
 Utilize full Google-style docstrings for implemented functionality.
-Don't use ducked, private, function-in-function definitions. 
-Favor reusable, composable functions that can be composed within higher-level functions.
+Do not use private helper closures or function-in-function definitions.
+Favor reusable, composable functions that can be combined in higher-level functions.
 Keep function and method definitions short and legible, deferring to composition rather than nesting.
+Use Ruff via the repo targets for linting and formatting.
+Relative imports are banned in this repo.
+
+Validation test example:
+
+```python
+from data_designer.engine.testing.utils import assert_valid_plugin
+
+from data_designer_my_plugin.plugin import plugin
+
+
+def test_valid_plugin() -> None:
+    assert_valid_plugin(plugin)
+```
+
+Import style example:
+
+```python
+from data_designer_my_plugin.config import MyPluginColumnConfig
+# Avoid:
+# from .config import MyPluginColumnConfig
+```
+
+# Releasing a Plugin
+
+Never release or publish a plugin version as a tag or to PyPI without being asked or having express permission from the user.
+
+If explicitly asked to prepare a release, use the repo targets:
+
+```bash
+make test-plugin PLUGIN=data-designer-my-plugin
+make build-plugin PLUGIN=data-designer-my-plugin
+make release PLUGIN=data-designer-my-plugin
+git push origin data-designer-my-plugin/v0.1.0
+```
+
+Release facts:
+
+- Tags are per-plugin: `data-designer-my-plugin/v0.1.0`.
+- Release CI expects the tagged commit to be on `main`.
+- The tag pusher must be listed in that plugin's `CODEOWNERS`.
 
 # References
 
