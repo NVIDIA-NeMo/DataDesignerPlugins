@@ -30,20 +30,51 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     # ddp new <name>
-    p_new = sub.add_parser("new", help="Scaffold a new plugin")
+    p_new = sub.add_parser(
+        "new",
+        help="Scaffold a new plugin",
+        description=(
+            "Create a new Data Designer plugin from the canonical scaffold template. "
+            "Generates a complete package under plugins/data-designer-<name>/ with "
+            "pyproject.toml, config, implementation, plugin wiring, tests, and CODEOWNERS."
+        ),
+    )
     p_new.add_argument("name", help="Plugin name in kebab-case (e.g., my-cool-thing)")
     p_new.set_defaults(func=_run_new)
 
     # ddp catalog
-    p_catalog = sub.add_parser("catalog", help="Generate plugin catalog to stdout")
+    p_catalog = sub.add_parser(
+        "catalog",
+        help="Generate plugin catalog to stdout",
+        description=(
+            "Generate a markdown table of all plugins and their metadata "
+            "(name, version, column type, description) to stdout. "
+            "Typically redirected to docs/catalog.md."
+        ),
+    )
     p_catalog.set_defaults(func=_run_catalog)
 
     # ddp codeowners
-    p_codeowners = sub.add_parser("codeowners", help="Aggregate CODEOWNERS to stdout")
+    p_codeowners = sub.add_parser(
+        "codeowners",
+        help="Aggregate CODEOWNERS to stdout",
+        description=(
+            "Aggregate per-plugin CODEOWNERS files into a single unified CODEOWNERS "
+            "file and print it to stdout. Typically redirected to the root CODEOWNERS."
+        ),
+    )
     p_codeowners.set_defaults(func=_run_codeowners)
 
     # ddp license-headers [--check]
-    p_license = sub.add_parser("license-headers", help="Add or check SPDX license headers")
+    p_license = sub.add_parser(
+        "license-headers",
+        help="Add or check SPDX license headers",
+        description=(
+            "Add or update SPDX license headers in all Python and shell files under "
+            "core/ and plugins/. In --check mode, reports files that are missing or "
+            "have outdated headers and exits non-zero if any need updating."
+        ),
+    )
     p_license.add_argument(
         "--check",
         action="store_true",
@@ -52,17 +83,41 @@ def build_parser() -> argparse.ArgumentParser:
     p_license.set_defaults(func=_run_license_headers)
 
     # ddp validate
-    p_validate = sub.add_parser("validate", help="Validate all installed plugins")
+    p_validate = sub.add_parser(
+        "validate",
+        help="Validate all installed plugins",
+        description=(
+            "Discover all installed data_designer.plugins entry points and run "
+            "assert_valid_plugin on each one. Exits non-zero if any plugin fails "
+            "validation."
+        ),
+    )
     p_validate.set_defaults(func=_run_validate)
 
     # ddp check-release <plugin_name> <tag_version>
-    p_check_release = sub.add_parser("check-release", help="Validate plugin metadata for release")
+    p_check_release = sub.add_parser(
+        "check-release",
+        help="Validate plugin metadata for release",
+        description=(
+            "Validate that a plugin's pyproject.toml is release-ready: checks that "
+            "the file version matches the expected tag version and that all required "
+            "PyPI metadata fields (description, license, readme, authors) are present."
+        ),
+    )
     p_check_release.add_argument("plugin_name", help="Plugin name (e.g. data-designer-my-plugin)")
     p_check_release.add_argument("tag_version", help="Expected version from the git tag")
     p_check_release.set_defaults(func=_run_check_release)
 
     # ddp bump <plugin> <part>
-    p_bump = sub.add_parser("bump", help="Bump a plugin's semantic version")
+    p_bump = sub.add_parser(
+        "bump",
+        help="Bump a plugin's semantic version",
+        description=(
+            "Bump the semantic version of a plugin's pyproject.toml in place. "
+            "Supports major, minor, and patch bumps on strict X.Y.Z versions. "
+            "Pre-release versions are not supported; edit pyproject.toml manually for those."
+        ),
+    )
     p_bump.add_argument("plugin", help="Plugin name (e.g. data-designer-my-plugin)")
     p_bump.add_argument(
         "part",
