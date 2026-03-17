@@ -1,11 +1,10 @@
 # Auto-generated from per-plugin CODEOWNERS files. Do not edit manually.
-# Run: python tools/aggregate_codeowners.py > CODEOWNERS
+# Run: uv run aggregate-codeowners > CODEOWNERS
 
 # Infrastructure
 * @etramel
 /core/ @etramel
 /.gitlab-ci.yml @etramel
-/tools/ @etramel
 
 # Plugins
 /plugins/data-designer-template/ @etramel

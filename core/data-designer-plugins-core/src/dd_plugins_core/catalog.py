@@ -5,31 +5,18 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    try:
-        import tomli as tomllib  # type: ignore[no-redef]
-    except ModuleNotFoundError:
-        print(
-            "Error: Python 3.11+ (tomllib) or the 'tomli' package is required.\nInstall with: pip install tomli",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+from dd_plugins_core._repo import find_repo_root, load_toml
 
 
 def main() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
+    """Generate a markdown table of all plugins and print to stdout."""
+    repo_root = find_repo_root()
     plugins_dir = repo_root / "plugins"
 
     rows: list[tuple[str, str, str, str]] = []
 
     for toml_path in sorted(plugins_dir.glob("*/pyproject.toml")):
-        with open(toml_path, "rb") as f:
-            data = tomllib.load(f)
+        data = load_toml(toml_path)
 
         project = data.get("project", {})
         name = project.get("name", toml_path.parent.name)

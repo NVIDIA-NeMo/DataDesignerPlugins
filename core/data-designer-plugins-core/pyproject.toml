@@ -4,12 +4,19 @@
 [project]
 name = "data-designer-plugins-core"
 version = "0.1.0"
-description = "Shared utilities for Data Designer plugins"
+description = "Local dev-only monorepo management tooling for data-designer-plugins (not a runtime dependency)"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "tomli>=1.1.0; python_version < '3.11'",
+]
 
 [project.scripts]
 scaffold-plugin = "dd_plugins_core.scaffold:main"
+generate-catalog = "dd_plugins_core.catalog:main"
+aggregate-codeowners = "dd_plugins_core.codeowners:main"
+update-license-headers = "dd_plugins_core.license_headers:cli"
+validate-plugins = "dd_plugins_core.validate_plugins:main"
+validate-release = "dd_plugins_core.validate_release:main"
 
 [build-system]
 requires = ["hatchling"]

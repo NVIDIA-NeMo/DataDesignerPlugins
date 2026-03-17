@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from dd_plugins_core._repo import find_repo_root
 
 
 def main() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
+    """Generate a unified CODEOWNERS file from per-plugin CODEOWNERS files."""
+    repo_root = find_repo_root()
     plugins_dir = repo_root / "plugins"
 
     entries: list[tuple[str, str]] = []
@@ -33,13 +34,12 @@ def main() -> None:
 
     lines = [
         "# Auto-generated from per-plugin CODEOWNERS files. Do not edit manually.",
-        "# Run: python tools/aggregate_codeowners.py > CODEOWNERS",
+        "# Run: uv run aggregate-codeowners > CODEOWNERS",
         "",
         "# Infrastructure",
         "* @etramel",
         "/core/ @etramel",
         "/.gitlab-ci.yml @etramel",
-        "/tools/ @etramel",
         "",
         "# Plugins",
     ]

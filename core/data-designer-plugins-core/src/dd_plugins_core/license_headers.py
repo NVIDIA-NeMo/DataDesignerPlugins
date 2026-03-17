@@ -1,6 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+"""Add, update, or check SPDX license headers in Python and shell files."""
+
+from __future__ import annotations
+
 import argparse
 import re
 import subprocess
@@ -53,18 +57,21 @@ class HeaderAnalysis:
 def extract_license_header(lines: list[str], start_idx: int) -> tuple[str, int]:
     """Extract existing SPDX license header from file lines.
 
-    This function searches for SPDX tags in comment lines and extracts the complete
-    header including any trailing blank line. It handles three states:
-    1. Searching: Looking for SPDX in comment lines, skipping blank lines and non-SPDX comments
-    2. Collecting: Found SPDX, gathering all SPDX comment lines
-    3. Done: Collected header plus optional trailing blank line, or hit non-header content
+    This function searches for SPDX tags in comment lines and extracts the
+    complete header including any trailing blank line.  It handles three states:
+
+    1. Searching: Looking for SPDX in comment lines, skipping blank lines and
+       non-SPDX comments.
+    2. Collecting: Found SPDX, gathering all SPDX comment lines.
+    3. Done: Collected header plus optional trailing blank line, or hit
+       non-header content.
 
     Args:
-        lines: List of lines from the file (with line endings preserved)
-        start_idx: Index to start looking for the header
+        lines: List of lines from the file (with line endings preserved).
+        start_idx: Index to start looking for the header.
 
     Returns:
-        Tuple of (header_content, num_lines_consumed)
+        Tuple of (header_content, num_lines_consumed).
     """
     header_lines: list[str] = []
     end_idx = start_idx
@@ -106,14 +113,14 @@ def parse_header_start_year(header: str) -> int | None:
     single-year and year-range formats.
 
     Args:
-        header: The existing license header text
+        header: The existing license header text.
 
     Returns:
         The start year as an integer, or None if no valid year found.
 
     Examples:
-        - "Copyright (c) 2026" -> 2026
-        - "Copyright (c) 2025-2026" -> 2025
+        - ``"Copyright (c) 2026"`` -> 2026
+        - ``"Copyright (c) 2025-2026"`` -> 2025
     """
     match = re.search(r"Copyright \(c\) (\d{4})(?:-\d{4})?", header)
     if match:
@@ -161,7 +168,8 @@ def _format_header(license_header: str, has_content_after: bool) -> str:
     """Format header with or without trailing blank line based on context.
 
     When content follows the header, preserve the double newline for separation.
-    When the file is header-only, strip extra newlines to leave just one final newline.
+    When the file is header-only, strip extra newlines to leave just one final
+    newline.
     """
     if has_content_after:
         return license_header
@@ -171,12 +179,17 @@ def _format_header(license_header: str, has_content_after: bool) -> str:
 def update_license_header_in_file(file_path: Path, license_header: str) -> tuple[bool, str]:
     """Update license header in a single file.
 
+    Args:
+        file_path: Path to the file to update.
+        license_header: The expected license header content.
+
     Returns:
         Tuple of (was_modified, reason) where reason is:
-        - "added" - header was added (none existed)
-        - "updated" - header was replaced (different existed)
-        - "unchanged" - header unchanged (identical existed)
-        - "error" - an error occurred
+
+        - ``"added"`` -- header was added (none existed)
+        - ``"updated"`` -- header was replaced (different existed)
+        - ``"unchanged"`` -- header unchanged (identical existed)
+        - ``"error"`` -- an error occurred
     """
     try:
         content = file_path.read_text(encoding="utf-8")
@@ -209,19 +222,24 @@ def update_license_header_in_file(file_path: Path, license_header: str) -> tuple
         return True, "added"
 
     except (UnicodeDecodeError, PermissionError) as e:
-        print(f"  ⏭️  Skipped {file_path} ({e})")
+        print(f"  Skipped {file_path} ({e})")
         return False, "error"
 
 
 def check_license_header_matches(file_path: Path, license_header: str) -> tuple[bool, str]:
     """Check if file has the expected license header.
 
+    Args:
+        file_path: Path to the file to check.
+        license_header: The expected license header content.
+
     Returns:
         Tuple of (header_matches, status) where status is:
-        - "match" - header exists and matches
-        - "missing" - no header found
-        - "mismatch" - header exists but differs
-        - "error" - couldn't read file
+
+        - ``"match"`` -- header exists and matches
+        - ``"missing"`` -- no header found
+        - ``"mismatch"`` -- header exists but differs
+        - ``"error"`` -- couldn't read file
     """
     try:
         content = file_path.read_text(encoding="utf-8")
@@ -260,6 +278,9 @@ def should_process_file(file_path: Path) -> bool:
 def get_file_creation_year(file_path: Path) -> int | None:
     """Get the year when the file was first committed to git.
 
+    Args:
+        file_path: Path to the file to check.
+
     Returns:
         The year of the first commit, or None if not tracked by git.
     """
@@ -287,16 +308,16 @@ def get_copyright_year_string(file_path: Path, current_year: int, existing_heade
 
     Uses the existing license header as the source of truth for the start year.
     This ensures consistency across rebases, squash merges, and different branch
-    states. Git history is only used as a fallback for files without headers.
+    states.  Git history is only used as a fallback for files without headers.
 
     Args:
-        file_path: Path to the file being processed
-        current_year: The current year to use as the end year
-        existing_header: The existing license header content, if any
+        file_path: Path to the file being processed.
+        current_year: The current year to use as the end year.
+        existing_header: The existing license header content, if any.
 
     Returns:
-        - Just the current year if file was created this year (e.g., "2026")
-        - A range if file was created in a previous year (e.g., "2025-2026")
+        - Just the current year if file was created this year (e.g., ``"2026"``).
+        - A range if file was created in a previous year (e.g., ``"2025-2026"``).
     """
     # First, try to get start year from existing header (source of truth)
     if existing_header:
@@ -316,7 +337,14 @@ def get_copyright_year_string(file_path: Path, current_year: int, existing_heade
 
 
 def generate_license_header(copyright_year: str) -> str:
-    """Generate the license header with the given copyright year."""
+    """Generate the license header with the given copyright year.
+
+    Args:
+        copyright_year: Year string, e.g. ``"2026"`` or ``"2025-2026"``.
+
+    Returns:
+        Complete SPDX license header with trailing blank line.
+    """
     return (
         f"# SPDX-FileCopyrightText: Copyright (c) {copyright_year} "
         "NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n"
@@ -324,8 +352,16 @@ def generate_license_header(copyright_year: str) -> str:
     )
 
 
-def main(path: Path, check_only: bool = False) -> tuple[int, int, int, list[Path]]:
-    """Process all supported files in a directory."""
+def process_directory(path: Path, check_only: bool = False) -> tuple[int, int, int, list[Path]]:
+    """Process all supported files in a directory.
+
+    Args:
+        path: Directory to scan recursively.
+        check_only: If True, report files needing updates without modifying them.
+
+    Returns:
+        Tuple of (processed, updated, skipped, files_needing_update).
+    """
     current_year = datetime.now().year
 
     processed = updated = skipped = 0
@@ -361,7 +397,7 @@ def main(path: Path, check_only: bool = False) -> tuple[int, int, int, list[Path
                 was_modified, reason = update_license_header_in_file(file_path, license_header)
                 if was_modified:
                     action = "Added header to" if reason == "added" else "Updated header in"
-                    print(f"  {'✏️' if reason == 'added' else '🔄'} {action} {file_path}")
+                    print(f"  {action} {file_path}")
                     updated += 1
                 else:
                     skipped += 1
@@ -369,7 +405,8 @@ def main(path: Path, check_only: bool = False) -> tuple[int, int, int, list[Path
     return processed, updated, skipped, files_needing_update
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """CLI entry point for license header management."""
     parser = argparse.ArgumentParser(description="Add or check license headers in Python and shell files")
     parser.add_argument(
         "--check",
@@ -378,32 +415,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    repo_path = Path(__file__).parent.parent
+    from dd_plugins_core._repo import find_repo_root
+
+    repo_path = find_repo_root()
     all_files_needing_update: list[Path] = []
     total_processed = total_updated = total_skipped = 0
-
-    # Process root-level tools/ directory
-    for folder in ["tools"]:
-        folder_path = repo_path / folder
-        if not folder_path.exists():
-            continue
-
-        action = "Checking" if args.check else "Processing"
-        print(f"\n📂 {action} {folder}/")
-
-        processed, updated, skipped, files_needing_update = main(folder_path, check_only=args.check)
-
-        total_processed += processed
-        total_updated += updated
-        total_skipped += skipped
-        all_files_needing_update.extend(files_needing_update)
-
-        if args.check:
-            print(f"   ❌ Need update: {updated}")
-            print(f"   ✅ Up to date: {skipped}")
-        else:
-            print(f"   ✏️  Updated: {updated}")
-            print(f"   ⏭️  Skipped: {skipped}")
 
     # Process core/ and plugins/ directory structures
     for group in ["core", "plugins"]:
@@ -423,9 +439,11 @@ if __name__ == "__main__":
 
                 action = "Checking" if args.check else "Processing"
                 relative_path = folder_path.relative_to(repo_path)
-                print(f"\n📂 {action} {relative_path}/")
+                print(f"\n{action} {relative_path}/")
 
-                processed, updated, skipped, files_needing_update = main(folder_path, check_only=args.check)
+                processed, updated, skipped, files_needing_update = process_directory(
+                    folder_path, check_only=args.check
+                )
 
                 total_processed += processed
                 total_updated += updated
@@ -433,30 +451,34 @@ if __name__ == "__main__":
                 all_files_needing_update.extend(files_needing_update)
 
                 if args.check:
-                    print(f"   ❌ Need update: {updated}")
-                    print(f"   ✅ Up to date: {skipped}")
+                    print(f"   Need update: {updated}")
+                    print(f"   Up to date: {skipped}")
                 else:
-                    print(f"   ✏️  Updated: {updated}")
-                    print(f"   ⏭️  Skipped: {skipped}")
+                    print(f"   Updated: {updated}")
+                    print(f"   Skipped: {skipped}")
 
     print("\n" + "=" * 80)
-    print(f"📊 Summary: {total_processed} files processed")
+    print(f"Summary: {total_processed} files processed")
 
     if args.check:
-        print(f"   ❌ Need update: {total_updated}")
-        print(f"   ✅ Up to date: {total_skipped}")
+        print(f"   Need update: {total_updated}")
+        print(f"   Up to date: {total_skipped}")
 
         if all_files_needing_update:
-            print(f"\n❌ {len(all_files_needing_update)} file(s) need license header updates:")
+            print(f"\n{len(all_files_needing_update)} file(s) need license header updates:")
             for file_path in all_files_needing_update:
-                print(f"   • {file_path}")
-            print("💡 Run 'make update-license-headers' to fix")
+                print(f"   {file_path}")
+            print("Run 'make update-license-headers' to fix")
             sys.exit(1)
         else:
-            print("\n🎉 All files have correct license headers!")
+            print("\nAll files have correct license headers!")
     else:
-        print(f"   ✏️  Updated: {total_updated}")
-        print(f"   ⏭️  Skipped: {total_skipped}")
-        print("\n✅ Done!")
+        print(f"   Updated: {total_updated}")
+        print(f"   Skipped: {total_skipped}")
+        print("\nDone!")
 
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    cli()

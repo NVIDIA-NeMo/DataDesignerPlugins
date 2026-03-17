@@ -22,10 +22,9 @@ This generates a complete plugin skeleton under `plugins/data-designer-my-plugin
 
 ```
 data-designer-plugins/
-├── core/                     # Shared utilities (scaffold CLI, zero DD deps)
+├── core/                     # Monorepo management tooling (scaffold, catalog, license headers, etc.)
 ├── plugins/                  # One directory per plugin (auto-discovered by uv)
 │   └── data-designer-template/   # Reference implementation
-├── tools/                    # Repo automation (catalog, CODEOWNERS aggregation)
 └── docs/                     # Authoring guide, plugin catalog
 ```
 

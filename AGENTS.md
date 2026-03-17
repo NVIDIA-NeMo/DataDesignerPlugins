@@ -12,7 +12,6 @@ Example layout:
 core/data-designer-plugins-core/
 plugins/data-designer-template/
 plugins/data-designer-my-plugin/
-tools/
 docs/
 ```
 

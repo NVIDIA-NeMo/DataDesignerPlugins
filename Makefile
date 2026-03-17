@@ -45,31 +45,31 @@ test:
 # Assert every installed plugin passes assert_valid_plugin.
 
 validate:
-	uv run python tools/validate_plugins.py
+	uv run validate-plugins
 
 # ── Catalog & CODEOWNERS ─────────────────────────────────────────────────
 
 catalog:
-	uv run python tools/generate_catalog.py > docs/catalog.md
+	uv run generate-catalog > docs/catalog.md
 
 codeowners:
-	uv run python tools/aggregate_codeowners.py > CODEOWNERS
+	uv run aggregate-codeowners > CODEOWNERS
 
 check-catalog:
-	uv run python tools/generate_catalog.py > docs/catalog.md.new
+	uv run generate-catalog > docs/catalog.md.new
 	diff docs/catalog.md docs/catalog.md.new
 	@rm -f docs/catalog.md.new
 
 check-codeowners:
-	uv run python tools/aggregate_codeowners.py > CODEOWNERS.new
+	uv run aggregate-codeowners > CODEOWNERS.new
 	diff CODEOWNERS CODEOWNERS.new
 	@rm -f CODEOWNERS.new
 
 check-license-headers:
-	uv run python tools/update_license_headers.py --check
+	uv run update-license-headers --check
 
 update-license-headers:
-	uv run python tools/update_license_headers.py
+	uv run update-license-headers
 
 # ── Aggregate targets ────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ validate-release:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi
 	@if [ ! -d "$(PLUGIN_DIR)" ]; then echo "ERROR: $(PLUGIN_DIR) not found"; exit 1; fi
 	@PLUGIN_VERSION=$$(uv run python -c "import tomllib; print(tomllib.load(open('$(PLUGIN_DIR)/pyproject.toml','rb'))['project']['version'])"); \
-	uv run python tools/validate_release.py "$(PLUGIN)" "$$PLUGIN_VERSION"
+	uv run validate-release "$(PLUGIN)" "$$PLUGIN_VERSION"
 
 test-plugin:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi
