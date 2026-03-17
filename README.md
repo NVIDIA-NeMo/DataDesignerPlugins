@@ -39,6 +39,18 @@ uv run ruff check .             # Lint
 uv run ruff format --check .    # Format check
 ```
 
+## Releasing
+
+```bash
+make bump PLUGIN=data-designer-my-plugin PART=patch   # Bump version (major/minor/patch)
+git add plugins/data-designer-my-plugin/pyproject.toml
+git commit -m "chore(data-designer-my-plugin): bump version to 0.1.1"
+make release PLUGIN=data-designer-my-plugin            # Tag + build
+git push origin data-designer-my-plugin/v0.1.1         # Triggers CI publish
+```
+
+See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full release guide.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).

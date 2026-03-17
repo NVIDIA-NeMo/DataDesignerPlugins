@@ -17,6 +17,7 @@ aggregate-codeowners = "dd_plugins_core.codeowners:main"
 update-license-headers = "dd_plugins_core.license_headers:cli"
 validate-plugins = "dd_plugins_core.validate_plugins:main"
 validate-release = "dd_plugins_core.validate_release:main"
+bump-version = "dd_plugins_core.bump_version:main"
 
 [build-system]
 requires = ["hatchling"]

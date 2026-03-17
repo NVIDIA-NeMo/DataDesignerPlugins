@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test validate catalog codeowners check-catalog check-codeowners check-license-headers update-license-headers check all release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test validate catalog codeowners check-catalog check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -81,7 +81,12 @@ all: lint test validate check
 # Usage: make release PLUGIN=data-designer-template
 
 PLUGIN ?=
+PART ?= patch
 PLUGIN_DIR = plugins/$(PLUGIN)
+
+bump:
+	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi
+	uv run bump-version $(PLUGIN) $(PART)
 
 validate-release:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi

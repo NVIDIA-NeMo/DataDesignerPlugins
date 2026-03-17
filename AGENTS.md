@@ -125,17 +125,23 @@ from data_designer_my_plugin.config import MyPluginColumnConfig
 # from .config import MyPluginColumnConfig
 ```
 
-# Releasing a Plugin
+# Version Bumps and Releases
 
 Never release or publish a plugin version as a tag or to PyPI without being asked or having express permission from the user.
 
-If explicitly asked to prepare a release, use the repo targets:
+Use `make bump` to increment the version, then `make release` to tag. Do not edit `pyproject.toml` version strings by hand.
 
 ```bash
-make test-plugin PLUGIN=data-designer-my-plugin
-make build-plugin PLUGIN=data-designer-my-plugin
+# 1. Bump version (defaults to patch; use PART=minor or PART=major as needed)
+make bump PLUGIN=data-designer-my-plugin PART=patch
+
+# 2. Commit the version change
+git add plugins/data-designer-my-plugin/pyproject.toml
+git commit -m "chore(data-designer-my-plugin): bump version to 0.2.0"
+
+# 3. Tag and release (runs tests, validation, and build)
 make release PLUGIN=data-designer-my-plugin
-git push origin data-designer-my-plugin/v0.1.0
+git push origin data-designer-my-plugin/v0.2.0
 ```
 
 Release facts:
@@ -143,6 +149,7 @@ Release facts:
 - Tags are per-plugin: `data-designer-my-plugin/v0.1.0`.
 - Release CI expects the tagged commit to be on `main`.
 - The tag pusher must be listed in that plugin's `CODEOWNERS`.
+- Pre-release versions (e.g. `0.2.0a1`) are not supported by `bump-version`; edit `pyproject.toml` manually for those.
 
 # References
 

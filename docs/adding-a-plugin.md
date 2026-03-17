@@ -128,7 +128,18 @@ git push origin data-designer-my-plugin/v0.1.0
 
 `make release` runs the full local pipeline (ownership check, tests, validation, build), creates a git tag, and prints the push command. Pushing the tag triggers the CI publish job, which uploads to PyPI.
 
-The same process works for all subsequent releases. Bump `version` in `pyproject.toml`, merge to `main`, then run `make release` again.
+The same process works for all subsequent releases. Bump the version with `make bump`, merge to `main`, then run `make release` again:
+
+```bash
+make bump PLUGIN=data-designer-my-plugin PART=minor
+git add plugins/data-designer-my-plugin/pyproject.toml
+git commit -m "chore(data-designer-my-plugin): bump version to 0.2.0"
+# merge to main, then:
+make release PLUGIN=data-designer-my-plugin
+git push origin data-designer-my-plugin/v0.2.0
+```
+
+`PART` accepts `major`, `minor`, or `patch` (default). Pre-release versions (e.g. `0.2.0a1`) are not supported by `make bump`; edit `pyproject.toml` manually for those.
 
 ### What `make release` does
 
