@@ -5,99 +5,38 @@ stages:
   - lint
   - test
   - validate
-  - catalog
+  - check
 
 default:
   tags:
     - pages
+  image: ghcr.io/astral-sh/uv:python3.10-bookworm
+  before_script:
+    - make sync
 
 variables:
   UV_SYSTEM_PYTHON: "1"
 
-# ── Lint ─────────────────────────────────────────────────────────────────
-# Static analysis across the entire repo (formatting + style).
 lint:
   stage: lint
-  image: ghcr.io/astral-sh/uv:python3.10-bookworm
   script:
-    - uv sync --all-packages
-    - uv run ruff check .
-    - uv run ruff format --check .
+    - make lint
 
-# ── Test ─────────────────────────────────────────────────────────────────
-# Auto-discover plugins and test each in isolation.
-# Installing each plugin independently (outside the workspace) catches
-# dependency leaks — a plugin that works via `uv sync --all-packages`
-# but fails when installed standalone.
 test:
   stage: test
-  image: ghcr.io/astral-sh/uv:python3.10-bookworm
+  before_script: []  # test uses isolated venvs, not workspace sync
   script:
-    - |
-      failed=0
-      for pyproject in plugins/*/pyproject.toml; do
-        plugin_dir="$(dirname "$pyproject")"
-        plugin_name="$(basename "$plugin_dir")"
+    - make test
 
-        if [ ! -d "$plugin_dir/tests" ]; then
-          echo "⚠ $plugin_name: no tests/ directory, skipping"
-          continue
-        fi
-
-        echo "── Testing $plugin_name (isolated) ──"
-        uv venv ".venv-$plugin_name"
-        . ".venv-$plugin_name/bin/activate"
-        uv pip install -e "$plugin_dir"
-        uv pip install pytest
-        pytest "$plugin_dir/tests/" -v || failed=1
-        deactivate
-      done
-      exit $failed
-
-# ── Validate ─────────────────────────────────────────────────────────────
-# Assert every installed plugin passes assert_valid_plugin.
-# Uses the full workspace so DD imports are available.
 validate:
   stage: validate
-  image: ghcr.io/astral-sh/uv:python3.10-bookworm
   script:
-    - uv sync --all-packages
-    - |
-      uv run python -c "
-      import importlib.metadata, sys
-      from data_designer.engine.testing.utils import assert_valid_plugin
+    - make validate
 
-      eps = importlib.metadata.entry_points(group='data_designer.plugins')
-      if not eps:
-          print('ERROR: no plugins found in data_designer.plugins group')
-          sys.exit(1)
-
-      failed = False
-      for ep in eps:
-          try:
-              plugin = ep.load()
-              assert_valid_plugin(plugin)
-              print(f'OK: {ep.name}')
-          except Exception as exc:
-              print(f'FAIL: {ep.name} — {exc}')
-              failed = True
-
-      if failed:
-          sys.exit(1)
-      "
-
-# ── Catalog ──────────────────────────────────────────────────────────────
-# Regenerate the plugin catalog and CODEOWNERS, fail if either is stale.
-# Forces contributors to run the generators locally.
-catalog:
-  stage: catalog
-  image: ghcr.io/astral-sh/uv:python3.10-bookworm
+check:
+  stage: check
   script:
-    - uv sync --all-packages
-    - uv run python tools/generate_catalog.py > docs/catalog.md.new
-    - diff docs/catalog.md docs/catalog.md.new
-    - uv run python tools/aggregate_codeowners.py > CODEOWNERS.new
-    - diff CODEOWNERS CODEOWNERS.new
+    - make check
   artifacts:
     paths:
       - docs/catalog.md.new
