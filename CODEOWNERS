@@ -1,0 +1,15 @@
+# Data Designer Plugins — Code Ownership
+#
+# Default: repo maintainer
+# New plugins: add your team's ownership entry below
+
+* @etramel
+
+# Core infrastructure
+/core/ @etramel
+/.gitlab-ci.yml @etramel
+/tools/ @etramel
+
+# Plugins — add entries for your plugin here
+# Example: /plugins/data-designer-my-plugin/ @my-team
+/plugins/data-designer-template/ @etramel
