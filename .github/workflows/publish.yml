@@ -1,0 +1,102 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - "data-designer-*/v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for merge-base check
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Parse tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PLUGIN_NAME="${TAG%%/v*}"
+          TAG_VERSION="${TAG#*/v}"
+          PLUGIN_DIR="plugins/${PLUGIN_NAME}"
+          echo "plugin_name=${PLUGIN_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag_version=${TAG_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "plugin_dir=${PLUGIN_DIR}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate plugin directory exists
+        run: |
+          test -d "${{ steps.tag.outputs.plugin_dir }}" \
+            || { echo "ERROR: ${{ steps.tag.outputs.plugin_dir }} not found"; exit 1; }
+
+      - name: Validate tagged commit is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main \
+            || { echo "ERROR: tagged commit is not on main"; exit 1; }
+
+      - name: Sync workspace
+        run: make sync
+
+      - name: Validate version match and metadata
+        run: uv run ddp check-release "${{ steps.tag.outputs.plugin_name }}" "${{ steps.tag.outputs.tag_version }}"
+
+      - name: Authorize tag pusher against CODEOWNERS
+        env:
+          ACTOR: ${{ github.actor }}
+          PLUGIN_DIR: ${{ steps.tag.outputs.plugin_dir }}
+          # Team lookups require a token with read:org scope. The default
+          # GITHUB_TOKEN usually works for public teams; set MEMBERSHIP_TOKEN
+          # as a PAT secret if team resolution fails.
+          GH_TOKEN: ${{ secrets.MEMBERSHIP_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          OWNERS=$(grep -v '^\s*#' "${PLUGIN_DIR}/CODEOWNERS" | grep -v '^\s*$' | awk '{for(i=2;i<=NF;i++) print $i}')
+          MATCH=0
+          for owner in $OWNERS; do
+            case "$owner" in
+              @*/*)
+                ORG="${owner#@}"; ORG="${ORG%%/*}"
+                TEAM_SLUG="${owner##*/}"
+                if gh api "orgs/${ORG}/teams/${TEAM_SLUG}/memberships/${ACTOR}" >/dev/null 2>&1; then
+                  MATCH=1; break
+                fi
+                ;;
+              @*)
+                if [ "$owner" = "@${ACTOR}" ]; then MATCH=1; break; fi
+                ;;
+            esac
+          done
+          if [ "$MATCH" -eq 0 ]; then
+            echo "ERROR: @${ACTOR} is not an authorized owner of ${PLUGIN_DIR}/CODEOWNERS"
+            echo "Listed owners: $OWNERS"
+            exit 1
+          fi
+
+      - name: Run plugin tests in isolated venv
+        env:
+          PLUGIN_NAME: ${{ steps.tag.outputs.plugin_name }}
+          PLUGIN_DIR: ${{ steps.tag.outputs.plugin_dir }}
+        run: |
+          uv venv ".venv-${PLUGIN_NAME}"
+          . ".venv-${PLUGIN_NAME}/bin/activate"
+          uv pip install -e "${PLUGIN_DIR}"
+          uv pip install pytest
+          pytest "${PLUGIN_DIR}/tests/" -v
+
+      - name: Build distribution
+        run: uv build "${{ steps.tag.outputs.plugin_dir }}" --out-dir dist/
+
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish dist/*
