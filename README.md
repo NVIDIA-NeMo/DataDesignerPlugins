@@ -1,4 +1,4 @@
-# Data Designer Plugins
+# 🔌 🎨 NeMo Data Designer Plugins
 
 First-class NVIDIA-provided plugins for [NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
 
