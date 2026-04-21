@@ -86,7 +86,7 @@ pip install data-designer-{slug}
 ## Usage
 
 Once installed, the `{slug}` column type is automatically discovered by
-[NeMo Data Designer](https://github.com/NVIDIA/NeMo-Data-Designer).
+[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
 
 For the full plugin authoring guide, see the
 [main repository docs](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/docs/adding-a-plugin.md).

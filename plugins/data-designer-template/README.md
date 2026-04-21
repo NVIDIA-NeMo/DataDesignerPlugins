@@ -11,7 +11,7 @@ pip install data-designer-template
 ## Usage
 
 This plugin provides a `text-transform` column type for
-[NeMo Data Designer](https://github.com/NVIDIA/NeMo-Data-Designer).
+[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
 Once installed, the column type is automatically discovered by Data Designer.
 
 For the full plugin authoring guide, see the
