@@ -18,7 +18,7 @@ def test_main_produces_infrastructure_and_plugins_sections() -> None:
     output = buf.getvalue()
     assert "# Infrastructure" in output
     assert "# Plugins" in output
-    assert "/core/ @etramel" in output
+    assert "/core/ @NVIDIA-NeMo/data_designer_reviewers" in output
 
 
 def test_main_output_does_not_reference_tools_dir() -> None:

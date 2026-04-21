@@ -34,12 +34,12 @@ def main() -> None:
 
     lines = [
         "# Auto-generated from per-plugin CODEOWNERS files. Do not edit manually.",
-        "# Run: uv run ddp codeowners > CODEOWNERS",
+        "# Run: uv run ddp codeowners > .github/CODEOWNERS",
         "",
         "# Infrastructure",
-        "* @etramel",
-        "/core/ @etramel",
-        "/.gitlab-ci.yml @etramel",
+        "* @NVIDIA-NeMo/data_designer_reviewers",
+        "/core/ @NVIDIA-NeMo/data_designer_reviewers",
+        "/.github/ @NVIDIA-NeMo/data_designer_reviewers",
         "",
         "# Plugins",
     ]

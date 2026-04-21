@@ -53,7 +53,7 @@ catalog:
 	uv run ddp catalog > docs/catalog.md
 
 codeowners:
-	uv run ddp codeowners > CODEOWNERS
+	uv run ddp codeowners > .github/CODEOWNERS
 
 check-catalog:
 	uv run ddp catalog > docs/catalog.md.new
@@ -61,9 +61,9 @@ check-catalog:
 	@rm -f docs/catalog.md.new
 
 check-codeowners:
-	uv run ddp codeowners > CODEOWNERS.new
-	diff CODEOWNERS CODEOWNERS.new
-	@rm -f CODEOWNERS.new
+	uv run ddp codeowners > .github/CODEOWNERS.new
+	diff .github/CODEOWNERS .github/CODEOWNERS.new
+	@rm -f .github/CODEOWNERS.new
 
 check-license-headers:
 	uv run ddp license-headers --check

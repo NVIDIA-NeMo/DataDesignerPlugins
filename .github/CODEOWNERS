@@ -1,0 +1,10 @@
+# Auto-generated from per-plugin CODEOWNERS files. Do not edit manually.
+# Run: uv run ddp codeowners > .github/CODEOWNERS
+
+# Infrastructure
+* @NVIDIA-NeMo/data_designer_reviewers
+/core/ @NVIDIA-NeMo/data_designer_reviewers
+/.github/ @NVIDIA-NeMo/data_designer_reviewers
+
+# Plugins
+/plugins/data-designer-template/ @NVIDIA-NeMo/data_designer_reviewers
