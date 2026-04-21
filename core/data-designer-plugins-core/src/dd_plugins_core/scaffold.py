@@ -58,7 +58,7 @@ classifiers = [
 {slug} = "{import_name}.plugin:plugin"
 
 [project.urls]
-Repository = "https://gitlab-master.nvidia.com/etramel/data-designer-plugins"
+Repository = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"
 
 [build-system]
 requires = ["hatchling"]
@@ -89,7 +89,7 @@ Once installed, the `{slug}` column type is automatically discovered by
 [NeMo Data Designer](https://github.com/NVIDIA/NeMo-Data-Designer).
 
 For the full plugin authoring guide, see the
-[main repository docs](https://gitlab-master.nvidia.com/etramel/data-designer-plugins/-/blob/main/docs/adding-a-plugin.md).
+[main repository docs](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/docs/adding-a-plugin.md).
 """
 
 
@@ -175,13 +175,13 @@ def _discover_owner() -> str:
                 return value
         except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
-    return "# TODO: set owner (GitLab @username or email)"
+    return "# TODO: set owner (GitHub @username, @org/team, or email)"
 
 
 def generate_codeowners(owner: str) -> str:
     return f"""\
 # Owner(s) of this plugin — used to generate the root CODEOWNERS file.
-# GitLab accepts @username or email format.
+# GitHub accepts @username, @org/team, or email format.
 * {owner}
 """
 

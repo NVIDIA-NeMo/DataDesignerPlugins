@@ -5,8 +5,8 @@ First-class NVIDIA-provided plugins for [NeMo Data Designer](https://github.com/
 ## Quick Start
 
 ```bash
-git clone git@gitlab-master.nvidia.com:etramel/data-designer-plugins.git
-cd data-designer-plugins
+git clone git@github.com:NVIDIA-NeMo/DataDesignerPlugins.git
+cd DataDesignerPlugins
 make sync
 ```
 

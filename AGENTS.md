@@ -59,7 +59,7 @@ Rather than conducting slow review via Github urls, clone the latest (or appropr
 When creating or updating a plugin, make your edits within a worktree.
 Prefer the repo's canonical `Makefile` targets over ad hoc substitutes.
 Test your changes locally and ensure that you have a locally green CI by running the Makefile CI commands.
-Upon completion, submit a merge request using the `glab` cli.
+Upon completion, submit a pull request using the `gh` cli.
 
 Canonical local workflow:
 
@@ -88,10 +88,10 @@ make check-license-headers
 make update-license-headers
 ```
 
-Merge request example:
+Pull request example:
 
 ```bash
-glab mr create
+gh pr create
 ```
 
 # Development Style

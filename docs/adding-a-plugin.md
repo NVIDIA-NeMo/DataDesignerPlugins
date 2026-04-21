@@ -64,22 +64,22 @@ def test_valid_plugin():
 
 ```bash
 uv run ddp catalog > docs/catalog.md
-uv run ddp codeowners > CODEOWNERS
+uv run ddp codeowners > .github/CODEOWNERS
 ```
 
-CI will reject your MR if these are stale.
+CI will reject your PR if these are stale.
 
 ## 5. Submit
 
 ```bash
 git checkout -b feature/my-plugin
-git add plugins/data-designer-my-plugin/ docs/catalog.md CODEOWNERS
+git add plugins/data-designer-my-plugin/ docs/catalog.md .github/CODEOWNERS
 git commit -m "feat: add my-plugin"
 git push -u origin feature/my-plugin
-glab mr create
+gh pr create
 ```
 
-CI runs four checks on your MR: lint (ruff), isolated install + pytest per plugin, `assert_valid_plugin` on all entry points, and catalog/CODEOWNERS freshness.
+CI runs four checks on your PR: lint (ruff), isolated install + pytest per plugin, `assert_valid_plugin` on all entry points, and catalog/CODEOWNERS freshness.
 
 ## 6. Release to PyPI
 
@@ -183,10 +183,10 @@ Pre-release versions won't be installed by default with `pip install`. Users mus
 |---------|-----|
 | `ERROR: PLUGIN_DIR not found` | Check `PLUGIN=` matches the directory name under `plugins/` |
 | Version mismatch | The tag version must match `project.version` in `pyproject.toml` |
-| CODEOWNERS failure in CI | Add your GitLab `@username` or email to the plugin's `CODEOWNERS` file |
+| CODEOWNERS failure in CI | Add your GitHub `@username`, `@org/team`, or email to the plugin's `CODEOWNERS` file |
 | `ERROR: tagged commit is not on main` | Tags must point to commits on the `main` branch |
 | Package name taken on PyPI | Choose a different name; all plugins must use the `data-designer-` prefix |
-| `PYPI_TOKEN` not set | A repo maintainer needs to add the `PYPI_TOKEN` CI/CD variable in GitLab project settings |
+| `PYPI_TOKEN` not set | A repo maintainer needs to add the `PYPI_TOKEN` secret in GitHub repository settings (Settings → Secrets and variables → Actions) |
 
 ## Entry Point Discovery
 

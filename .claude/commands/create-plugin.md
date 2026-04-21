@@ -176,7 +176,7 @@ known-first-party = [..., "data_designer_my_plugin"]
 
 ### 3f. CODEOWNERS
 
-The scaffold generates this from `git config user.email`. Check that it uses `@username` format (e.g., `* @etramel`), not email format. If it used email, fix it to match the convention in the template's CODEOWNERS.
+The scaffold generates this from `git config user.email`. Check that it uses `@username` or `@org/team` format (e.g., `* @NVIDIA-NeMo/data_designer_reviewers`), not email format. If it used email, fix it to match the convention in the template's CODEOWNERS.
 
 ---
 
