@@ -21,11 +21,12 @@ This generates a complete plugin skeleton under `plugins/data-designer-my-plugin
 ## Repository Structure
 
 ```
-data-designer-plugins/
-├── core/                          # Monorepo management tooling (ddp CLI)
-├── plugins/                       # One directory per plugin (auto-discovered by uv)
-│   └── data-designer-template/    # Reference implementation
-└── docs/                          # Authoring guide, plugin catalog
+DataDesignerPlugins/
+├── core/
+│   └── data-designer-plugins-core/   # Monorepo management tooling (ddp CLI)
+├── plugins/                          # One directory per plugin (auto-discovered by uv)
+│   └── data-designer-template/       # Reference implementation
+└── docs/                             # Authoring guide, plugin catalog
 ```
 
 Each plugin is an independent Python package with its own `pyproject.toml`, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
