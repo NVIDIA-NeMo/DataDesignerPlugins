@@ -446,7 +446,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "data-designer", specifier = ">=0.5.3" }]
+requires-dist = [{ name = "data-designer", specifier = ">=0.5.7" }]
 
 [[package]]
 name = "diff-cover"
