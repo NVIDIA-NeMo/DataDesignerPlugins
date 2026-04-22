@@ -20,6 +20,9 @@ members = [
 [tool.uv]
 package = false
 required-version = ">=0.7.10"
+constraint-dependencies = [
+    "idna>=3.12",
+]
 
 [tool.ruff]
 line-length = 120

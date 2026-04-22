@@ -13,6 +13,7 @@ members = [
     "data-designer-plugins-workspace",
     "data-designer-template",
 ]
+constraints = [{ name = "idna", specifier = ">=3.12" }]
 
 [[package]]
 name = "annotated-doc"
