@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for dd_plugins_core.license_headers helper functions."""
+"""Tests for ddp.license_headers helper functions."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from dd_plugins_core.license_headers import (
+from ddp.license_headers import (
     extract_license_header,
     generate_license_header,
     parse_header_start_year,

@@ -1,16 +1,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for dd_plugins_core.validate_release."""
+"""Tests for ddp.validate_release."""
 
 from __future__ import annotations
 
-from dd_plugins_core.validate_release import REQUIRED_FIELDS, main
+from ddp.validate_release import REQUIRED_FIELDS, main
 
 
 def test_valid_template_plugin_passes() -> None:
     """validate_release should pass for the template plugin with its actual version."""
-    from dd_plugins_core._repo import find_repo_root, load_toml
+    from ddp._repo import find_repo_root, load_toml
 
     root = find_repo_root()
     data = load_toml(root / "plugins" / "data-designer-template" / "pyproject.toml")

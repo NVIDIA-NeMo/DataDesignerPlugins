@@ -13,7 +13,7 @@ build-backend = "hatchling.build"
 
 [tool.uv.workspace]
 members = [
-    "core/data-designer-plugins-core",
+    "devtools/ddp",
     "plugins/*",
 ]
 
@@ -46,7 +46,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["dd_plugins_core", "data_designer_template"]
+known-first-party = ["ddp", "data_designer_template"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

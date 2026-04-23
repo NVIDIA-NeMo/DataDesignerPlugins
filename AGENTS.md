@@ -2,14 +2,14 @@
 
 # Repo Facts
 
-This repo is a `uv` workspace with shared tooling in `core/` and one independent package per plugin under `plugins/*`.
+This repo is a `uv` workspace with shared dev tooling in `devtools/` and one independent package per plugin under `plugins/*`.
 The Python compatibility baseline here is 3.10+, not 3.11-only.
 Use `plugins/data-designer-template/` as the reference implementation before inventing new structure.
 
 Example layout:
 
 ```text
-core/data-designer-plugins-core/
+devtools/ddp/
 plugins/data-designer-template/
 plugins/data-designer-my-plugin/
 docs/

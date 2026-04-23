@@ -9,9 +9,9 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "data-designer-plugins-core",
     "data-designer-plugins-workspace",
     "data-designer-template",
+    "ddp",
 ]
 constraints = [{ name = "idna", specifier = ">=3.12" }]
 
@@ -423,17 +423,6 @@ wheels = [
 ]
 
 [[package]]
-name = "data-designer-plugins-core"
-version = "0.1.0"
-source = { editable = "core/data-designer-plugins-core" }
-dependencies = [
-    { name = "tomli", marker = "python_full_version < '3.11'" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.1.0" }]
-
-[[package]]
 name = "data-designer-plugins-workspace"
 version = "0.0.0"
 source = { virtual = "." }
@@ -448,6 +437,17 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "data-designer", specifier = ">=0.5.7" }]
+
+[[package]]
+name = "ddp"
+version = "0.1.0"
+source = { editable = "devtools/ddp" }
+dependencies = [
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.1.0" }]
 
 [[package]]
 name = "diff-cover"

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dd_plugins_core._repo import find_repo_root
+from ddp._repo import find_repo_root
 
 
 def main() -> None:
@@ -38,7 +38,7 @@ def main() -> None:
         "",
         "# Infrastructure",
         "* @NVIDIA-NeMo/data_designer_reviewers",
-        "/core/ @NVIDIA-NeMo/data_designer_reviewers",
+        "/devtools/ @NVIDIA-NeMo/data_designer_reviewers",
         "/.github/ @NVIDIA-NeMo/data_designer_reviewers",
         "",
         "# Plugins",

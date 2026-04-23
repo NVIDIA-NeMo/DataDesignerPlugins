@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [project]
-name = "data-designer-plugins-core"
+name = "ddp"
 version = "0.1.0"
 description = "Local dev-only monorepo management tooling for data-designer-plugins (not a runtime dependency)"
 requires-python = ">=3.10"
@@ -11,14 +11,14 @@ dependencies = [
 ]
 
 [project.scripts]
-ddp = "dd_plugins_core.cli:main"
+ddp = "ddp.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dd_plugins_core"]
+packages = ["src/ddp"]
 
 [tool.ruff]
 extend = "../../pyproject.toml"

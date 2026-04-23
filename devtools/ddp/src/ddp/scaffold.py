@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dd_plugins_core._repo import SPDX_HEADER
+from ddp._repo import SPDX_HEADER
 
 
 def to_underscored(slug: str) -> str:

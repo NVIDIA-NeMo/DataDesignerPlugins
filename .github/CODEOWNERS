@@ -3,7 +3,7 @@
 
 # Infrastructure
 * @NVIDIA-NeMo/data_designer_reviewers
-/core/ @NVIDIA-NeMo/data_designer_reviewers
+/devtools/ @NVIDIA-NeMo/data_designer_reviewers
 /.github/ @NVIDIA-NeMo/data_designer_reviewers
 
 # Plugins

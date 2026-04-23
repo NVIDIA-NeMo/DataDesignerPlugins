@@ -415,14 +415,14 @@ def cli(args: list[str] | None = None) -> None:
     )
     args = parser.parse_args(args)
 
-    from dd_plugins_core._repo import find_repo_root
+    from ddp._repo import find_repo_root
 
     repo_path = find_repo_root()
     all_files_needing_update: list[Path] = []
     total_processed = total_updated = total_skipped = 0
 
-    # Process core/ and plugins/ directory structures
-    for group in ["core", "plugins"]:
+    # Process devtools/ and plugins/ directory structures
+    for group in ["devtools", "plugins"]:
         group_path = repo_path / group
         if not group_path.exists():
             continue

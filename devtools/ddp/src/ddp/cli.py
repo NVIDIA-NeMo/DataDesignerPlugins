@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add or check SPDX license headers",
         description=(
             "Add or update SPDX license headers in all Python and shell files under "
-            "core/ and plugins/. In --check mode, reports files that are missing or "
+            "devtools/ and plugins/. In --check mode, reports files that are missing or "
             "have outdated headers and exits non-zero if any need updating."
         ),
     )
@@ -130,28 +130,28 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _run_new(args: argparse.Namespace) -> int:
-    from dd_plugins_core.scaffold import main as scaffold_main
+    from ddp.scaffold import main as scaffold_main
 
     scaffold_main([args.name])
     return 0
 
 
 def _run_catalog(args: argparse.Namespace) -> int:
-    from dd_plugins_core.catalog import main as catalog_main
+    from ddp.catalog import main as catalog_main
 
     catalog_main()
     return 0
 
 
 def _run_codeowners(args: argparse.Namespace) -> int:
-    from dd_plugins_core.codeowners import main as codeowners_main
+    from ddp.codeowners import main as codeowners_main
 
     codeowners_main()
     return 0
 
 
 def _run_license_headers(args: argparse.Namespace) -> int:
-    from dd_plugins_core.license_headers import cli as license_cli
+    from ddp.license_headers import cli as license_cli
 
     argv = ["--check"] if args.check else []
     license_cli(argv)
@@ -159,20 +159,20 @@ def _run_license_headers(args: argparse.Namespace) -> int:
 
 
 def _run_validate(args: argparse.Namespace) -> int:
-    from dd_plugins_core.validate_plugins import main as validate_main
+    from ddp.validate_plugins import main as validate_main
 
     validate_main()
     return 0
 
 
 def _run_check_release(args: argparse.Namespace) -> int:
-    from dd_plugins_core.validate_release import main as release_main
+    from ddp.validate_release import main as release_main
 
     return release_main([args.plugin_name, args.tag_version])
 
 
 def _run_bump(args: argparse.Namespace) -> int:
-    from dd_plugins_core.bump_version import main as bump_main
+    from ddp.bump_version import main as bump_main
 
     return bump_main([args.plugin, args.part])
 

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dd_plugins_core.cli import build_parser
+from ddp.cli import build_parser
 
 
 class TestBuildParser:
@@ -67,7 +67,7 @@ class TestBuildParser:
 class TestDispatch:
     """Tests for subcommand dispatch routing."""
 
-    @patch("dd_plugins_core.cli._run_new")
+    @patch("ddp.cli._run_new")
     def test_new_dispatches(self, mock_run: MagicMock) -> None:
         mock_run.return_value = 0
         parser = build_parser()
@@ -75,7 +75,7 @@ class TestDispatch:
         args.func(args)
         mock_run.assert_called_once_with(args)
 
-    @patch("dd_plugins_core.cli._run_catalog")
+    @patch("ddp.cli._run_catalog")
     def test_catalog_dispatches(self, mock_run: MagicMock) -> None:
         mock_run.return_value = 0
         parser = build_parser()
@@ -83,7 +83,7 @@ class TestDispatch:
         args.func(args)
         mock_run.assert_called_once_with(args)
 
-    @patch("dd_plugins_core.cli._run_validate")
+    @patch("ddp.cli._run_validate")
     def test_validate_dispatches(self, mock_run: MagicMock) -> None:
         mock_run.return_value = 0
         parser = build_parser()
@@ -91,7 +91,7 @@ class TestDispatch:
         args.func(args)
         mock_run.assert_called_once_with(args)
 
-    @patch("dd_plugins_core.cli._run_bump")
+    @patch("ddp.cli._run_bump")
     def test_bump_dispatches(self, mock_run: MagicMock) -> None:
         mock_run.return_value = 0
         parser = build_parser()

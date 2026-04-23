@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for dd_plugins_core.bump_version."""
+"""Tests for ddp.bump_version."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from dd_plugins_core._repo import find_repo_root
-from dd_plugins_core.bump_version import (
+from ddp._repo import find_repo_root
+from ddp.bump_version import (
     bump_semver,
     main,
     parse_semver,
@@ -136,21 +136,21 @@ class TestMainCli:
 
     def test_patch_bump(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         toml = self._make_plugin(tmp_path, "data-designer-test", "1.0.0")
-        monkeypatch.setattr("dd_plugins_core.bump_version.find_repo_root", lambda: tmp_path)
+        monkeypatch.setattr("ddp.bump_version.find_repo_root", lambda: tmp_path)
         result = main(["data-designer-test", "patch"])
         assert result == 0
         assert 'version = "1.0.1"' in toml.read_text()
 
     def test_minor_bump(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         toml = self._make_plugin(tmp_path, "data-designer-test", "0.3.7")
-        monkeypatch.setattr("dd_plugins_core.bump_version.find_repo_root", lambda: tmp_path)
+        monkeypatch.setattr("ddp.bump_version.find_repo_root", lambda: tmp_path)
         result = main(["data-designer-test", "minor"])
         assert result == 0
         assert 'version = "0.4.0"' in toml.read_text()
 
     def test_major_bump(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         toml = self._make_plugin(tmp_path, "data-designer-test", "2.5.1")
-        monkeypatch.setattr("dd_plugins_core.bump_version.find_repo_root", lambda: tmp_path)
+        monkeypatch.setattr("ddp.bump_version.find_repo_root", lambda: tmp_path)
         result = main(["data-designer-test", "major"])
         assert result == 0
         assert 'version = "3.0.0"' in toml.read_text()
@@ -158,6 +158,6 @@ class TestMainCli:
     def test_missing_plugin_exits(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         (tmp_path / "plugins").mkdir()
         (tmp_path / "pyproject.toml").write_text("[project]\n")
-        monkeypatch.setattr("dd_plugins_core.bump_version.find_repo_root", lambda: tmp_path)
+        monkeypatch.setattr("ddp.bump_version.find_repo_root", lambda: tmp_path)
         with pytest.raises(SystemExit):
             main(["data-designer-nonexistent", "patch"])

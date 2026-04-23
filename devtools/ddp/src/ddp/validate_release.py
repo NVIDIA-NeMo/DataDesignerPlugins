@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from dd_plugins_core._repo import find_repo_root, load_toml
+from ddp._repo import find_repo_root, load_toml
 
 REQUIRED_FIELDS = ("description", "license", "readme", "authors")
 

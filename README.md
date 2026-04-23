@@ -22,8 +22,8 @@ This generates a complete plugin skeleton under `plugins/data-designer-my-plugin
 
 ```
 DataDesignerPlugins/
-├── core/
-│   └── data-designer-plugins-core/   # Monorepo management tooling (ddp CLI)
+├── devtools/
+│   └── ddp/                          # Monorepo management tooling (ddp CLI, dev-only)
 ├── plugins/                          # One directory per plugin (auto-discovered by uv)
 │   └── data-designer-template/       # Reference implementation
 └── docs/                             # Authoring guide, plugin catalog

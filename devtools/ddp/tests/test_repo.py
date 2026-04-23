@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for dd_plugins_core._repo shared utilities."""
+"""Tests for ddp._repo shared utilities."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from dd_plugins_core._repo import SPDX_HEADER, find_repo_root, load_toml
+from ddp._repo import SPDX_HEADER, find_repo_root, load_toml
 
 
 def test_find_repo_root_returns_directory_with_plugins() -> None:
@@ -41,10 +41,10 @@ def test_find_repo_root_is_absolute() -> None:
 
 def test_load_toml_returns_dict() -> None:
     root = find_repo_root()
-    core_toml = root / "core" / "data-designer-plugins-core" / "pyproject.toml"
-    data = load_toml(core_toml)
+    ddp_toml = root / "devtools" / "ddp" / "pyproject.toml"
+    data = load_toml(ddp_toml)
     assert isinstance(data, dict)
-    assert data["project"]["name"] == "data-designer-plugins-core"
+    assert data["project"]["name"] == "ddp"
 
 
 def test_load_toml_missing_file_raises(tmp_path: Path) -> None:
