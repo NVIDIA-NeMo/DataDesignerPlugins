@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 from collections import defaultdict, deque
@@ -21,6 +22,8 @@ from typing import Literal
 
 import nltk
 from nltk.tokenize import sent_tokenize
+
+logger = logging.getLogger(__name__)
 
 
 def load_multi_doc_manifest(manifest_path: Path | None) -> list[list[str]]:
@@ -45,7 +48,7 @@ def load_multi_doc_manifest(manifest_path: Path | None) -> list[list[str]]:
     try:
         manifest_text = manifest_path.read_text(encoding="utf-8")
     except OSError as exc:
-        print(f"Warning: Unable to read multi_doc_manifest at {manifest_path}: {exc}")
+        logger.warning("Unable to read multi_doc_manifest at %s: %s", manifest_path, exc)
         return []
 
     data = None
@@ -55,7 +58,7 @@ def load_multi_doc_manifest(manifest_path: Path | None) -> list[list[str]]:
         try:
             data = yaml.safe_load(manifest_text)
         except yaml.YAMLError as exc:
-            print(f"Warning: Failed to parse multi_doc_manifest: {exc}")
+            logger.warning("Failed to parse multi_doc_manifest: %s", exc)
             return []
 
     if isinstance(data, dict) and "bundles" in data:
@@ -74,7 +77,7 @@ def load_multi_doc_manifest(manifest_path: Path | None) -> list[list[str]]:
             if clean_docs:
                 bundles.append(clean_docs)
     else:
-        print("Warning: multi_doc_manifest must be a list or dict with 'bundles'")
+        logger.warning("multi_doc_manifest must be a list or dict with 'bundles'")
 
     return bundles
 

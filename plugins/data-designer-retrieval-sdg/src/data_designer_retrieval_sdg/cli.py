@@ -19,6 +19,7 @@ discovery, chunking, and async cell scheduling (when
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -32,6 +33,8 @@ from data_designer_retrieval_sdg.convert import run_conversion
 from data_designer_retrieval_sdg.pipeline import build_model_providers, build_qa_generation_pipeline
 from data_designer_retrieval_sdg.seed_reader import DocumentChunkerSeedReader
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
+
+logger = logging.getLogger(__name__)
 
 
 def _build_seed_source(args: argparse.Namespace) -> DocumentChunkerSeedSource:
@@ -243,7 +246,7 @@ def _run_preview(
         preview_result = data_designer.preview(config_builder, num_records=1)
         preview_result.display_sample_record()
     except Exception as e:  # noqa: BLE001 - preview is best-effort UX
-        print(f"Preview error: {e}")
+        logger.warning("Preview error: %s", e)
 
 
 def _run_batches(
