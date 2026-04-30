@@ -6,6 +6,14 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+from data_designer.config.models import (
+    ChatCompletionInferenceParams,
+    EmbeddingInferenceParams,
+    ModelConfig,
+)
+from data_designer.engine.dataset_builders.errors import DatasetGenerationError
+
 from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 from data_designer_retrieval_sdg.dedup import EmbeddingDedupColumnGenerator
 
@@ -151,3 +159,48 @@ def test_config_round_trip() -> None:
     assert cfg.items_key == "pairs"
     assert cfg.text_field == "question"
     assert cfg.similarity_threshold == 0.9
+
+
+def test_is_llm_bound_true() -> None:
+    """The column issues embedding HTTP calls and must route through the
+    async scheduler's LLM-wait semaphore."""
+    gen = _make_generator()
+    assert gen.is_llm_bound is True
+
+
+def test_validate_accepts_embedding_model() -> None:
+    """``_validate()`` should succeed when the configured alias resolves to
+    a ``ModelConfig`` whose inference parameters declare an embedding model."""
+    gen = _make_generator()
+    gen.resource_provider.model_registry.get_model_config.return_value = ModelConfig(
+        alias="embed",
+        model="some/embedding-model",
+        inference_parameters=EmbeddingInferenceParams(),
+    )
+    gen._validate()
+
+
+def test_validate_rejects_chat_model() -> None:
+    """``_validate()`` should fail fast at task construction when the alias
+    resolves to a non-embedding model, naming the offending alias."""
+    gen = _make_generator()
+    gen.resource_provider.model_registry.get_model_config.return_value = ModelConfig(
+        alias="embed",
+        model="some/chat-model",
+        inference_parameters=ChatCompletionInferenceParams(),
+    )
+    with pytest.raises(DatasetGenerationError, match="embed"):
+        gen._validate()
+
+
+def test_embedder_is_cached_across_calls() -> None:
+    """Repeated access should hit ``model_registry.get_model`` exactly once
+    so per-row dedup doesn't re-walk the registry."""
+    gen = _make_generator()
+    gen.resource_provider.model_registry.get_model.return_value = MagicMock()
+
+    first = gen.embedder
+    second = gen.embedder
+
+    assert first is second
+    gen.resource_provider.model_registry.get_model.assert_called_once_with(model_alias="embed")

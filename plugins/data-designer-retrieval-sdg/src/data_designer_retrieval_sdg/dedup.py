@@ -10,18 +10,25 @@ scheduler when enabled, falling back to the sync bridge otherwise.
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import Any
 
 import numpy as np
-from data_designer.engine.column_generators.generators.base import ColumnGeneratorCellByCell
+from data_designer.config.models import GenerationType
+from data_designer.engine.column_generators.generators.base import (
+    ColumnGeneratorWithModelRegistry,
+    GenerationStrategy,
+)
+from data_designer.engine.dataset_builders.errors import DatasetGenerationError
+from data_designer.engine.models.facade import ModelFacade
 
 from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 
 logger = logging.getLogger(__name__)
 
 
-class EmbeddingDedupColumnGenerator(ColumnGeneratorCellByCell[EmbeddingDedupColumnConfig]):
+class EmbeddingDedupColumnGenerator(ColumnGeneratorWithModelRegistry[EmbeddingDedupColumnConfig]):
     """Remove near-duplicate items from a list-valued column.
 
     For each row the generator:
@@ -33,14 +40,44 @@ class EmbeddingDedupColumnGenerator(ColumnGeneratorCellByCell[EmbeddingDedupColu
     4. Computes pairwise cosine similarity and greedily drops items whose
        similarity exceeds ``similarity_threshold``.
     5. Returns the surviving items under ``self.config.name``.
+
+    Extends :class:`ColumnGeneratorWithModelRegistry` so the column reports
+    ``is_llm_bound = True`` to the async scheduler. Without this, embedding
+    HTTP calls would bypass ``_llm_wait_semaphore`` and could fan out up to
+    a full row group's worth of concurrent requests at the embedding endpoint.
     """
 
-    @property
-    def embedder(self):
-        """Resolve the embedding model from the resource provider."""
-        return self.resource_provider.model_registry.get_model(
-            model_alias=self.config.model_alias,
-        )
+    @staticmethod
+    def get_generation_strategy() -> GenerationStrategy:
+        """Each row's items are deduplicated independently."""
+        return GenerationStrategy.CELL_BY_CELL
+
+    @functools.cached_property
+    def embedder(self) -> ModelFacade:
+        """Resolve the embedding model once and cache it on the instance."""
+        return self.get_model(model_alias=self.config.model_alias)
+
+    def _validate(self) -> None:
+        """Fail fast at task construction if the alias isn't an embedding model.
+
+        Without this guard, a misconfigured chat-model alias surfaces only on
+        the first row's embedding call as either an :class:`AttributeError`
+        from the facade or a 400 from the embeddings endpoint.
+
+        Raises:
+            DatasetGenerationError: When ``self.config.model_alias`` resolves
+                to a :class:`ModelConfig` whose inference parameters are not
+                ``EmbeddingInferenceParams``.
+        """
+        super()._validate()
+        model_config = self.get_model_config(model_alias=self.config.model_alias)
+        if model_config.generation_type != GenerationType.EMBEDDING:
+            raise DatasetGenerationError(
+                f"EmbeddingDedupColumnGenerator requires an embedding model, "
+                f"but model alias {self.config.model_alias!r} resolves to a "
+                f"{model_config.generation_type.value!r} model. Configure a "
+                f"ModelConfig with EmbeddingInferenceParams for this alias."
+            )
 
     def resolve_items(self, data: dict) -> list[Any]:
         """Return the list of items to deduplicate from a row dict.
