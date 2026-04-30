@@ -4,41 +4,64 @@
 """CLI entry points for the data-designer-retrieval-sdg package.
 
 Provides two subcommands:
+
 - ``generate`` -- run the full SDG pipeline on a directory of text files
 - ``convert``  -- convert raw SDG output to Automodel-compatible formats
+
+The ``generate`` subcommand drives a per-batch loop so each batch's output
+is checkpointed to its own JSON file (resumable across crashes).  The
+batching wraps DataDesigner's native ``IndexRange`` selection strategy
+applied to a :class:`DocumentChunkerSeedSource`; the framework owns
+discovery, chunking, and async cell scheduling (when
+``DATA_DESIGNER_ASYNC_ENGINE=1`` is set).
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-import time
 from pathlib import Path
 
 import data_designer.config as dd
+from data_designer.engine.resources.seed_reader import SeedReaderError
+from data_designer.engine.secret_resolver import PlaintextResolver
 from data_designer.interface import DataDesigner
 from data_designer.logging import LoggerConfig, LoggingConfig, OutputConfig, configure_logging
 
 from data_designer_retrieval_sdg.convert import run_conversion
-from data_designer_retrieval_sdg.ingest import load_text_files_from_directory
 from data_designer_retrieval_sdg.pipeline import build_model_providers, build_qa_generation_pipeline
+from data_designer_retrieval_sdg.seed_reader import DocumentChunkerSeedReader
+from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
 
-def _format_duration(seconds: float) -> str:
-    """Format a duration in seconds to a human-readable string."""
-    seconds = max(0, int(seconds))
-    if seconds < 60:
-        return f"{seconds}s"
-    minutes, secs = divmod(seconds, 60)
-    if minutes < 60:
-        return f"{minutes}m {secs}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes}m"
+def _build_seed_source(args: argparse.Namespace) -> DocumentChunkerSeedSource:
+    """Construct a :class:`DocumentChunkerSeedSource` from CLI arguments."""
+    return DocumentChunkerSeedSource(
+        path=str(args.input_dir),
+        file_pattern=args.file_pattern,
+        recursive=args.recursive,
+        file_extensions=args.file_extensions,
+        min_text_length=args.min_text_length,
+        sentences_per_chunk=args.sentences_per_chunk,
+        num_sections=args.num_sections,
+        num_files=args.num_files,
+        multi_doc=args.multi_doc,
+        bundle_size=args.bundle_size,
+        bundle_strategy=args.bundle_strategy,
+        max_docs_per_bundle=args.max_docs_per_bundle,
+        multi_doc_manifest=str(args.multi_doc_manifest) if args.multi_doc_manifest else None,
+    )
 
 
-# ---------------------------------------------------------------------------
-# ``generate`` subcommand
-# ---------------------------------------------------------------------------
+def _count_seed_records(seed_source: DocumentChunkerSeedSource) -> int:
+    """Probe the seed reader for the total number of records it will produce.
+
+    Builds and attaches a temporary reader so the manifest is materialised
+    once for batch math without reading any file contents.
+    """
+    reader = DocumentChunkerSeedReader()
+    reader.attach(seed_source, PlaintextResolver())
+    return reader.get_seed_dataset_size()
 
 
 def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -51,18 +74,27 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
 
     p.add_argument("--input-dir", type=Path, required=True, help="Directory containing text files")
     p.add_argument("--output-dir", type=Path, required=True, help="Directory to save generated output")
+    p.add_argument("--file-pattern", default="*", help="Filename glob (basenames only)")
+    p.add_argument("--no-recursive", dest="recursive", action="store_false", help="Disable recursive search")
+    p.set_defaults(recursive=True)
+    p.add_argument(
+        "--file-extensions",
+        nargs="+",
+        default=[".txt", ".md", ".text"],
+        help="Allowed file extensions (use empty string '' to match files without extensions)",
+    )
     p.add_argument("--min-text-length", type=int, default=50, help="Minimum document text length")
     p.add_argument("--sentences-per-chunk", type=int, default=5, help="Sentences per chunk")
     p.add_argument("--num-sections", type=int, default=1, help="Sections to divide chunks into")
+    p.add_argument("--num-files", type=int, default=None, help="Max files to process")
     p.add_argument("--max-artifacts-per-type", type=int, default=2, help="Max artifacts per type")
     p.add_argument("--num-pairs", type=int, default=7, help="QA pairs per document")
     p.add_argument("--min-hops", type=int, default=2, help="Min hops for multi-hop questions")
     p.add_argument("--max-hops", type=int, default=4, help="Max hops for multi-hop questions")
     p.add_argument("--min-complexity", type=int, default=4, help="Min question complexity")
+    p.add_argument("--similarity-threshold", type=float, default=0.9, help="Cosine threshold for QA-pair dedup")
     p.add_argument("--preview", action="store_true", help="Preview without full generation")
-    p.add_argument("--file-extensions", nargs="+", default=None, help="File extensions to include")
     p.add_argument("--artifact-path", type=Path, default=Path("./artifacts"), help="DD artifact path")
-    p.add_argument("--num-files", type=int, default=None, help="Max files to process")
     p.add_argument("--batch-size", type=int, default=200, help="Records per batch")
     p.add_argument("--start-batch-index", type=int, default=0, help="Batch index to start from")
     p.add_argument("--end-batch-index", type=int, default=-1, help="Batch index to end at (exclusive)")
@@ -74,7 +106,7 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
         "--bundle-strategy",
         choices=["sequential", "doc_balanced", "interleaved"],
         default="sequential",
-        help="Segment splitting strategy",
+        help="Section splitting strategy",
     )
     g.add_argument("--max-docs-per-bundle", type=int, default=3, help="Max docs per bundle")
     g.add_argument("--multi-doc-manifest", type=Path, default=None, help="Manifest for explicit bundles")
@@ -105,29 +137,6 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def _run_generate(args: argparse.Namespace) -> None:
     """Execute the ``generate`` subcommand."""
-    file_extensions = args.file_extensions or [".txt", ".md", ".text", ""]
-
-    print(f"Loading text files from {args.input_dir}...")
-    if args.multi_doc:
-        print(f"Multi-doc mode enabled: bundle_size={args.bundle_size}, strategy={args.bundle_strategy}")
-
-    text_files_df = load_text_files_from_directory(
-        input_dir=args.input_dir,
-        file_extensions=file_extensions,
-        min_text_length=args.min_text_length,
-        sentences_per_chunk=args.sentences_per_chunk,
-        num_sections=args.num_sections,
-        num_files=args.num_files,
-        multi_doc=args.multi_doc,
-        bundle_size=args.bundle_size,
-        bundle_strategy=args.bundle_strategy,
-        max_docs_per_bundle=args.max_docs_per_bundle,
-        multi_doc_manifest=args.multi_doc_manifest,
-    )
-
-    row_type = "bundles" if args.multi_doc else "text files"
-    print(f"\nLoaded {len(text_files_df)} {row_type}")
-
     configure_logging(
         LoggingConfig(
             logger_configs=[LoggerConfig(name="data_designer", level=args.log_level)],
@@ -135,6 +144,16 @@ def _run_generate(args: argparse.Namespace) -> None:
             root_level=args.log_level,
         )
     )
+
+    seed_source = _build_seed_source(args)
+    try:
+        total_records = _count_seed_records(seed_source)
+    except SeedReaderError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    row_type = "bundles" if args.multi_doc else "text files"
+    print(f"Discovered {total_records} {row_type} under {args.input_dir}")
 
     model_providers, custom_providers = build_model_providers(
         custom_provider_endpoint=args.custom_provider_endpoint,
@@ -149,11 +168,37 @@ def _run_generate(args: argparse.Namespace) -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    total_records = len(text_files_df)
     num_batches = (total_records + args.batch_size - 1) // args.batch_size
     actual_end_batch = num_batches if args.end_batch_index == -1 else min(args.end_batch_index, num_batches)
 
-    model_kwargs: dict = {
+    pipeline_kwargs = _pipeline_kwargs(args)
+    _print_model_config(args, custom_providers)
+
+    if args.preview:
+        _run_preview(data_designer, seed_source, total_records, args, pipeline_kwargs)
+        return
+
+    _run_batches(
+        data_designer,
+        seed_source,
+        total_records,
+        num_batches,
+        args.start_batch_index,
+        actual_end_batch,
+        args,
+        pipeline_kwargs,
+    )
+
+
+def _pipeline_kwargs(args: argparse.Namespace) -> dict:
+    """Collect pipeline-builder keyword arguments shared between preview and batch runs."""
+    return {
+        "max_artifacts_per_type": args.max_artifacts_per_type,
+        "num_pairs": args.num_pairs,
+        "min_hops": args.min_hops,
+        "max_hops": args.max_hops,
+        "min_complexity": args.min_complexity,
+        "similarity_threshold": args.similarity_threshold,
         "max_parallel_requests_for_gen": args.max_parallel_requests_for_gen,
         "artifact_extraction_model": args.artifact_extraction_model,
         "artifact_extraction_provider": args.artifact_extraction_provider,
@@ -164,23 +209,6 @@ def _run_generate(args: argparse.Namespace) -> None:
         "embed_model": args.embed_model,
         "embed_provider": args.embed_provider,
     }
-
-    _print_model_config(args, custom_providers)
-
-    if args.preview:
-        _run_preview(data_designer, text_files_df, total_records, args, model_kwargs)
-        return
-
-    _run_batches(
-        data_designer,
-        text_files_df,
-        total_records,
-        num_batches,
-        args.start_batch_index,
-        actual_end_batch,
-        args,
-        model_kwargs,
-    )
 
 
 def _print_model_config(args: argparse.Namespace, custom_providers: list) -> None:
@@ -198,45 +226,37 @@ def _print_model_config(args: argparse.Namespace, custom_providers: list) -> Non
 
 def _run_preview(
     data_designer: DataDesigner,
-    text_files_df: object,
+    seed_source: DocumentChunkerSeedSource,
     total_records: int,
     args: argparse.Namespace,
-    model_kwargs: dict,
+    pipeline_kwargs: dict,
 ) -> None:
     """Run a single-record preview of the pipeline."""
     config_builder = build_qa_generation_pipeline(
-        seed_dataset=text_files_df,
+        seed_source=seed_source,
         start_index=0,
         end_index=min(args.batch_size - 1, total_records - 1),
-        max_artifacts_per_type=args.max_artifacts_per_type,
-        num_pairs=args.num_pairs,
-        min_hops=args.min_hops,
-        max_hops=args.max_hops,
-        min_complexity=args.min_complexity,
-        **model_kwargs,
+        **pipeline_kwargs,
     )
     print("\nPreviewing generation...")
     try:
         preview_result = data_designer.preview(config_builder, num_records=1)
         preview_result.display_sample_record()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - preview is best-effort UX
         print(f"Preview error: {e}")
 
 
 def _run_batches(
     data_designer: DataDesigner,
-    text_files_df: object,
+    seed_source: DocumentChunkerSeedSource,
     total_records: int,
     num_batches: int,
     start_batch: int,
     end_batch: int,
     args: argparse.Namespace,
-    model_kwargs: dict,
+    pipeline_kwargs: dict,
 ) -> None:
-    """Process the pipeline in batches."""
-    total_batches_to_run = end_batch - start_batch
-    batch_times: list[float] = []
-
+    """Process the pipeline in batches, writing one JSON per batch."""
     print(f"\nTotal records: {total_records}")
     print(f"Batch size: {args.batch_size}")
     print(f"Total batches: {num_batches}")
@@ -252,18 +272,11 @@ def _run_batches(
         print(f"Processing batch {batch_idx}/{num_batches - 1} (records {start_idx}-{end_idx})")
         print(f"{'=' * 60}")
 
-        batch_start = time.monotonic()
-
         config_builder = build_qa_generation_pipeline(
-            seed_dataset=text_files_df,
+            seed_source=seed_source,
             start_index=start_idx,
             end_index=end_idx,
-            max_artifacts_per_type=args.max_artifacts_per_type,
-            num_pairs=args.num_pairs,
-            min_hops=args.min_hops,
-            max_hops=args.max_hops,
-            min_complexity=args.min_complexity,
-            **model_kwargs,
+            **pipeline_kwargs,
         )
 
         input_basename = args.input_dir.name
@@ -273,29 +286,11 @@ def _run_batches(
 
         output_filename = f"generated_batch{batch_idx}_{start_idx}_{end_idx}.json"
         generated_df.to_json(args.output_dir / output_filename, orient="records", indent=2)
-
-        batch_elapsed = time.monotonic() - batch_start
-        batch_times.append(batch_elapsed)
-
-        batches_done = batch_idx - start_batch + 1
-        batches_remaining = end_batch - batch_idx - 1
-
-        print(f"Batch {batch_idx}/{num_batches - 1} done in {_format_duration(batch_elapsed)}")
-        print(f"  Saved to {output_filename} ({len(generated_df)} records)")
-        if batches_remaining > 0:
-            avg_time = sum(batch_times) / len(batch_times)
-            eta = avg_time * batches_remaining
-            print(f"  Progress: {batches_done}/{total_batches_to_run} batches")
-            print(f"  ETA: ~{_format_duration(eta)} remaining")
+        print(f"Saved {output_filename} ({len(generated_df)} records)")
 
     print(f"\n{'=' * 60}")
     print(f"Generation complete! All batches saved to {args.output_dir}")
     print(f"Total batches processed: {end_batch - start_batch}")
-
-
-# ---------------------------------------------------------------------------
-# ``convert`` subcommand
-# ---------------------------------------------------------------------------
 
 
 def _add_convert_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -338,11 +333,6 @@ def _run_convert(args: argparse.Namespace) -> None:
         split_strategy=args.split_strategy,
         groups_json=args.groups_json,
     )
-
-
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:

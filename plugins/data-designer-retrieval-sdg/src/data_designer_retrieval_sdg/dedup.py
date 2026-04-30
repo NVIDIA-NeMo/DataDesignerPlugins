@@ -1,68 +1,103 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Column generator that deduplicates QA pairs via embedding cosine similarity."""
+"""Generic embedding-cosine-similarity dedup column generator.
+
+Implements both ``generate()`` (sync) and ``agenerate()`` (async-native)
+so the column participates in DataDesigner's ``DATA_DESIGNER_ASYNC_ENGINE``
+scheduler when enabled, falling back to the sync bridge otherwise.
+"""
 
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import numpy as np
 from data_designer.engine.column_generators.generators.base import ColumnGeneratorCellByCell
 
-from data_designer_retrieval_sdg.config import RetrievalSdgDedupColumnConfig
+from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 
 logger = logging.getLogger(__name__)
 
 
-class RetrievalSdgDedupColumnGenerator(ColumnGeneratorCellByCell[RetrievalSdgDedupColumnConfig]):
-    """Remove near-duplicate QA pairs using embedding cosine similarity.
+class EmbeddingDedupColumnGenerator(ColumnGeneratorCellByCell[EmbeddingDedupColumnConfig]):
+    """Remove near-duplicate items from a list-valued column.
 
-    For each cell the generator:
-    1. Reads QA pairs from the configured source column.
-    2. Embeds every question in parallel via the registered embedding model.
-    3. Computes pairwise cosine similarity and greedily drops duplicates
-       whose similarity exceeds ``dedupe_similarity_threshold``.
-    4. Returns the surviving pairs under the column name.
+    For each row the generator:
+
+    1. Resolves the items list at ``data[source_column][items_key]``
+       (or ``data[source_column]`` when ``items_key`` is ``None``).
+    2. Pulls the text field from each item via :meth:`extract_text`.
+    3. Embeds the texts in a single batched call to the embedding model.
+    4. Computes pairwise cosine similarity and greedily drops items whose
+       similarity exceeds ``similarity_threshold``.
+    5. Returns the surviving items under ``self.config.name``.
     """
 
     @property
     def embedder(self):
         """Resolve the embedding model from the resource provider."""
         return self.resource_provider.model_registry.get_model(
-            model_alias=self.config.embedding_alias,
+            model_alias=self.config.model_alias,
         )
 
-    def embed_text(self, text: str) -> list[float]:
-        """Compute an embedding vector for *text* using the configured model.
+    def resolve_items(self, data: dict) -> list[Any]:
+        """Return the list of items to deduplicate from a row dict.
 
         Args:
-            text: Input string to embed.
+            data: Row dict containing the configured source column.
 
         Returns:
-            List of floats representing the embedding vector.
+            The list referenced by ``source_column`` and (optionally)
+            ``items_key``; an empty list if the source value is missing.
+
+        Raises:
+            TypeError: If the resolved value is not a list.
         """
-        vectors = self.embedder.generate_text_embeddings(
-            input_texts=[text],
-            encoding_format="float",
-        )
-        return vectors[0]
+        value = data.get(self.config.source_column)
+        if self.config.items_key is not None:
+            if value is None:
+                return []
+            value = value[self.config.items_key] if isinstance(value, dict) else getattr(value, self.config.items_key)
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise TypeError(
+                f"EmbeddingDedupColumnGenerator expected a list at "
+                f"{self.config.source_column!r}"
+                f"{f'[{self.config.items_key!r}]' if self.config.items_key else ''}, "
+                f"got {type(value).__name__}"
+            )
+        return value
 
-    def dedupe_qa_pairs(self, embeddings: list[list[float]]) -> list[int]:
-        """Return indices of QA pairs to keep after greedy deduplication.
+    def extract_text(self, item: Any) -> str:
+        """Pull the text field from an item.
 
-        Computes pairwise cosine similarity.  For every pair above the
-        threshold the later item is dropped.
+        Supports dict items and Pydantic / attribute-style items.
 
         Args:
-            embeddings: 2-D list of embedding vectors, one per QA pair.
+            item: One element of the resolved items list.
+
+        Returns:
+            The text to embed for similarity comparison.
+        """
+        field = self.config.text_field
+        if isinstance(item, dict):
+            return str(item.get(field, ""))
+        return str(getattr(item, field, ""))
+
+    def dedupe_indices(self, embeddings: list[list[float]]) -> list[int]:
+        """Return indices to keep after greedy cosine-similarity dedup.
+
+        Args:
+            embeddings: 2-D list of embedding vectors, one per item.
 
         Returns:
             Sorted list of integer indices to retain.
 
         Raises:
-            ValueError: If *embeddings* is not a 2-D structure.
+            ValueError: If ``embeddings`` is not a 2-D structure.
         """
         if not embeddings:
             return []
@@ -77,7 +112,7 @@ class RetrievalSdgDedupColumnGenerator(ColumnGeneratorCellByCell[RetrievalSdgDed
 
         cosine_sim = np.clip(normalized @ normalized.T, -1.0, 1.0)
 
-        threshold = self.config.dedupe_similarity_threshold
+        threshold = self.config.similarity_threshold
         keep_indexes: list[int] = []
         dropped = np.zeros(len(embeddings), dtype=bool)
 
@@ -92,36 +127,44 @@ class RetrievalSdgDedupColumnGenerator(ColumnGeneratorCellByCell[RetrievalSdgDed
 
         return keep_indexes
 
-    def generate(self, data: dict) -> dict:
-        """Deduplicate QA pairs for a single record.
-
-        Args:
-            data: Row dict containing at least the ``qa_pairs_column``.
-
-        Returns:
-            Updated row dict with the deduplicated pairs stored under
-            ``self.config.name``.
-        """
-        logger.debug("Deduplicating QA pairs from column: %s", self.config.qa_pairs_column)
-
-        qa_pairs: list = data[self.config.qa_pairs_column]["pairs"]
-        max_parallel = self.embedder.max_parallel_requests
-        workers = max(1, max_parallel or 1)
-
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            embeddings = list(executor.map(self.embed_text, [qa["question"] for qa in qa_pairs]))
-
-        retained_indexes = self.dedupe_qa_pairs(embeddings)
-        dropped = len(qa_pairs) - len(retained_indexes)
+    def log_dedup_outcome(self, kept: int, total: int) -> None:
+        """Log dedup statistics at info or debug level."""
+        dropped = total - kept
         if dropped > 0:
             logger.info(
-                "Dedup: retained %d of %d QA pairs (%d duplicates removed)",
-                len(retained_indexes),
-                len(qa_pairs),
+                "Dedup: retained %d of %d items (%d duplicates removed)",
+                kept,
+                total,
                 dropped,
             )
         else:
-            logger.debug("Dedup: retained all %d QA pairs (no duplicates)", len(qa_pairs))
+            logger.debug("Dedup: retained all %d items (no duplicates)", total)
 
-        retained_qa_pairs = [qa_pairs[i] for i in retained_indexes]
-        return data | {self.config.name: retained_qa_pairs}
+    def generate(self, data: dict) -> dict:
+        """Synchronous dedup for a single row using the embedding model."""
+        items = self.resolve_items(data)
+        if not items:
+            return data | {self.config.name: []}
+
+        texts = [self.extract_text(item) for item in items]
+        embeddings = self.embedder.generate_text_embeddings(input_texts=texts, encoding_format="float")
+        retained_indexes = self.dedupe_indices(embeddings)
+        self.log_dedup_outcome(len(retained_indexes), len(items))
+        return data | {self.config.name: [items[i] for i in retained_indexes]}
+
+    async def agenerate(self, data: dict) -> dict:
+        """Async dedup using ``model.agenerate_text_embeddings``.
+
+        Drives the cell-level concurrency the async engine enables when
+        ``DATA_DESIGNER_ASYNC_ENGINE=1``; the framework's sync bridge runs
+        this from synchronous callers transparently.
+        """
+        items = self.resolve_items(data)
+        if not items:
+            return data | {self.config.name: []}
+
+        texts = [self.extract_text(item) for item in items]
+        embeddings = await self.embedder.agenerate_text_embeddings(input_texts=texts, encoding_format="float")
+        retained_indexes = self.dedupe_indices(embeddings)
+        self.log_dedup_outcome(len(retained_indexes), len(items))
+        return data | {self.config.name: [items[i] for i in retained_indexes]}

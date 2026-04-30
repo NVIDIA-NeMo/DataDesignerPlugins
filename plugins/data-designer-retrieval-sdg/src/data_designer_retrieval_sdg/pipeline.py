@@ -17,10 +17,9 @@ import json
 from pathlib import Path
 
 import data_designer.config as dd
-import pandas as pd
 from data_designer.config.default_model_settings import get_default_providers
 
-from data_designer_retrieval_sdg.config import RetrievalSdgDedupColumnConfig
+from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 from data_designer_retrieval_sdg.models import (
     DocumentArtifacts,
     QAPairEvaluations,
@@ -34,10 +33,7 @@ from data_designer_retrieval_sdg.prompts import (
     QA_GENERATION_SYSTEM_PROMPT,
     QA_GENERATION_USER_PROMPT,
 )
-
-# ---------------------------------------------------------------------------
-# Model configuration
-# ---------------------------------------------------------------------------
+from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
 DEFAULT_CHAT_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 DEFAULT_EMBED_MODEL = "nvidia/llama-3.2-nv-embedqa-1b-v2"
@@ -75,7 +71,7 @@ def custom_model_config(
             for chat-completion models.
 
     Returns:
-        Tuple of ``(model_configs, role_aliases)`` where *role_aliases*
+        Tuple of ``(model_configs, role_aliases)`` where ``role_aliases``
         maps each role name to the ``ModelConfig`` alias it should reference.
     """
     configs: list[dd.ModelConfig] = [
@@ -122,11 +118,6 @@ def custom_model_config(
     return configs, role_aliases
 
 
-# ---------------------------------------------------------------------------
-# Model-provider helpers
-# ---------------------------------------------------------------------------
-
-
 def build_model_providers(
     custom_provider_endpoint: str | None = None,
     custom_provider_name: str = "custom",
@@ -138,10 +129,8 @@ def build_model_providers(
 
     Inline flags define a single provider; the config file can define
     multiple.  When both are supplied the inline provider overwrites any
-    file entry with the same name.
-
-    Custom providers are merged with Data Designer defaults so that built-in
-    providers remain available.
+    file entry with the same name.  Custom providers are merged with Data
+    Designer defaults so that built-in providers remain available.
 
     Args:
         custom_provider_endpoint: Base URL for an inline custom provider.
@@ -151,8 +140,8 @@ def build_model_providers(
         model_providers_file: Path to a YAML/JSON file with provider entries.
 
     Returns:
-        Tuple of ``(all_providers, custom_only_providers)``.
-        ``all_providers`` is ``None`` when no custom providers exist.
+        Tuple of ``(all_providers, custom_only_providers)``.  ``all_providers``
+        is ``None`` when no custom providers exist.
     """
     import yaml
 
@@ -189,10 +178,6 @@ def build_model_providers(
     return defaults + custom, custom
 
 
-# ---------------------------------------------------------------------------
-# Pipeline builder
-# ---------------------------------------------------------------------------
-
 DEFAULT_QUERY_COUNTS: dict[str, int] = {"multi_hop": 3, "structural": 2, "contextual": 2}
 DEFAULT_REASONING_COUNTS: dict[str, int] = {
     "factual": 1,
@@ -206,7 +191,7 @@ DEFAULT_REASONING_COUNTS: dict[str, int] = {
 
 
 def build_qa_generation_pipeline(
-    seed_dataset: pd.DataFrame,
+    seed_source: DocumentChunkerSeedSource,
     start_index: int = 0,
     end_index: int = 199,
     max_artifacts_per_type: int = 2,
@@ -216,6 +201,7 @@ def build_qa_generation_pipeline(
     max_hops: int = 3,
     reasoning_counts: dict[str, int] | None = None,
     min_complexity: int = 4,
+    similarity_threshold: float = 0.9,
     max_parallel_requests_for_gen: int | None = None,
     artifact_extraction_model: str = DEFAULT_CHAT_MODEL,
     artifact_extraction_provider: str = DEFAULT_PROVIDER,
@@ -236,8 +222,9 @@ def build_qa_generation_pipeline(
     4. ``qa_evaluations`` -- quality scoring
 
     Args:
-        seed_dataset: DataFrame with ``file_name``, ``text``, ``chunks``,
-            ``sections_structured`` columns.
+        seed_source: Configured :class:`DocumentChunkerSeedSource` whose
+            output schema includes ``file_name``, ``text``, ``chunks``,
+            ``sections_structured``.
         start_index: Start index (inclusive) for ordered index-range selection.
         end_index: End index (inclusive) for ordered index-range selection.
         max_artifacts_per_type: Max artifacts extracted per type.
@@ -247,6 +234,7 @@ def build_qa_generation_pipeline(
         max_hops: Maximum hops for multi-hop questions.
         reasoning_counts: Distribution of reasoning types.
         min_complexity: Minimum complexity score.
+        similarity_threshold: Cosine similarity threshold for QA-pair dedup.
         max_parallel_requests_for_gen: Cap on parallel requests for chat models.
         artifact_extraction_model: Model for artifact extraction.
         artifact_extraction_provider: Provider for artifact extraction.
@@ -281,12 +269,11 @@ def build_qa_generation_pipeline(
     config_builder = dd.DataDesignerConfigBuilder(model_configs=model_configs)
 
     config_builder.with_seed_dataset(
-        dd.DataFrameSeedSource(df=seed_dataset),
+        seed_source,
         sampling_strategy=dd.SamplingStrategy.ORDERED,
         selection_strategy=dd.IndexRange(start=start_index, end=end_index),
     )
 
-    # Column 1: artifact extraction
     config_builder.add_column(
         dd.LLMStructuredColumnConfig(
             name="document_artifacts",
@@ -299,7 +286,6 @@ def build_qa_generation_pipeline(
         )
     )
 
-    # Column 2: QA generation
     config_builder.add_column(
         dd.LLMStructuredColumnConfig(
             name="qa_generation",
@@ -325,17 +311,17 @@ def build_qa_generation_pipeline(
         )
     )
 
-    # Column 3: deduplication (plugin column)
     config_builder.add_column(
-        RetrievalSdgDedupColumnConfig(
+        EmbeddingDedupColumnConfig(
             name="deduplicated_qa_pairs",
-            qa_pairs_column="qa_generation",
-            embedding_alias="embed",
-            dedupe_similarity_threshold=0.9,
+            source_column="qa_generation",
+            items_key="pairs",
+            text_field="question",
+            model_alias="embed",
+            similarity_threshold=similarity_threshold,
         )
     )
 
-    # Column 4: quality evaluation
     config_builder.add_column(
         dd.LLMStructuredColumnConfig(
             name="qa_evaluations",
