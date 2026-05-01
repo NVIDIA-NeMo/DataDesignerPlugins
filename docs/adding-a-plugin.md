@@ -63,11 +63,12 @@ def test_valid_plugin():
 ## 4. Regenerate Metadata
 
 ```bash
+make sync
 uv run ddp catalog > docs/catalog.md
 uv run ddp codeowners > .github/CODEOWNERS
 ```
 
-CI will reject your PR if these are stale.
+`ddp catalog` reads the installed local `data_designer.plugins` registrations, so run `make sync` after adding or changing plugin registrations. CI will reject your PR if generated metadata is stale.
 
 ## 5. Submit
 
@@ -190,9 +191,11 @@ Pre-release versions won't be installed by default with `pip install`. Users mus
 
 ## Entry Point Discovery
 
-Plugins register via `[project.entry-points."data_designer.plugins"]` in `pyproject.toml`. The key is your column type slug; the value points to the `Plugin` instance. Data Designer discovers all installed plugins automatically through this mechanism.
+Plugins register via `[project.entry-points."data_designer.plugins"]` in `pyproject.toml`. The key is the Python entry point name; the value points to the `Plugin` instance. Data Designer discovers all installed plugins automatically through this mechanism.
 
 ```toml
 [project.entry-points."data_designer.plugins"]
 my-plugin = "data_designer_my_plugin.plugin:plugin"
 ```
+
+`docs/catalog.md` lists each installed local Data Designer plugin. Packages that register multiple plugins appear multiple times. The catalog `Name` column comes from the runtime `Plugin.name`, which Data Designer derives from the plugin config discriminator. The `Type` column comes from `Plugin.plugin_type.value`. The `Description` column remains the package-level `[project].description` until Data Designer exposes a plugin-level description field or this repo adds explicit per-plugin catalog metadata.

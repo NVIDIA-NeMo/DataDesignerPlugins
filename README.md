@@ -29,7 +29,7 @@ DataDesignerPlugins/
 └── docs/                             # Authoring guide, plugin catalog
 ```
 
-Each plugin is an independent Python package with its own `pyproject.toml`, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
+Each plugin is an independent Python package with its own `pyproject.toml`, tests, and CODEOWNERS. The root workspace auto-discovers plugin packages via `plugins/*`. A package can provide one or more Data Designer plugins through the `data_designer.plugins` group.
 
 ## Development
 

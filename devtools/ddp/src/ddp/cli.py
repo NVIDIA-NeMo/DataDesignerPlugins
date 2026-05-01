@@ -47,8 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
         "catalog",
         help="Generate plugin catalog to stdout",
         description=(
-            "Generate a markdown table of all plugins and their metadata "
-            "(name, version, column type, description) to stdout. "
+            "Generate a markdown table of local DataDesigner plugins and package metadata "
+            "(package, version, name, type, description) to stdout. "
             "Typically redirected to docs/catalog.md."
         ),
     )

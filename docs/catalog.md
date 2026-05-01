@@ -1,7 +1,7 @@
 # Plugin Catalog
 
-Auto-generated from plugin metadata. Do not edit manually.
+Auto-generated from installed local DataDesigner plugins and package metadata. Do not edit manually.
 
-| Plugin | Version | Column Type | Description |
-|--------|---------|-------------|-------------|
-| data-designer-template | 0.1.0 | `text-transform` | Template Data Designer plugin — text transform column generator |
+| Plugin Package | Version | Name | Type | Description |
+|----------------|---------|------|------|-------------|
+| data-designer-template | 0.1.0 | `text-transform` | `column-generator` | Template Data Designer plugin — text transform column generator |
