@@ -43,6 +43,7 @@ make test               # Test each plugin in an isolated venv
 make validate           # Run assert_valid_plugin on all entry points
 make check              # Verify catalog, CODEOWNERS, and license headers are up to date
 make docs               # Build the Zensical documentation site
+make docs-server        # Serve docs locally at http://localhost:8000
 make all                # lint + test + validate + check + docs (full local CI)
 ```
 

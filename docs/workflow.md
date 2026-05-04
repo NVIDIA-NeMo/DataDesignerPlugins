@@ -29,6 +29,7 @@ The target runs:
 | `make validate` | Installed `data_designer.plugins` entry points with `assert_valid_plugin`. |
 | `make check` | Generated catalog, generated CODEOWNERS, and SPDX license headers. |
 | `make docs` | Zensical builds the documentation site in strict mode. |
+| `make docs-server` | Zensical serves the documentation site locally while you edit. |
 
 ## Documentation
 
@@ -42,6 +43,19 @@ make docs
 The build writes static output to `site/`, which is ignored by git. Zensical
 validates internal links during the build, and this repository runs the build
 with `--strict` so documentation warnings fail CI.
+
+To preview documentation while editing:
+
+```bash
+make docs-server
+```
+
+The server listens at `http://localhost:8000` by default. Override the address
+when needed:
+
+```bash
+make docs-server DOCS_DEV_ADDR=localhost:8080
+```
 
 ## Generated files
 
@@ -67,4 +81,3 @@ Pull requests run the main CI workflow:
 Documentation changes also run the documentation workflow. On pull requests the
 workflow builds the site and uploads a preview artifact. On pushes to `main`, it
 builds the same site and deploys `site/` to GitHub Pages.
-

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test validate docs catalog codeowners check-catalog check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test validate docs docs-server catalog codeowners check-catalog check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -51,6 +51,11 @@ validate:
 
 docs:
 	uv run zensical build --clean --strict
+
+DOCS_DEV_ADDR ?= localhost:8000
+
+docs-server:
+	uv run zensical serve --dev-addr $(DOCS_DEV_ADDR)
 
 # ── Catalog & CODEOWNERS ─────────────────────────────────────────────────
 
