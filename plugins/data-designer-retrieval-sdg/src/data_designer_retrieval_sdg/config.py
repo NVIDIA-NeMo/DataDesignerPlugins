@@ -19,7 +19,7 @@ class EmbeddingDedupColumnConfig(SingleColumnConfig):
     the source column is a wrapper dict (``data[source_column][items_key]``)
     or a bare list (``items_key=None``).
 
-    Args:
+    Attributes:
         source_column: Name of the upstream column containing the items to
             deduplicate.
         items_key: Key under ``source_column`` that holds the list of items.
@@ -32,6 +32,9 @@ class EmbeddingDedupColumnConfig(SingleColumnConfig):
         column_type: Fixed literal identifying this column type.
         similarity_threshold: Cosine similarity threshold above which two
             items are considered duplicates.  Defaults to ``0.9``.
+    Inherited Attributes:
+        name (required): Unique name of the column to be generated.
+        drop: If True, generate this column but remove it from the final dataset.
     """
 
     source_column: str
