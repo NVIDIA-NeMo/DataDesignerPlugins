@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test validate catalog codeowners check-catalog check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test validate docs catalog codeowners check-catalog check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -47,6 +47,11 @@ test:
 validate:
 	uv run ddp validate
 
+# ── Documentation ───────────────────────────────────────────────────────
+
+docs:
+	uv run zensical build --clean --strict
+
 # ── Catalog & CODEOWNERS ─────────────────────────────────────────────────
 
 catalog:
@@ -75,7 +80,7 @@ update-license-headers:
 
 check: check-catalog check-codeowners check-license-headers
 
-all: lint test validate check
+all: lint test validate check docs
 
 # ── Release ─────────────────────────────────────────────────────────────
 # Usage: make release PLUGIN=data-designer-template

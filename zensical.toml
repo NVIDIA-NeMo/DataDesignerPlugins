@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+site_name = "Data Designer Plugins"
+site_url = "https://nvidia-nemo.github.io/DataDesignerPlugins/"
+site_description = "Plugin authoring guide and catalog for Data Designer plugins."
+site_author = "NVIDIA"
+repo_url = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"
+repo_name = "NVIDIA-NeMo/DataDesignerPlugins"
+edit_uri = "edit/main/docs/"
+copyright = "Copyright &copy; 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved."
+nav = [
+  {"Home" = "index.md"},
+  {"Plugin authoring" = "authoring.md"},
+  {"Development workflow" = "workflow.md"},
+  {"Releasing" = "releasing.md"},
+  {"Plugin catalog" = "catalog.md"},
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.action.edit",
+  "content.action.view",
+  "navigation.expand",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "toc.follow",
+]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"

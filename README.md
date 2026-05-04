@@ -1,4 +1,4 @@
-# 🔌 🎨 NeMo Data Designer Plugins
+# NeMo Data Designer Plugins
 
 First-class NVIDIA-provided plugins for [NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
 
@@ -16,17 +16,17 @@ Create a new plugin:
 uv run ddp new my-plugin
 ```
 
-This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, tests, and CODEOWNERS. See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full authoring guide.
+This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, tests, and CODEOWNERS. See [docs/authoring.md](docs/authoring.md) for the full authoring guide.
 
 ## Repository Structure
 
 ```
 DataDesignerPlugins/
-├── devtools/
-│   └── ddp/                          # Monorepo management tooling (ddp CLI, dev-only)
-├── plugins/                          # One directory per plugin (auto-discovered by uv)
-│   └── data-designer-template/       # Reference implementation
-└── docs/                             # Authoring guide, plugin catalog
+|-- devtools/
+|   `-- ddp/                          # Monorepo management tooling (ddp CLI, dev-only)
+|-- plugins/                          # One directory per plugin (auto-discovered by uv)
+|   `-- data-designer-template/       # Reference implementation
+`-- docs/                             # Zensical documentation source
 ```
 
 Each plugin is an independent Python package with its own `pyproject.toml`, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
@@ -42,7 +42,8 @@ make format             # Auto-fix lint issues and reformat
 make test               # Test each plugin in an isolated venv
 make validate           # Run assert_valid_plugin on all entry points
 make check              # Verify catalog, CODEOWNERS, and license headers are up to date
-make all                # lint + test + validate + check (full local CI)
+make docs               # Build the Zensical documentation site
+make all                # lint + test + validate + check + docs (full local CI)
 ```
 
 To test a single plugin in isolation:
@@ -83,7 +84,7 @@ make release PLUGIN=data-designer-my-plugin            # Tag + build
 git push origin data-designer-my-plugin/v0.1.1         # Triggers CI publish
 ```
 
-See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full release guide.
+See [docs/releasing.md](docs/releasing.md) for the full release guide.
 
 ## License
 
