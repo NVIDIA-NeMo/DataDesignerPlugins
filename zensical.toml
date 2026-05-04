@@ -10,6 +10,7 @@ repo_url = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"
 repo_name = "NVIDIA-NeMo/DataDesignerPlugins"
 edit_uri = "edit/main/docs/"
 copyright = "Copyright &copy; 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved."
+extra_css = ["stylesheets/extra.css"]
 nav = [
   {"Home" = "index.md"},
   {"Plugin authoring" = "authoring.md"},

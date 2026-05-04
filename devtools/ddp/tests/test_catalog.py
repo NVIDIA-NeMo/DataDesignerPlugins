@@ -17,7 +17,8 @@ def test_main_produces_markdown_table() -> None:
         main()
     output = buf.getvalue()
     assert "# Plugin Catalog" in output
-    assert "| Plugin | Version | Column Type | Description |" in output
+    assert 'class="plugin-catalog"' in output
+    assert "Auto-generated from plugin metadata" not in output
 
 
 def test_main_includes_template_plugin() -> None:
