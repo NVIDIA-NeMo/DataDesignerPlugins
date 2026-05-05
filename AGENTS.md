@@ -94,6 +94,48 @@ Pull request example:
 gh pr create
 ```
 
+# Pull Request Style
+
+Pull requests are read by humans and should make the intent of the work clear without requiring a reviewer to reverse-engineer the diff.
+
+Do not prefix PR titles with `[codex]`, `[agent]`, or similar automation labels unless the user explicitly asks for that.
+Use a concise, human-readable title that describes the change itself, such as:
+
+```text
+Add GitHub repository seed reader plugin
+```
+
+Avoid vague titles like `Update plugin`, `Fix things`, or `Add changes`.
+
+PR descriptions should be descriptive enough to explain the change, why it exists, how it works, and how someone uses it.
+Use this structure by default:
+
+```markdown
+## What
+
+Describe the user-facing or maintainer-facing change in concrete terms.
+
+## Why
+
+Explain the motivation, problem, or workflow this PR enables.
+
+## Usage
+
+Show a realistic usage example, command, configuration snippet, or before/after behavior.
+For plugins, include a Data Designer config or Python snippet that demonstrates the new plugin.
+
+## How
+
+Summarize the implementation approach, important design choices, and any tradeoffs.
+
+## Validation
+
+List the exact checks run and any meaningful smoke-test output.
+```
+
+Usage is required when the PR adds or changes user-facing behavior.
+If the PR is not user-facing, use the section to show the maintainer workflow or operational impact.
+
 # Development Style
 
 Tests should be written around public interfaces.
