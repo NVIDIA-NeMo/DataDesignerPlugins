@@ -35,3 +35,6 @@ htmlcov/
 
 # Distribution
 *.tar.gz
+
+# CI artifacts
+*artifacts/

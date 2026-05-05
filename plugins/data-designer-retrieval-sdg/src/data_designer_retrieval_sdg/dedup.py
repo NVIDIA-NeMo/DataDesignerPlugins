@@ -15,12 +15,12 @@ import logging
 from typing import Any
 
 import numpy as np
+from data_designer.config.errors import BuilderConfigurationError
 from data_designer.config.models import GenerationType
 from data_designer.engine.column_generators.generators.base import (
     ColumnGeneratorWithModelRegistry,
     GenerationStrategy,
 )
-from data_designer.engine.dataset_builders.errors import DatasetGenerationError
 from data_designer.engine.models.facade import ModelFacade
 
 from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
@@ -65,14 +65,14 @@ class EmbeddingDedupColumnGenerator(ColumnGeneratorWithModelRegistry[EmbeddingDe
         from the facade or a 400 from the embeddings endpoint.
 
         Raises:
-            DatasetGenerationError: When ``self.config.model_alias`` resolves
+            BuilderConfigurationError: When ``self.config.model_alias`` resolves
                 to a :class:`ModelConfig` whose inference parameters are not
                 ``EmbeddingInferenceParams``.
         """
         super()._validate()
         model_config = self.get_model_config(model_alias=self.config.model_alias)
         if model_config.generation_type != GenerationType.EMBEDDING:
-            raise DatasetGenerationError(
+            raise BuilderConfigurationError(
                 f"EmbeddingDedupColumnGenerator requires an embedding model, "
                 f"but model alias {self.config.model_alias!r} resolves to a "
                 f"{model_config.generation_type.value!r} model. Configure a "

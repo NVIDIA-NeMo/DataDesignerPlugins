@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 import nltk
+import yaml
 from nltk.tokenize import sent_tokenize
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,6 @@ def load_multi_doc_manifest(manifest_path: Path | None) -> list[list[str]]:
     Returns:
         List of bundles, each a list of file-path strings.
     """
-    import yaml
-
     if not manifest_path:
         return []
 
@@ -160,19 +159,19 @@ def build_bundles(
     return [b for b in bundles if b]
 
 
-def group_chunks_by_doc(chunks: list[dict]) -> dict[str, list[tuple[int, dict]]]:
+def group_chunks_by_doc(chunks: list[dict]) -> dict[str, list[dict]]:
     """Group chunks by their ``doc_id`` field."""
-    grouped: dict[str, list[tuple[int, dict]]] = defaultdict(list)
-    for idx, chunk in enumerate(chunks):
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for chunk in chunks:
         doc_id = chunk.get("doc_id", "default")
-        grouped[doc_id].append((idx, chunk))
+        grouped[doc_id].append(chunk)
     return dict(grouped)
 
 
-def format_section_chunks(indexed_chunks: list[tuple[int, dict]], section_number: int) -> str:
-    """Render a list of indexed chunks into a section string."""
+def format_section_chunks(section_chunks: list[dict], section_number: int) -> str:
+    """Render a list of chunks into a section string."""
     section_lines: list[str] = []
-    for _, chunk in indexed_chunks:
+    for chunk in section_chunks:
         text = chunk.get("text", "").strip()
         if not text:
             continue
@@ -203,8 +202,7 @@ def chunks_to_sections_sequential(chunks: list[dict], num_sections: int = 1) -> 
     for i in range(num_sections):
         start_idx = i * section_size
         end_idx = (i + 1) * section_size if i < num_sections - 1 else total
-        indexed_chunks = [(j, chunks[j]) for j in range(start_idx, end_idx)]
-        section_text = format_section_chunks(indexed_chunks, i + 1)
+        section_text = format_section_chunks(chunks[start_idx:end_idx], i + 1)
         if section_text:
             formatted_sections.append(section_text)
 
@@ -222,9 +220,9 @@ def chunks_to_sections_doc_balanced(chunks: list[dict], num_sections: int = 1) -
 
     chunk_sizes = {doc_id: max(1, math.ceil(len(entries) / num_sections)) for doc_id, entries in grouped.items()}
 
-    sections: list[list[tuple[int, dict]]] = []
+    sections: list[list[dict]] = []
     for part_idx in range(num_sections):
-        part_entries: list[tuple[int, dict]] = []
+        part_entries: list[dict] = []
         for doc_id, entries in grouped.items():
             chunk_size = chunk_sizes[doc_id]
             start = part_idx * chunk_size
@@ -235,8 +233,8 @@ def chunks_to_sections_doc_balanced(chunks: list[dict], num_sections: int = 1) -
             sections.append(part_entries)
 
     formatted_sections: list[str] = []
-    for i, indexed_chunks in enumerate(sections):
-        section_text = format_section_chunks(indexed_chunks, i + 1)
+    for i, section_chunks in enumerate(sections):
+        section_text = format_section_chunks(section_chunks, i + 1)
         if section_text:
             formatted_sections.append(section_text)
 
@@ -254,7 +252,7 @@ def chunks_to_sections_interleaved(chunks: list[dict], num_sections: int = 1) ->
 
     doc_iterators = {doc_id: deque(entries) for doc_id, entries in grouped.items()}
     doc_order = list(grouped.keys())
-    interleaved: list[tuple[int, dict]] = []
+    interleaved: list[dict] = []
 
     while True:
         added = False
@@ -276,8 +274,7 @@ def chunks_to_sections_interleaved(chunks: list[dict], num_sections: int = 1) ->
     for i in range(num_sections):
         start_idx = i * section_size
         end_idx = (i + 1) * section_size if i < num_sections - 1 else total
-        indexed_chunks = interleaved[start_idx:end_idx]
-        section_text = format_section_chunks(indexed_chunks, i + 1)
+        section_text = format_section_chunks(interleaved[start_idx:end_idx], i + 1)
         if section_text:
             formatted_sections.append(section_text)
 

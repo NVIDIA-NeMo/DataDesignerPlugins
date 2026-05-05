@@ -7,12 +7,12 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from data_designer.config.errors import BuilderConfigurationError
 from data_designer.config.models import (
     ChatCompletionInferenceParams,
     EmbeddingInferenceParams,
     ModelConfig,
 )
-from data_designer.engine.dataset_builders.errors import DatasetGenerationError
 
 from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 from data_designer_retrieval_sdg.dedup import EmbeddingDedupColumnGenerator
@@ -189,7 +189,7 @@ def test_validate_rejects_chat_model() -> None:
         model="some/chat-model",
         inference_parameters=ChatCompletionInferenceParams(),
     )
-    with pytest.raises(DatasetGenerationError, match="embed"):
+    with pytest.raises(BuilderConfigurationError, match="embed"):
         gen._validate()
 
 
