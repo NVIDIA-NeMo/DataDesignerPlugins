@@ -15,6 +15,5 @@ Browse available Data Designer plugins by what they add to your data generation 
       <span class="plugin-doc-card__label">Column types</span>
       <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">text-transform</span></span>
     </span>
-    <span class="plugin-doc-card__cta">Open plugin docs</span>
   </a>
 </div>

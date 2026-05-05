@@ -190,7 +190,6 @@ def render_plugins_index(plugins: list[PluginDocs], repo_root: Path) -> str:
                 '      <span class="plugin-doc-card__label">Column types</span>',
                 f'      <span class="plugin-doc-card__chips">{format_html_chips(plugin.column_types)}</span>',
                 "    </span>",
-                '    <span class="plugin-doc-card__cta">Open plugin docs</span>',
                 "  </a>",
             ]
         )
