@@ -9,6 +9,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "data-designer-github",
     "data-designer-plugins-workspace",
     "data-designer-retrieval-sdg",
     "data-designer-template",
@@ -431,6 +432,17 @@ sdist = { url = "https://files.pythonhosted.org/packages/5c/35/a8abd88c44aa603ba
 wheels = [
     { url = "https://files.pythonhosted.org/packages/35/d4/3844529ae989be9e63b0b8f47c28492793993427dc7d54d6d2a923ad2acc/data_designer_engine-0.5.7-py3-none-any.whl", hash = "sha256:75cd7d5ad0b230ddf75950ba7f97c9ad75c54887ad1247cdf623dc008e31a418", size = 631945, upload-time = "2026-04-17T22:03:08.584Z" },
 ]
+
+[[package]]
+name = "data-designer-github"
+version = "0.1.0"
+source = { editable = "plugins/data-designer-github" }
+dependencies = [
+    { name = "data-designer" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "data-designer", specifier = ">=0.5.7" }]
 
 [[package]]
 name = "data-designer-plugins-workspace"
