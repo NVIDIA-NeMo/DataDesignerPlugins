@@ -29,6 +29,8 @@ nav = [
 
 [project.theme]
 language = "en"
+favicon = "assets/images/ndd-plugins.png"
+logo = "assets/images/ndd-plugins.png"
 features = [
   "content.action.edit",
   "content.action.view",
