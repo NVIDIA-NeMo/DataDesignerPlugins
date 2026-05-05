@@ -20,6 +20,8 @@ plugins/data-designer-my-plugin/
 |-- pyproject.toml
 |-- README.md
 |-- CODEOWNERS
+|-- docs/
+|   `-- index.md
 |-- tests/
 |   `-- test_plugin.py
 `-- src/
@@ -98,13 +100,33 @@ For a faster loop, run the package tests directly:
 uv run pytest plugins/data-designer-my-plugin/tests/ -v
 ```
 
+## Document the plugin
+
+Each plugin owns its site documentation under its package directory:
+
+```text
+plugins/data-designer-my-plugin/docs/
+|-- index.md
+`-- usage.md
+```
+
+The top-level docs build copies this content into the generated
+`docs/plugins/` tree and adds it to the Zensical navigation. Keep links and
+assets relative to the plugin's `docs/` directory so they continue to work after
+generation.
+
+Every plugin gets a generated fallback page from package metadata when it does
+not provide docs yet, but plugin-authored pages should be the source of truth
+for usage, configuration, and examples.
+
 ## Regenerate metadata
 
-When plugin metadata or ownership changes, regenerate the derived files:
+When plugin docs, plugin metadata, or ownership changes, regenerate the derived
+files:
 
 ```bash
-make catalog
+make plugin-docs
 make codeowners
 ```
 
-CI verifies that `docs/catalog.md` and `.github/CODEOWNERS` are current.
+CI verifies that generated plugin docs and `.github/CODEOWNERS` are current.

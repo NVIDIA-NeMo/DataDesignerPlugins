@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test validate docs docs-server catalog codeowners check-catalog check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test validate docs docs-server plugin-docs check-plugin-docs codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -32,7 +32,7 @@ test:
 			continue; \
 		fi; \
 		echo "── Testing $$plugin_name (isolated) ──"; \
-		uv venv ".venv-$$plugin_name"; \
+		uv venv --clear ".venv-$$plugin_name"; \
 		. ".venv-$$plugin_name/bin/activate"; \
 		uv pip install -e "$$plugin_dir"; \
 		uv pip install pytest; \
@@ -49,26 +49,24 @@ validate:
 
 # ── Documentation ───────────────────────────────────────────────────────
 
-docs:
+docs: plugin-docs
 	uv run zensical build --clean --strict
 
 DOCS_DEV_ADDR ?= localhost:8000
 
-docs-server:
+docs-server: plugin-docs
 	uv run zensical serve --dev-addr $(DOCS_DEV_ADDR)
 
-# ── Catalog & CODEOWNERS ─────────────────────────────────────────────────
+# ── Plugin docs & CODEOWNERS ──────────────────────────────────────────────
 
-catalog:
-	uv run ddp catalog > docs/catalog.md
+plugin-docs:
+	uv run ddp plugin-docs
 
 codeowners:
 	uv run ddp codeowners > .github/CODEOWNERS
 
-check-catalog:
-	uv run ddp catalog > docs/catalog.md.new
-	diff docs/catalog.md docs/catalog.md.new
-	@rm -f docs/catalog.md.new
+check-plugin-docs:
+	uv run ddp plugin-docs --check
 
 check-codeowners:
 	uv run ddp codeowners > .github/CODEOWNERS.new
@@ -83,7 +81,7 @@ update-license-headers:
 
 # ── Aggregate targets ────────────────────────────────────────────────────
 
-check: check-catalog check-codeowners check-license-headers
+check: check-plugin-docs check-codeowners check-license-headers
 
 all: lint test validate check docs
 
@@ -106,7 +104,7 @@ validate-release:
 
 test-plugin:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi
-	uv venv ".venv-$(PLUGIN)"
+	uv venv --clear ".venv-$(PLUGIN)"
 	. ".venv-$(PLUGIN)/bin/activate" && \
 		uv pip install -e "$(PLUGIN_DIR)" && \
 		uv pip install pytest && \

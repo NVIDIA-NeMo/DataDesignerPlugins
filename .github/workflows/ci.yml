@@ -58,6 +58,7 @@ jobs:
         with:
           name: generated-metadata
           path: |
-            docs/catalog.md.new
+            docs/plugins/**
+            zensical.toml
             .github/CODEOWNERS.new
           if-no-files-found: ignore

@@ -10,7 +10,9 @@ on:
     paths:
       - ".github/workflows/docs.yml"
       - "Makefile"
+      - "devtools/ddp/src/ddp/plugin_docs.py"
       - "docs/**"
+      - "plugins/**/docs/**"
       - "pyproject.toml"
       - "uv.lock"
       - "zensical.toml"

@@ -27,8 +27,8 @@ DataDesignerPlugins/
   documentation builds, and GitHub CI.
 - [Releasing](releasing.md) covers version bumps, tags, ownership checks, and
   PyPI publishing.
-- [Plugin catalog](catalog.md) lists the plugins currently discovered from
-  package metadata.
+- [Plugins](plugins/index.md) lists generated plugin pages assembled from each
+  plugin package's own docs and metadata.
 
 ## Repository contract
 
@@ -36,5 +36,6 @@ DataDesignerPlugins/
 - Keep plugins self-contained.
 - Target Python 3.10 and newer.
 - Write tests around public interfaces.
-- Regenerate generated metadata when plugin metadata or ownership changes.
+- Regenerate generated metadata when plugin docs, plugin metadata, or ownership
+  changes.
 - Run the Makefile targets locally before opening or updating a pull request.
