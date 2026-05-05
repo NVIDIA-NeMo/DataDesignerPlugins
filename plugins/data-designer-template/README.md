@@ -15,4 +15,7 @@ This plugin provides a `text-transform` column type for
 Once installed, the column type is automatically discovered by Data Designer.
 
 For the full plugin authoring guide, see the
-[main repository docs](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/docs/adding-a-plugin.md).
+[main repository docs](https://nvidia-nemo.github.io/DataDesignerPlugins/authoring/).
+
+Plugin documentation for the repository site lives in this package's `docs/`
+directory.

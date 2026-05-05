@@ -27,14 +27,15 @@ The target runs:
 | `make lint` | Ruff linting and formatting. |
 | `make test` | Each plugin's tests in an isolated virtual environment. |
 | `make validate` | Installed `data_designer.plugins` entry points with `assert_valid_plugin`. |
-| `make check` | Generated catalog, generated CODEOWNERS, and SPDX license headers. |
+| `make check` | Generated plugin docs, generated CODEOWNERS, and SPDX license headers. |
 | `make docs` | Zensical builds the documentation site in strict mode. |
 | `make docs-server` | Zensical serves the documentation site locally while you edit. |
 
 ## Documentation
 
-Documentation source lives under `docs/` and is built by
-[Zensical](https://zensical.org/):
+Repository documentation source lives under `docs/`, and plugin-specific site
+pages live under each plugin's `docs/` directory. The top-level docs build
+regenerates `docs/plugins/` before running [Zensical](https://zensical.org/):
 
 ```bash
 make docs
@@ -59,15 +60,17 @@ make docs-server DOCS_DEV_ADDR=localhost:8080
 
 ## Generated files
 
-Two files are generated from repository metadata:
+Generated site inputs come from repository metadata and plugin docs:
 
 ```bash
-make catalog
+make plugin-docs
 make codeowners
 ```
 
-`docs/catalog.md` is part of the documentation site, but it is generated from
-plugin package metadata. Do not edit it manually.
+`docs/plugins/` and the plugin section of `zensical.toml` are generated from
+plugin package metadata and `plugins/*/docs/`. Do not edit generated plugin site
+pages directly. Use `make catalog` only as a compatibility alias for
+`make plugin-docs`.
 
 ## GitHub CI
 
