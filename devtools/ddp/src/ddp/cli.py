@@ -59,22 +59,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_plugin_docs.set_defaults(func=_run_plugin_docs)
 
-    # ddp catalog
-    p_catalog = sub.add_parser(
-        "catalog",
-        help="Generate plugin documentation pages (legacy alias)",
-        description=(
-            "Legacy alias for ddp plugin-docs. Generates docs/plugins/ from "
-            "each plugin's docs/ directory and package metadata."
-        ),
-    )
-    p_catalog.add_argument(
-        "--check",
-        action="store_true",
-        help="Check generated plugin docs without modifying files",
-    )
-    p_catalog.set_defaults(func=_run_catalog)
-
     # ddp codeowners
     p_codeowners = sub.add_parser(
         "codeowners",
@@ -162,10 +146,6 @@ def _run_plugin_docs(args: argparse.Namespace) -> int:
 
     argv = ["--check"] if args.check else []
     return plugin_docs_main(argv)
-
-
-def _run_catalog(args: argparse.Namespace) -> int:
-    return _run_plugin_docs(args)
 
 
 def _run_codeowners(args: argparse.Namespace) -> int:

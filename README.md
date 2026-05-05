@@ -71,7 +71,6 @@ The `ddp` command manages the monorepo. Run `uv run ddp --help` to see all subco
 | `ddp new <name>` | Scaffold a new plugin |
 | `ddp validate` | Validate all installed plugins |
 | `ddp plugin-docs` | Generate plugin docs site inputs |
-| `ddp catalog` | Legacy alias for `ddp plugin-docs` |
 | `ddp codeowners` | Aggregate CODEOWNERS to stdout |
 | `ddp license-headers` | Add or check SPDX license headers |
 | `ddp bump <plugin> <part>` | Bump a plugin's semantic version |

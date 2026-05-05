@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test validate docs docs-server plugin-docs catalog check-plugin-docs codeowners check-catalog check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test validate docs docs-server plugin-docs check-plugin-docs codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -62,15 +62,11 @@ docs-server: plugin-docs
 plugin-docs:
 	uv run ddp plugin-docs
 
-catalog: plugin-docs
-
 codeowners:
 	uv run ddp codeowners > .github/CODEOWNERS
 
 check-plugin-docs:
 	uv run ddp plugin-docs --check
-
-check-catalog: check-plugin-docs
 
 check-codeowners:
 	uv run ddp codeowners > .github/CODEOWNERS.new

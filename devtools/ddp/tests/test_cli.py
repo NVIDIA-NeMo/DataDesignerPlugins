@@ -18,7 +18,6 @@ class TestBuildParser:
     EXPECTED_COMMANDS = (
         "new",
         "plugin-docs",
-        "catalog",
         "codeowners",
         "license-headers",
         "validate",
@@ -86,14 +85,6 @@ class TestDispatch:
         mock_run.return_value = 0
         parser = build_parser()
         args = parser.parse_args(["new", "test-plugin"])
-        args.func(args)
-        mock_run.assert_called_once_with(args)
-
-    @patch("ddp.cli._run_catalog")
-    def test_catalog_dispatches(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = 0
-        parser = build_parser()
-        args = parser.parse_args(["catalog"])
         args.func(args)
         mock_run.assert_called_once_with(args)
 

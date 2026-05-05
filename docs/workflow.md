@@ -69,8 +69,7 @@ make codeowners
 
 `docs/plugins/` and the plugin section of `zensical.toml` are generated from
 plugin package metadata and `plugins/*/docs/`. Do not edit generated plugin site
-pages directly. Use `make catalog` only as a compatibility alias for
-`make plugin-docs`.
+pages directly.
 
 ## GitHub CI
 
