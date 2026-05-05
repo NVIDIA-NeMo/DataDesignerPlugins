@@ -5,7 +5,7 @@ Template Data Designer plugin and reference implementation for plugin authors.
 ## Installation
 
 ```bash
-pip install data-designer-template
+uv add data-designer data-designer-template
 ```
 
 ## Usage

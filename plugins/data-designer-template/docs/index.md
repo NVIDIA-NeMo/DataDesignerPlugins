@@ -7,7 +7,7 @@ column by transforming text from an existing source column.
 ## Installation
 
 ```bash
-pip install data-designer-template
+uv add data-designer data-designer-template
 ```
 
 ## Column type

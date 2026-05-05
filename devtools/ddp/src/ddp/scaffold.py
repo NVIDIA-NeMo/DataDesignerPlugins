@@ -80,7 +80,7 @@ Data Designer {slug} plugin.
 ## Installation
 
 ```bash
-pip install data-designer-{slug}
+uv add data-designer data-designer-{slug}
 ```
 
 ## Usage
@@ -104,7 +104,7 @@ Data Designer {slug} plugin.
 ## Installation
 
 ```bash
-pip install data-designer-{slug}
+uv add data-designer data-designer-{slug}
 ```
 
 ## Usage
