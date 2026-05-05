@@ -76,7 +76,10 @@ def test_sync_plugin_docs_copies_plugin_docs_and_updates_nav(tmp_path: Path) -> 
     sync_plugin_docs(tmp_path)
 
     generated_root = tmp_path / "docs" / "plugins"
-    assert "data-designer-alpha" in (generated_root / "index.md").read_text(encoding="utf-8")
+    index_page = (generated_root / "index.md").read_text(encoding="utf-8")
+    assert "data-designer-alpha" in index_page
+    assert "Browse available Data Designer plugins" in index_page
+    assert "make plugin-docs" not in index_page
     assert (generated_root / "data-designer-alpha" / "index.md").read_text(encoding="utf-8") == "# Alpha docs\n"
     assert (generated_root / "data-designer-alpha" / "usage.md").read_text(encoding="utf-8") == "# Usage\n"
     assert (generated_root / "data-designer-alpha" / "assets" / "sample.txt").read_text(encoding="utf-8") == "asset\n"

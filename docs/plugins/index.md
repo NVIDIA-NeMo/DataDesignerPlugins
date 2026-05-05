@@ -2,17 +2,19 @@
 
 # Plugins
 
-Plugin pages are assembled from each plugin package's `docs/` directory and package metadata.
-Add or update pages under `plugins/<plugin-package>/docs/`, then run `make plugin-docs`.
+Browse available Data Designer plugins by what they add to your data generation workflow.
 
 <div class="plugin-doc-grid">
-  <a class="plugin-doc-card" href="data-designer-template/">
-    <span class="plugin-doc-card__title">data-designer-template</span>
-    <span class="plugin-doc-card__description">Template Data Designer plugin — text transform column generator</span>
-    <span class="plugin-doc-card__meta">
-      Version <code>0.1.0</code>
-      <span>Column types: <code>text-transform</code></span>
-      <span>Source: <code>plugins/data-designer-template/docs</code></span>
+  <a class="plugin-doc-card" href="data-designer-template/" aria-label="Open data-designer-template documentation">
+    <span class="plugin-doc-card__header">
+      <span class="plugin-doc-card__title">data-designer-template</span>
+      <span class="plugin-doc-card__version">v0.1.0</span>
     </span>
+    <span class="plugin-doc-card__description">Template Data Designer plugin — text transform column generator</span>
+    <span class="plugin-doc-card__section">
+      <span class="plugin-doc-card__label">Column types</span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">text-transform</span></span>
+    </span>
+    <span class="plugin-doc-card__cta">Open plugin docs</span>
   </a>
 </div>

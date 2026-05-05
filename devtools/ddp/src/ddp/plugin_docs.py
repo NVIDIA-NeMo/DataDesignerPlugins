@@ -138,6 +138,20 @@ def format_html_code_list(values: tuple[str, ...]) -> str:
     return ", ".join(f"<code>{escape(value)}</code>" for value in values)
 
 
+def format_html_chips(values: tuple[str, ...]) -> str:
+    """Format values as card badge chips.
+
+    Args:
+        values: Values to format.
+
+    Returns:
+        HTML span chips, or a fallback chip when empty.
+    """
+    if not values:
+        return '<span class="plugin-doc-chip plugin-doc-chip--muted">No entry points</span>'
+    return "".join(f'<span class="plugin-doc-chip">{escape(value)}</span>' for value in values)
+
+
 def render_plugins_index(plugins: list[PluginDocs], repo_root: Path) -> str:
     """Render the generated plugin documentation landing page.
 
@@ -153,8 +167,7 @@ def render_plugins_index(plugins: list[PluginDocs], repo_root: Path) -> str:
         "",
         "# Plugins",
         "",
-        "Plugin pages are assembled from each plugin package's `docs/` directory and package metadata.",
-        "Add or update pages under `plugins/<plugin-package>/docs/`, then run `make plugin-docs`.",
+        "Browse available Data Designer plugins by what they add to your data generation workflow.",
         "",
     ]
 
@@ -164,21 +177,20 @@ def render_plugins_index(plugins: list[PluginDocs], repo_root: Path) -> str:
 
     lines.append('<div class="plugin-doc-grid">')
     for plugin in plugins:
-        source = (
-            plugin.source_docs_dir.relative_to(repo_root).as_posix()
-            if plugin.source_docs_dir is not None
-            else "generated from package metadata"
-        )
         lines.extend(
             [
-                f'  <a class="plugin-doc-card" href="{escape(plugin.docs_slug)}/">',
-                f'    <span class="plugin-doc-card__title">{escape(plugin.package_name)}</span>',
-                f'    <span class="plugin-doc-card__description">{escape(plugin.description)}</span>',
-                '    <span class="plugin-doc-card__meta">',
-                f"      Version <code>{escape(plugin.version)}</code>",
-                f"      <span>Column types: {format_html_code_list(plugin.column_types)}</span>",
-                f"      <span>Source: <code>{escape(source)}</code></span>",
+                f'  <a class="plugin-doc-card" href="{escape(plugin.docs_slug)}/" '
+                f'aria-label="Open {escape(plugin.package_name)} documentation">',
+                '    <span class="plugin-doc-card__header">',
+                f'      <span class="plugin-doc-card__title">{escape(plugin.package_name)}</span>',
+                f'      <span class="plugin-doc-card__version">v{escape(plugin.version)}</span>',
                 "    </span>",
+                f'    <span class="plugin-doc-card__description">{escape(plugin.description)}</span>',
+                '    <span class="plugin-doc-card__section">',
+                '      <span class="plugin-doc-card__label">Column types</span>',
+                f'      <span class="plugin-doc-card__chips">{format_html_chips(plugin.column_types)}</span>',
+                "    </span>",
+                '    <span class="plugin-doc-card__cta">Open plugin docs</span>',
                 "  </a>",
             ]
         )
