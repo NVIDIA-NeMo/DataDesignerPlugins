@@ -35,9 +35,6 @@
   transform: translateY(-0.06rem);
 }
 
-.md-typeset .plugin-doc-card,
-.md-typeset .plugin-doc-card:hover,
-.md-typeset .plugin-doc-card:focus,
 .md-typeset .plugin-doc-card * {
   border-bottom: 0 !important;
   text-decoration: none !important;
