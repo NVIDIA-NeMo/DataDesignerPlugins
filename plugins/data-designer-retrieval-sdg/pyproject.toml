@@ -27,6 +27,9 @@ classifiers = [
 embedding-dedup = "data_designer_retrieval_sdg.plugins:embedding_dedup_plugin"
 document-chunker = "data_designer_retrieval_sdg.plugins:document_chunker_plugin"
 
+[project.entry-points."data_designer.recipes"]
+retrieval-sdg = "data_designer_retrieval_sdg.recipe:recipe"
+
 [project.scripts]
 data-designer-retrieval-sdg = "data_designer_retrieval_sdg.cli:main"
 

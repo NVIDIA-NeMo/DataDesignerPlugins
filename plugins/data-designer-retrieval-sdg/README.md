@@ -20,6 +20,31 @@ registries via `[project.entry-points."data_designer.plugins"]`:
 Both ship with the same `pip install data-designer-retrieval-sdg` and
 become discoverable automatically through Python entry points.
 
+## Recipe
+
+When installed with a Data Designer version that supports recipes, this
+package also registers a `retrieval-sdg` recipe through
+`[project.entry-points."data_designer.recipes"]`. The recipe lets users run
+the opinionated end-to-end pipeline from the main Data Designer CLI:
+
+```bash
+data-designer run-recipe retrieval-sdg --config retrieval-sdg.yaml --num-records 200
+```
+
+Minimal recipe config:
+
+```yaml
+input_dir: ./my_documents
+generated_output_dir: ./generated_output
+corpus_id: my_corpus
+```
+
+Inspect the full config schema with:
+
+```bash
+data-designer recipes show retrieval-sdg
+```
+
 ## Native async (`DATA_DESIGNER_ASYNC_ENGINE=1`)
 
 `embedding-dedup` implements `agenerate()` directly on top of
