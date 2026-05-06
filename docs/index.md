@@ -38,4 +38,6 @@ DataDesignerPlugins/
 - Write tests around public interfaces.
 - Regenerate generated metadata when plugin docs, plugin metadata, or ownership
   changes.
+- Keep `catalog/plugins.json` current when plugin package metadata or entry
+  points change.
 - Run the Makefile targets locally before opening or updating a pull request.

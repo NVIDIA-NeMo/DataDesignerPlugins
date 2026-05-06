@@ -126,7 +126,12 @@ files:
 
 ```bash
 make plugin-docs
+make catalog
 make codeowners
 ```
 
-CI verifies that generated plugin docs and `.github/CODEOWNERS` are current.
+CI verifies that generated plugin docs, `catalog/plugins.json`, and
+`.github/CODEOWNERS` are current. The catalog's
+`compatibility.data_designer.requirement` and
+`compatibility.data_designer.specifier` fields come from each package's direct
+versioned `data-designer` dependency in `[project].dependencies`.

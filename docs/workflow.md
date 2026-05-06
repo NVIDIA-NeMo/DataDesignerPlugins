@@ -27,7 +27,7 @@ The target runs:
 | `make lint` | Ruff linting and formatting. |
 | `make test` | Each plugin's tests in an isolated virtual environment. |
 | `make validate` | Installed `data_designer.plugins` entry points with `assert_valid_plugin`. |
-| `make check` | Generated plugin docs, generated CODEOWNERS, and SPDX license headers. |
+| `make check` | Generated plugin docs, generated catalog, generated CODEOWNERS, and SPDX license headers. |
 | `make docs` | Zensical builds the documentation site in strict mode. |
 | `make docs-server` | Zensical serves the documentation site locally while you edit. |
 
@@ -64,12 +64,15 @@ Generated site inputs come from repository metadata and plugin docs:
 
 ```bash
 make plugin-docs
+make catalog
 make codeowners
 ```
 
 `docs/plugins/` and the plugin section of `zensical.toml` are generated from
 plugin package metadata and `plugins/*/docs/`. Do not edit generated plugin site
-pages directly.
+pages directly. `catalog/plugins.json` is generated from installed local plugin
+entry points, package metadata, and direct `data-designer` dependency specifiers
+for compatibility checks by external tools.
 
 ## GitHub CI
 

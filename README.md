@@ -26,6 +26,7 @@ This generates a complete plugin skeleton under `plugins/data-designer-my-plugin
 DataDesignerPlugins/
 |-- devtools/
 |   `-- ddp/                          # Monorepo management tooling (ddp CLI, dev-only)
+|-- catalog/                          # Machine-consumable plugin catalog data
 |-- plugins/                          # One directory per plugin (auto-discovered by uv)
 |   `-- data-designer-template/       # Reference implementation
 `-- docs/                             # Zensical documentation source
@@ -43,8 +44,9 @@ make lint               # Lint and format check (ruff)
 make format             # Auto-fix lint issues and reformat
 make test               # Test each plugin in an isolated venv
 make validate           # Run assert_valid_plugin on all entry points
-make check              # Verify generated plugin docs, CODEOWNERS, and license headers are up to date
+make check              # Verify generated plugin docs, catalog, CODEOWNERS, and license headers are up to date
 make plugin-docs        # Regenerate docs/plugins/ from per-plugin docs and metadata
+make catalog            # Regenerate catalog/plugins.json
 make docs               # Build the Zensical documentation site
 make docs-server        # Serve docs locally at http://localhost:8000
 make all                # lint + test + validate + check + docs (full local CI)
@@ -60,6 +62,7 @@ If you change plugin docs, plugin metadata, or ownership, regenerate derived fil
 
 ```bash
 make plugin-docs              # Regenerate plugin documentation site inputs
+make catalog                  # Regenerate catalog/plugins.json
 make codeowners               # Regenerate CODEOWNERS
 make update-license-headers   # Fix SPDX headers
 ```
@@ -71,6 +74,7 @@ The `ddp` command manages the monorepo. Run `uv run ddp --help` to see all subco
 | Command | Description |
 |---------|-------------|
 | `ddp new <name>` | Scaffold a new plugin |
+| `ddp sync catalog` | Sync the static plugin catalog JSON |
 | `ddp validate` | Validate all installed plugins |
 | `ddp plugin-docs` | Generate plugin docs site inputs |
 | `ddp codeowners` | Aggregate CODEOWNERS to stdout |
