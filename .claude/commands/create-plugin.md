@@ -36,35 +36,20 @@ uv run python -c "import inspect; from data_designer.engine.column_generators.ge
 
 ---
 
-## Phase 2: Scaffold
+## Phase 2: Scaffold With `ddp`
 
-Always use the canonical scaffold. Do not hand-create a plugin package layout.
+The initial plugin structure is owned by the repo's `ddp` CLI. Always invoke the scaffold command; do not create the package directory, `pyproject.toml`, source package, tests, docs, or ownership files by hand.
 
 ```bash
 make sync
 uv run ddp new <slug>
 ```
 
-Use the kebab-case slug without the `data-designer-` prefix. The scaffold creates:
+Use the kebab-case slug without the `data-designer-` prefix. If you need to understand exactly what the command creates, read `devtools/ddp/src/ddp/scaffold.py` or inspect the generated files after running the command. The skill should not duplicate the scaffold algorithm; the software encodes that process deterministically.
 
-```text
-plugins/data-designer-<slug>/
-|-- pyproject.toml
-|-- README.md
-|-- CODEOWNERS
-|-- docs/
-|   `-- index.md
-|-- tests/
-|   `-- test_plugin.py
-`-- src/
-    `-- data_designer_<slug_with_underscores>/
-        |-- __init__.py
-        |-- config.py
-        |-- impl.py
-        `-- plugin.py
-```
+If the command fails because the scaffold is wrong or incomplete, fix the `ddp` tooling or report the blocker. Do not bypass it by hand-assembling the initial plugin skeleton.
 
-Read all generated files after scaffolding. If the slug contains words such as `column` and the scaffold generates stuttering class names, rename the classes and update `plugin.py`.
+After scaffolding, read the generated files before editing them. If the slug contains words such as `column` and the generated class names stutter, rename the classes and update `plugin.py`.
 
 ---
 
@@ -294,7 +279,8 @@ make all
 
 Before opening the PR, verify you have not done any of these:
 
-- Skipped `uv run ddp new <slug>` and hand-created the plugin.
+- Skipped `uv run ddp new <slug>` and hand-created the plugin structure.
+- Treated this command as a copy of the scaffold algorithm instead of delegating the initial structure to `ddp`.
 - Used `docs/adding-a-plugin.md`; the current guide is `docs/authoring.md`.
 - Used `make catalog`; the current generated docs target is `make plugin-docs`.
 - Edited generated files under `docs/plugins/` manually.

@@ -30,18 +30,20 @@ uv run python -c "import inspect; from data_designer.config.base import SingleCo
 uv run python -c "import inspect; from data_designer.engine.column_generators.generators.base import ColumnGeneratorFullColumn; print(inspect.getsource(ColumnGeneratorFullColumn))"
 ```
 
-## Scaffold First
+## Scaffold With `ddp`
 
-Use the repo CLI instead of creating package files by hand:
+The initial plugin structure is owned by the repo's `ddp` CLI. Always invoke the scaffold command; do not create the package directory, `pyproject.toml`, source package, tests, docs, or ownership files by hand.
 
 ```bash
 make sync
 uv run ddp new <slug>
 ```
 
-Use a kebab-case slug without the `data-designer-` prefix. The package will be created at `plugins/data-designer-<slug>/` with `pyproject.toml`, `README.md`, `CODEOWNERS`, `docs/index.md`, tests, and `src/data_designer_<slug>/`.
+Use a kebab-case slug without the `data-designer-` prefix. If you need the exact scaffold behavior, read `devtools/ddp/src/ddp/scaffold.py` or inspect the generated files after running the command. Do not reproduce the scaffold algorithm in this skill; the software encodes that process deterministically.
 
-Read the generated files before editing. If the generated class names stutter because the slug contains words such as `column`, rename the classes and update `plugin.py`.
+If the command fails because the scaffold is wrong or incomplete, fix the `ddp` tooling or report the blocker. Do not bypass it by hand-assembling the initial plugin skeleton.
+
+Read the generated files before editing them. If the generated class names stutter because the slug contains words such as `column`, rename the classes and update `plugin.py`.
 
 ## Implementation Rules
 
