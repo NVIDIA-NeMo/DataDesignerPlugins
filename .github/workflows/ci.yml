@@ -60,5 +60,6 @@ jobs:
           path: |
             docs/plugins/**
             zensical.toml
+            catalog/plugins.json.new
             .github/CODEOWNERS.new
           if-no-files-found: ignore
