@@ -1,6 +1,6 @@
 # NeMo Data Designer Plugins
 
-[![Documentation](https://img.shields.io/badge/docs-authoring%20guide-blue)](docs/adding-a-plugin.md)
+[![Documentation](https://img.shields.io/badge/docs-documentation-blue)](https://nvidia-nemo.github.io/DataDesignerPlugins/)
 
 First-class NVIDIA-provided plugins for [NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
 
