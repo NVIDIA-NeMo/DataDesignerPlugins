@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test validate docs docs-server plugin-docs check-plugin-docs codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test test-devtools test-plugins validate docs docs-server plugin-docs catalog check-plugin-docs check-catalog codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -22,7 +22,12 @@ format:
 # Auto-discover plugins and test each in an isolated venv.
 # Catches dependency leaks that workspace-level testing misses.
 
-test:
+test: test-devtools test-plugins
+
+test-devtools:
+	uv run pytest devtools/ddp/tests/ -v
+
+test-plugins:
 	@failed=0; \
 	for pyproject in plugins/*/pyproject.toml; do \
 		plugin_dir="$$(dirname "$$pyproject")"; \
@@ -57,16 +62,22 @@ DOCS_DEV_ADDR ?= localhost:8000
 docs-server: plugin-docs
 	uv run zensical serve --dev-addr $(DOCS_DEV_ADDR)
 
-# ── Plugin docs & CODEOWNERS ──────────────────────────────────────────────
+# ── Plugin docs, catalog & CODEOWNERS ─────────────────────────────────────
 
 plugin-docs:
 	uv run ddp plugin-docs
+
+catalog:
+	uv run ddp sync catalog
 
 codeowners:
 	uv run ddp codeowners > .github/CODEOWNERS
 
 check-plugin-docs:
 	uv run ddp plugin-docs --check
+
+check-catalog:
+	uv run ddp sync catalog --check
 
 check-codeowners:
 	uv run ddp codeowners > .github/CODEOWNERS.new
@@ -81,7 +92,7 @@ update-license-headers:
 
 # ── Aggregate targets ────────────────────────────────────────────────────
 
-check: check-plugin-docs check-codeowners check-license-headers
+check: check-plugin-docs check-catalog check-codeowners check-license-headers
 
 all: lint test validate check docs
 

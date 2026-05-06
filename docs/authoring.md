@@ -125,8 +125,16 @@ When plugin docs, plugin metadata, or ownership changes, regenerate the derived
 files:
 
 ```bash
+make sync
 make plugin-docs
+make catalog
 make codeowners
 ```
 
-CI verifies that generated plugin docs and `.github/CODEOWNERS` are current.
+CI verifies that generated plugin docs, `catalog/plugins.json`, and
+`.github/CODEOWNERS` are current. The catalog's
+`compatibility.data_designer.requirement` and
+`compatibility.data_designer.specifier` fields come from each package's direct
+versioned `data-designer` dependency in `[project].dependencies`. The catalog
+also publishes the package's `requires-python` specifier and any
+`data-designer` dependency environment marker.

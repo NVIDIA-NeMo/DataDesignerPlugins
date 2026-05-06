@@ -7,6 +7,7 @@ version = "0.1.0"
 description = "Local dev-only monorepo management tooling for data-designer-plugins (not a runtime dependency)"
 requires-python = ">=3.10"
 dependencies = [
+    "packaging>=24.0",
     # Backport of the stdlib `tomllib` (added in 3.11); only installed on 3.10.
     "tomli>=1.1.0; python_version < '3.11'",
 ]

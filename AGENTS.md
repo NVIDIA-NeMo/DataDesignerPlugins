@@ -198,5 +198,5 @@ Release facts:
 - [DataDesigner GitHub](https://github.com/NVIDIA-NeMo/DataDesigner)
 - [DataDesigner Latest Release Notes](https://github.com/NVIDIA-NeMo/DataDesigner/releases/latest)
 - [DataDesigner Plugin Authoring Guide](https://nvidia-nemo.github.io/DataDesigner/latest/plugins/overview/)
-- [data-designer-plugins authoring guide](docs/adding-a-plugin.md)
-- [data-designer-plugins plugin catalog](docs/catalog.md)
+- [data-designer-plugins authoring guide](docs/authoring.md)
+- [data-designer-plugins plugin catalog](catalog/plugins.json)

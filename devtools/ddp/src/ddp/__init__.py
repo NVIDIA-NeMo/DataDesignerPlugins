@@ -4,6 +4,6 @@
 """Local dev-only monorepo management tooling for data-designer-plugins.
 
 This package is NOT a runtime dependency of any plugin.  It provides CLI
-tools for scaffolding, validation, plugin docs generation, CODEOWNERS
-aggregation, and license-header management across the monorepo.
+tools for scaffolding, validation, plugin docs generation, catalog syncing,
+CODEOWNERS aggregation, and license-header management across the monorepo.
 """
