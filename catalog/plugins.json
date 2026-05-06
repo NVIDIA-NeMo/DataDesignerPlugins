@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "name": "text-transform",
+      "plugin_type": "column-generator",
+      "description": "Template Data Designer plugin \u2014 text transform column generator",
+      "package": {
+        "name": "data-designer-template",
+        "version": "0.1.0",
+        "path": "plugins/data-designer-template"
+      },
+      "entry_point": {
+        "group": "data_designer.plugins",
+        "name": "text-transform",
+        "value": "data_designer_template.plugin:plugin"
+      },
+      "compatibility": {
+        "data_designer": {
+          "requirement": "data-designer>=0.5.7",
+          "specifier": ">=0.5.7"
+        }
+      }
+    }
+  ]
+}
