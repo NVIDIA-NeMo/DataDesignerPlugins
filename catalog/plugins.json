@@ -16,9 +16,13 @@
         "value": "data_designer_template.plugin:plugin"
       },
       "compatibility": {
+        "python": {
+          "specifier": ">=3.10"
+        },
         "data_designer": {
           "requirement": "data-designer>=0.5.7",
-          "specifier": ">=0.5.7"
+          "specifier": ">=0.5.7",
+          "marker": null
         }
       }
     }

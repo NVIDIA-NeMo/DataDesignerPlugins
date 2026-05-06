@@ -12,9 +12,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 
 from ddp._repo import find_repo_root, load_toml
 
@@ -45,10 +48,14 @@ class CatalogEntry:
         entry_point_name: Entry point name in the ``data_designer.plugins`` group.
         entry_point_value: Import target registered for the entry point.
         repository_path: Path to the plugin package from the repository root.
+        python_requires: Python version specifier from ``[project].requires-python``.
         data_designer_requirement: Direct ``data-designer`` dependency
             requirement string.
         data_designer_version_specifier: Version specifier from the package's
             direct ``data-designer`` dependency.
+        data_designer_marker: Environment marker from the package's direct
+            ``data-designer`` dependency, or ``None`` when the requirement is
+            unconditionally active.
     """
 
     plugin_package: str
@@ -59,8 +66,10 @@ class CatalogEntry:
     entry_point_name: str
     entry_point_value: str
     repository_path: str
+    python_requires: str
     data_designer_requirement: str
     data_designer_version_specifier: str
+    data_designer_marker: str | None
 
 
 def main() -> None:
@@ -129,18 +138,21 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
     entries: list[CatalogEntry] = []
     for toml_path in sorted(plugins_dir.glob("*/pyproject.toml")):
         data = load_toml(toml_path)
+        project = project_table_for_pyproject(data, toml_path)
 
-        project = data.get("project", {})
-        name = project.get("name", toml_path.parent.name)
-        version = project.get("version", "unknown")
-        description = project.get("description", "")
+        name = required_project_string(toml_path.parent.name, project, "name")
+        version = project_version(toml_path.parent.name, project.get("version"))
+        description = optional_project_string(name, project, "description")
+        python_requires = python_requires_specifier(name, project.get("requires-python"))
         data_designer_requirement = data_designer_requirement_for_dependencies(
             package_name=name,
             dependencies=project.get("dependencies", []),
         )
-        data_designer_version_specifier = str(Requirement(data_designer_requirement).specifier)
+        data_designer = Requirement(data_designer_requirement)
+        data_designer_version_specifier = str(data_designer.specifier)
+        data_designer_marker = str(data_designer.marker) if data_designer.marker is not None else None
 
-        entry_points = project.get("entry-points", {}).get(PLUGIN_ENTRY_POINT_GROUP, {})
+        entry_points = data_designer_entry_points(name, project)
         repository_path = toml_path.parent.relative_to(plugins_dir.parent).as_posix()
         for entry_point_name, entry_point_value in sorted(entry_points.items()):
             entries.append(
@@ -150,9 +162,12 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
                     description=description,
                     entry_point_name=entry_point_name,
                     entry_point_value=entry_point_value,
+                    package_dir=toml_path.parent,
                     repository_path=repository_path,
+                    python_requires=python_requires,
                     data_designer_requirement=data_designer_requirement,
                     data_designer_version_specifier=data_designer_version_specifier,
+                    data_designer_marker=data_designer_marker,
                 )
             )
 
@@ -165,9 +180,12 @@ def catalog_entry_for_entry_point(
     description: str,
     entry_point_name: str,
     entry_point_value: str,
+    package_dir: Path,
     repository_path: str,
+    python_requires: str,
     data_designer_requirement: str,
     data_designer_version_specifier: str,
+    data_designer_marker: str | None,
 ) -> CatalogEntry:
     """Build a catalog entry from an installed DataDesigner plugin entry point.
 
@@ -177,11 +195,17 @@ def catalog_entry_for_entry_point(
         description: Local plugin package description.
         entry_point_name: Entry point name in the ``data_designer.plugins`` group.
         entry_point_value: Import target registered for the entry point.
+        package_dir: Local plugin package directory.
         repository_path: Path to the plugin package from the repository root.
+        python_requires: Python version specifier from
+            ``[project].requires-python``.
         data_designer_requirement: Direct ``data-designer`` dependency
             requirement string.
         data_designer_version_specifier: Version specifier from the package's
             direct ``data-designer`` dependency.
+        data_designer_marker: Environment marker from the package's direct
+            ``data-designer`` dependency, or ``None`` when the requirement is
+            unconditionally active.
 
     Returns:
         Catalog entry with runtime plugin metadata.
@@ -189,7 +213,12 @@ def catalog_entry_for_entry_point(
     Raises:
         CatalogError: If plugin metadata cannot be loaded or read.
     """
-    plugin = load_plugin_from_entry_point(package_name, entry_point_name)
+    plugin = load_plugin_from_entry_point(
+        package_name=package_name,
+        entry_point_name=entry_point_name,
+        entry_point_value=entry_point_value,
+        package_dir=package_dir,
+    )
     try:
         plugin_name = plugin.name
         plugin_type = plugin.plugin_type.value
@@ -217,9 +246,159 @@ def catalog_entry_for_entry_point(
         entry_point_name=entry_point_name,
         entry_point_value=entry_point_value,
         repository_path=repository_path,
+        python_requires=python_requires,
         data_designer_requirement=data_designer_requirement,
         data_designer_version_specifier=data_designer_version_specifier,
+        data_designer_marker=data_designer_marker,
     )
+
+
+def project_table_for_pyproject(data: dict[str, Any], toml_path: Path) -> dict[str, Any]:
+    """Return the validated ``[project]`` table from a plugin ``pyproject.toml``.
+
+    Args:
+        data: Parsed ``pyproject.toml`` content.
+        toml_path: Path to the parsed ``pyproject.toml``.
+
+    Returns:
+        The ``[project]`` table.
+
+    Raises:
+        CatalogError: If the table is missing or malformed.
+    """
+    project = data.get("project")
+    if not isinstance(project, dict):
+        raise CatalogError(f"package at {toml_path.parent.as_posix()!r} has invalid [project] table")
+    return project
+
+
+def required_project_string(package_name: str, project: dict[str, Any], key: str) -> str:
+    """Return a required non-empty string value from ``[project]``.
+
+    Args:
+        package_name: Local plugin package name or directory name.
+        project: Parsed ``[project]`` table.
+        key: Project metadata key.
+
+    Returns:
+        Project metadata string value.
+
+    Raises:
+        CatalogError: If the value is missing or not a non-empty string.
+    """
+    value = project.get(key)
+    if not isinstance(value, str) or not value:
+        raise CatalogError(f"package {package_name!r} has invalid [project].{key}; expected a non-empty string")
+    return value
+
+
+def optional_project_string(package_name: str, project: dict[str, Any], key: str) -> str:
+    """Return an optional string value from ``[project]``.
+
+    Args:
+        package_name: Local plugin package name.
+        project: Parsed ``[project]`` table.
+        key: Project metadata key.
+
+    Returns:
+        Project metadata string value, or ``""`` when omitted.
+
+    Raises:
+        CatalogError: If the value is present but not a string.
+    """
+    value = project.get(key, "")
+    if not isinstance(value, str):
+        raise CatalogError(f"package {package_name!r} has invalid [project].{key}; expected a string")
+    return value
+
+
+def project_version(package_name: str, version: object) -> str:
+    """Return a validated PEP 440 package version.
+
+    Args:
+        package_name: Local plugin package name or directory name.
+        version: Raw ``[project].version`` value.
+
+    Returns:
+        Canonical PEP 440 package version.
+
+    Raises:
+        CatalogError: If the version is missing, not a string, or not PEP 440.
+    """
+    if not isinstance(version, str) or not version:
+        raise CatalogError(f"package {package_name!r} has invalid [project].version; expected a non-empty string")
+    try:
+        return str(Version(version))
+    except InvalidVersion as exc:
+        raise CatalogError(f"package {package_name!r} has invalid [project].version {version!r}: {exc}") from exc
+
+
+def python_requires_specifier(package_name: str, requires_python: object) -> str:
+    """Return a validated Python compatibility specifier.
+
+    Args:
+        package_name: Local plugin package name.
+        requires_python: Raw ``[project].requires-python`` value.
+
+    Returns:
+        Python version specifier string.
+
+    Raises:
+        CatalogError: If the specifier is missing, malformed, or empty.
+    """
+    if not isinstance(requires_python, str) or not requires_python:
+        raise CatalogError(
+            f"package {package_name!r} has invalid [project].requires-python; expected a non-empty string"
+        )
+    try:
+        specifier = SpecifierSet(requires_python)
+    except InvalidSpecifier as exc:
+        raise CatalogError(
+            f"package {package_name!r} has invalid [project].requires-python {requires_python!r}: {exc}"
+        ) from exc
+    if not str(specifier):
+        raise CatalogError(
+            f"package {package_name!r} has invalid [project].requires-python; expected at least one version specifier"
+        )
+    return str(specifier)
+
+
+def data_designer_entry_points(package_name: str, project: dict[str, Any]) -> dict[str, str]:
+    """Return validated DataDesigner plugin entry points.
+
+    Args:
+        package_name: Local plugin package name.
+        project: Parsed ``[project]`` table.
+
+    Returns:
+        Entry point mapping from entry point names to import targets.
+
+    Raises:
+        CatalogError: If the entry point table is missing, empty, or malformed.
+    """
+    entry_points = project.get("entry-points")
+    if not isinstance(entry_points, dict):
+        raise CatalogError(f"package {package_name!r} must declare [project.entry-points.{PLUGIN_ENTRY_POINT_GROUP!r}]")
+
+    plugin_entry_points = entry_points.get(PLUGIN_ENTRY_POINT_GROUP)
+    if not isinstance(plugin_entry_points, dict) or not plugin_entry_points:
+        raise CatalogError(
+            f"package {package_name!r} must declare at least one [project.entry-points.{PLUGIN_ENTRY_POINT_GROUP!r}]"
+        )
+
+    for entry_point_name, entry_point_value in plugin_entry_points.items():
+        if not isinstance(entry_point_name, str) or not entry_point_name:
+            raise CatalogError(
+                f"package {package_name!r} has invalid {PLUGIN_ENTRY_POINT_GROUP!r} entry point name "
+                f"{entry_point_name!r}; expected a non-empty string"
+            )
+        if not isinstance(entry_point_value, str) or not entry_point_value:
+            raise CatalogError(
+                f"package {package_name!r} entry point {entry_point_name!r} has invalid value "
+                f"{entry_point_value!r}; expected a non-empty string"
+            )
+
+    return plugin_entry_points
 
 
 def data_designer_requirement_for_dependencies(package_name: str, dependencies: object) -> str:
@@ -267,12 +446,20 @@ def data_designer_requirement_for_dependencies(package_name: str, dependencies: 
     return matching_requirements[0]
 
 
-def load_plugin_from_entry_point(package_name: str, entry_point_name: str) -> Any:
+def load_plugin_from_entry_point(
+    package_name: str,
+    entry_point_name: str,
+    entry_point_value: str,
+    package_dir: Path,
+) -> Any:
     """Load and validate an installed DataDesigner plugin entry point.
 
     Args:
         package_name: Local plugin package name.
         entry_point_name: Entry point name in the ``data_designer.plugins`` group.
+        entry_point_value: Expected import target from the local
+            ``pyproject.toml``.
+        package_dir: Local plugin package directory.
 
     Returns:
         Loaded DataDesigner ``Plugin`` object.
@@ -289,7 +476,12 @@ def load_plugin_from_entry_point(package_name: str, entry_point_name: str) -> An
             f"entry point {entry_point_name!r}: {exc}"
         ) from exc
 
-    entry_point = find_installed_entry_point(package_name, entry_point_name)
+    entry_point = find_installed_entry_point(
+        package_name=package_name,
+        entry_point_name=entry_point_name,
+        entry_point_value=entry_point_value,
+        package_dir=package_dir,
+    )
     try:
         plugin = entry_point.load()
     except Exception as exc:
@@ -303,12 +495,20 @@ def load_plugin_from_entry_point(package_name: str, entry_point_name: str) -> An
     return plugin
 
 
-def find_installed_entry_point(package_name: str, entry_point_name: str) -> importlib.metadata.EntryPoint:
+def find_installed_entry_point(
+    package_name: str,
+    entry_point_name: str,
+    entry_point_value: str,
+    package_dir: Path,
+) -> importlib.metadata.EntryPoint:
     """Find an installed entry point owned by a local package.
 
     Args:
         package_name: Local plugin package name.
         entry_point_name: Entry point name in the ``data_designer.plugins`` group.
+        entry_point_value: Expected import target from the local
+            ``pyproject.toml``.
+        package_dir: Local plugin package directory.
 
     Returns:
         Matching installed entry point.
@@ -325,12 +525,87 @@ def find_installed_entry_point(package_name: str, entry_point_name: str) -> impo
             normalize_distribution_name(distribution_name) == normalized_package_name
             and entry_point.name == entry_point_name
         ):
+            validate_installed_entry_point(
+                package_name=package_name,
+                entry_point=entry_point,
+                entry_point_value=entry_point_value,
+                package_dir=package_dir,
+            )
             return entry_point
 
     raise CatalogError(
         f"package {package_name!r} entry point {entry_point_name!r} is not installed; "
         "run `make sync` before syncing the catalog"
     )
+
+
+def validate_installed_entry_point(
+    package_name: str,
+    entry_point: importlib.metadata.EntryPoint,
+    entry_point_value: str,
+    package_dir: Path,
+) -> None:
+    """Validate that an installed entry point matches local package metadata.
+
+    Args:
+        package_name: Local plugin package name.
+        entry_point: Installed entry point selected by package and name.
+        entry_point_value: Expected import target from the local
+            ``pyproject.toml``.
+        package_dir: Local plugin package directory.
+
+    Raises:
+        CatalogError: If the installed entry point target or source path does
+            not match the local plugin package.
+    """
+    if entry_point.value != entry_point_value:
+        raise CatalogError(
+            f"package {package_name!r} entry point {entry_point.name!r} is stale; installed target "
+            f"{entry_point.value!r} does not match pyproject target {entry_point_value!r}. Run `make sync`."
+        )
+
+    source_path = entry_point_distribution_source_path(entry_point)
+    expected_path = package_dir.resolve()
+    if source_path != expected_path:
+        raise CatalogError(
+            f"package {package_name!r} entry point {entry_point.name!r} is installed from "
+            f"{source_path.as_posix() if source_path is not None else 'an unknown source'}, expected "
+            f"{expected_path.as_posix()}. Run `make sync`."
+        )
+
+
+def entry_point_distribution_source_path(entry_point: importlib.metadata.EntryPoint) -> Path | None:
+    """Return the editable source path for an installed entry point.
+
+    Args:
+        entry_point: Installed entry point.
+
+    Returns:
+        Source path from ``direct_url.json`` when the entry point distribution
+        was installed from a local file URL, otherwise ``None``.
+    """
+    distribution = getattr(entry_point, "dist", None)
+    if distribution is None:
+        return None
+
+    for distribution_file in distribution.files or ():
+        if not str(distribution_file).endswith("direct_url.json"):
+            continue
+        direct_url_path = distribution.locate_file(distribution_file)
+        try:
+            direct_url = json.loads(direct_url_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        url = direct_url.get("url")
+        if not isinstance(url, str):
+            return None
+        parsed = urlparse(url)
+        if parsed.scheme != "file":
+            return None
+        return Path(unquote(parsed.path)).resolve()
+
+    return None
 
 
 def entry_point_distribution_name(entry_point: importlib.metadata.EntryPoint) -> str | None:
@@ -387,9 +662,13 @@ def render_catalog_json(entries: list[CatalogEntry]) -> str:
                     "value": entry.entry_point_value,
                 },
                 "compatibility": {
+                    "python": {
+                        "specifier": entry.python_requires,
+                    },
                     "data_designer": {
                         "requirement": entry.data_designer_requirement,
                         "specifier": entry.data_designer_version_specifier,
+                        "marker": entry.data_designer_marker,
                     },
                 },
             }

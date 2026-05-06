@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.10"
           enable-cache: true
-      # test uses isolated venvs, not workspace sync
+      - run: make sync
       - run: make test
 
   validate:

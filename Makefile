@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test validate docs docs-server plugin-docs catalog check-plugin-docs check-catalog codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test test-devtools test-plugins validate docs docs-server plugin-docs catalog check-plugin-docs check-catalog codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -22,7 +22,12 @@ format:
 # Auto-discover plugins and test each in an isolated venv.
 # Catches dependency leaks that workspace-level testing misses.
 
-test:
+test: test-devtools test-plugins
+
+test-devtools:
+	uv run pytest devtools/ddp/tests/ -v
+
+test-plugins:
 	@failed=0; \
 	for pyproject in plugins/*/pyproject.toml; do \
 		plugin_dir="$$(dirname "$$pyproject")"; \
