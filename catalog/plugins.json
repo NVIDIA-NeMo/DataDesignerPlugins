@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "plugins": [
     {
       "name": "document-chunker",
@@ -24,6 +24,13 @@
           "specifier": ">=0.5.7",
           "marker": null
         }
+      },
+      "source": {
+        "type": "pypi",
+        "package": "data-designer-retrieval-sdg"
+      },
+      "docs": {
+        "url": "https://nvidia-nemo.github.io/DataDesignerPlugins/plugins/data-designer-retrieval-sdg/"
       }
     },
     {
@@ -49,6 +56,13 @@
           "specifier": ">=0.5.7",
           "marker": null
         }
+      },
+      "source": {
+        "type": "pypi",
+        "package": "data-designer-retrieval-sdg"
+      },
+      "docs": {
+        "url": "https://nvidia-nemo.github.io/DataDesignerPlugins/plugins/data-designer-retrieval-sdg/"
       }
     },
     {
@@ -74,6 +88,13 @@
           "specifier": ">=0.5.7",
           "marker": null
         }
+      },
+      "source": {
+        "type": "pypi",
+        "package": "data-designer-template"
+      },
+      "docs": {
+        "url": "https://nvidia-nemo.github.io/DataDesignerPlugins/plugins/data-designer-template/"
       }
     }
   ]
