@@ -5,6 +5,17 @@
 Browse available Data Designer plugins by what they add to your data generation workflow.
 
 <div class="plugin-doc-grid">
+  <a class="plugin-doc-card" href="data-designer-retrieval-sdg/" aria-label="Open data-designer-retrieval-sdg documentation">
+    <span class="plugin-doc-card__header">
+      <span class="plugin-doc-card__title">data-designer-retrieval-sdg</span>
+      <span class="plugin-doc-card__version">v0.1.0</span>
+    </span>
+    <span class="plugin-doc-card__description">Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion</span>
+    <span class="plugin-doc-card__section">
+      <span class="plugin-doc-card__label">Column types</span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">document-chunker</span><span class="plugin-doc-chip">embedding-dedup</span></span>
+    </span>
+  </a>
   <a class="plugin-doc-card" href="data-designer-template/" aria-label="Open data-designer-template documentation">
     <span class="plugin-doc-card__header">
       <span class="plugin-doc-card__title">data-designer-template</span>

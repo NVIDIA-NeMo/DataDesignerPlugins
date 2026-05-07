@@ -2,6 +2,56 @@
   "schema_version": 1,
   "plugins": [
     {
+      "name": "document-chunker",
+      "plugin_type": "seed-reader",
+      "description": "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion",
+      "package": {
+        "name": "data-designer-retrieval-sdg",
+        "version": "0.1.0",
+        "path": "plugins/data-designer-retrieval-sdg"
+      },
+      "entry_point": {
+        "group": "data_designer.plugins",
+        "name": "document-chunker",
+        "value": "data_designer_retrieval_sdg.plugins:document_chunker_plugin"
+      },
+      "compatibility": {
+        "python": {
+          "specifier": ">=3.10"
+        },
+        "data_designer": {
+          "requirement": "data-designer>=0.5.7",
+          "specifier": ">=0.5.7",
+          "marker": null
+        }
+      }
+    },
+    {
+      "name": "embedding-dedup",
+      "plugin_type": "column-generator",
+      "description": "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion",
+      "package": {
+        "name": "data-designer-retrieval-sdg",
+        "version": "0.1.0",
+        "path": "plugins/data-designer-retrieval-sdg"
+      },
+      "entry_point": {
+        "group": "data_designer.plugins",
+        "name": "embedding-dedup",
+        "value": "data_designer_retrieval_sdg.plugins:embedding_dedup_plugin"
+      },
+      "compatibility": {
+        "python": {
+          "specifier": ">=3.10"
+        },
+        "data_designer": {
+          "requirement": "data-designer>=0.5.7",
+          "specifier": ">=0.5.7",
+          "marker": null
+        }
+      }
+    },
+    {
       "name": "text-transform",
       "plugin_type": "column-generator",
       "description": "Template Data Designer plugin \u2014 text transform column generator",
