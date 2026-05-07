@@ -40,7 +40,7 @@ DataDesignerPlugins/
 
 Each plugin is an independent Python package with its own `pyproject.toml`, docs, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
 
-## Plugin Tap Catalog
+## Plugin Tap
 
 The default NVIDIA plugin tap catalog URL is:
 
@@ -48,51 +48,10 @@ The default NVIDIA plugin tap catalog URL is:
 https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
 ```
 
-`catalog/plugins.json` is generated, checked in, and consumable by Data Designer
-from the raw GitHub URL with unauthenticated HTTP. It does not require GitHub
-API credentials or GitHub Pages.
-
-The `/main/catalog/plugins.json` URL tracks the accepted `main` branch and is
-therefore mutable. For an immutable snapshot, use a tag or commit SHA in the raw
-URL, for example:
-
-```text
-https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/<tag-or-sha>/catalog/plugins.json
-```
-
-Release assets can be added later if raw Git snapshots are not sufficient.
-External taps may use any unauthenticated raw JSON endpoint or a local catalog
-file path.
-
-### Tap governance and trust
-
-DDPlugins is the NVIDIA-maintained curated first-party tap. New plugins belong
-in this repository when they are NVIDIA-maintained, broadly useful to Data
-Designer users, and have an accountable CODEOWNER who can review changes,
-answer compatibility questions, and own releases.
-
-External, team-specific, experimental, or community-maintained plugins do not
-need to land in DDPlugins to be useful. Publish them from an external tap
-instead: generate a schema v2 catalog and expose it from an unauthenticated raw
-JSON URL or a local catalog file path. See
-[docs/tap-catalog-schema-v2.md](docs/tap-catalog-schema-v2.md) for the tap
-catalog contract.
-
-Adding a tap is a trust decision, not only a discovery preference. A tap is a
-pointer to Python packages. Installing from a tap runs package-manager
-resolution and imports code after installation. Review the tap URL, package
-name, version, source/ref, and install command before confirming installs from
-non-default taps.
-
-Data Designer CLI install flows should distinguish these cases:
-
-- Default NVIDIA tap: this is the curated first-party source, so normal install
-  confirmation rules apply.
-- Non-default tap: users must explicitly opt in with `plugins taps add` before
-  plugins from that tap are discoverable.
-- Install from a non-default tap: show the tap URL, package name, package
-  version, source URL/ref/path, and exact package-manager command; require
-  confirmation unless `--yes` is passed.
+`catalog/plugins.json` is the generated raw JSON tap artifact for Data Designer.
+It is not served from GitHub Pages or an HTML repository page. See
+[docs/taps.md](docs/taps.md) for tap discovery, schema v2 fields, source
+objects, trust expectations, external tap setup, and raw URL pinning guidance.
 
 ## Development
 
