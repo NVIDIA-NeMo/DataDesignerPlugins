@@ -4,6 +4,30 @@ Create plugins through the repository tooling first. The scaffold is the source
 of truth for package shape, entry point registration, tests, and ownership
 files.
 
+## Contributing to the NVIDIA tap
+
+This repository is the NVIDIA-maintained curated first-party plugin tap for
+Data Designer. Add a new plugin here when all of these are true:
+
+- NVIDIA will maintain the plugin and its releases.
+- The plugin is broadly useful to Data Designer users rather than specific to a
+  private workflow, one team, or one downstream deployment.
+- The plugin has an accountable CODEOWNER who can review changes, answer
+  compatibility questions, and own release follow-through.
+
+Plugins that are external, team-specific, experimental, or community-maintained
+can still be useful without landing in DDPlugins. Publish those from an
+external tap instead. External taps should expose a schema v2 catalog from an
+unauthenticated raw JSON URL, or from a local catalog file path for authoring
+and offline workflows. See [Tap catalog schema v2](tap-catalog-schema-v2.md)
+for the JSON contract and install source metadata.
+
+Adding a tap is a trust decision, not only a discovery preference. A tap is a
+pointer to Python packages. Installing from a tap runs package-manager
+resolution and imports code after installation. Review the tap URL, package
+name, version, source/ref, and install command before confirming installs from
+non-default taps.
+
 ## Scaffold a plugin
 
 From the repository root:

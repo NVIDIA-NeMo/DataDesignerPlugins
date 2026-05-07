@@ -32,7 +32,43 @@ a downstream distribution workflow.
 
 External taps are not required to use GitHub. They may expose schema v2 from any
 unauthenticated raw JSON endpoint, or from a local catalog file path for
-authoring and offline workflows.
+authoring and offline workflows. The configured URL must return the raw JSON
+catalog body, not an HTML documentation page or repository browser page.
+
+## Tap Governance and Trust
+
+DDPlugins is the NVIDIA-maintained curated first-party plugin tap for Data
+Designer. New plugins belong in this repository when they are
+NVIDIA-maintained, broadly useful to Data Designer users, and have an
+accountable CODEOWNER. External, team-specific, experimental, or
+community-maintained plugins do not need to land in DDPlugins to be useful;
+publish them from an external schema v2 tap instead.
+
+Adding a tap is a trust decision, not only a discovery preference. A tap is a
+pointer to Python packages. Installing from a tap runs package-manager
+resolution and imports code after installation. Review the tap URL, package
+name, version, source/ref, and install command before confirming installs from
+non-default taps.
+
+Future Data Designer CLI install flows should use warning and confirmation
+language with these semantics:
+
+| Flow | Expected user-facing behavior |
+| --- | --- |
+| Default NVIDIA tap | Present it as the curated first-party source and apply normal confirmation rules. |
+| `plugins taps add` for a non-default tap | Treat this as explicit opt-in to trust and discover a new tap. Show the tap name and raw catalog URL before saving it. |
+| Install from a non-default tap | Show the tap URL, package name, package version, source URL/ref/path, and exact package-manager command. Require confirmation unless `--yes` is passed. |
+
+For non-default taps, confirmation copy should make the install target concrete,
+for example:
+
+```text
+Install plugin from non-default tap?
+Tap: https://example.com/data-designer/plugins.json
+Package: data-designer-example==0.1.0
+Source: git https://github.com/example/data-designer-example.git @ v0.1.0
+Command: uv pip install "data-designer-example @ git+https://github.com/example/data-designer-example.git@v0.1.0"
+```
 
 ## Layering
 
