@@ -64,6 +64,24 @@ data-designer-retrieval-sdg generate \
     --num-pairs 7
 ```
 
+### Preview through Data Designer recipes
+
+When installed with a Data Designer CLI that supports recipe entry
+points, this package also registers `retrieval-sdg` under
+`data_designer.recipes`:
+
+```bash
+data-designer preview --recipe retrieval-sdg -- \
+    --input-dir ./my_documents \
+    --num-pairs 2
+```
+
+Recipe-specific options can be inspected without running generation:
+
+```bash
+data-designer recipes help retrieval-sdg
+```
+
 ### Convert to training format
 
 ```bash
