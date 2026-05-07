@@ -70,6 +70,19 @@ The generated `agent_env` value is a dictionary with these top-level keys:
 | `task_iterations` | Simple-to-final task, solution, verifier, and augmentation artifacts. |
 | `synthesis_trace` | Environment construction, task synthesis, tool augmentation, solution, and verification events. |
 
+## Row validation helper
+
+The package includes a helper module for executable row validation. It executes
+the generated tool module, smoke-tests the declared tools, runs the generated
+solution, checks the generated verifier, and replays every task iteration:
+
+```python
+from data_designer_generalist_agent_env.validation import verify_row_record
+
+validation = verify_row_record(result.dataset.loc[0], output_column="agent_env")
+assert validation.passed, validation.errors
+```
+
 ## Behavior Notes
 
 The plugin is deterministic and does not call the Internet. It records `bash`

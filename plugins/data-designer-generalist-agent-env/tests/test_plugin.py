@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from copy import deepcopy
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 import pytest
@@ -21,6 +21,7 @@ from data_designer_generalist_agent_env.impl import (
     selected_tool_names,
 )
 from data_designer_generalist_agent_env.plugin import plugin
+from data_designer_generalist_agent_env.validation import verify_environment_tuple, verify_row_record
 
 
 def test_valid_plugin() -> None:
@@ -32,22 +33,6 @@ def make_generator(config: GeneralistAgentEnvColumnConfig) -> GeneralistAgentEnv
     generator = GeneralistAgentEnvColumnGenerator.__new__(GeneralistAgentEnvColumnGenerator)
     generator._config = config
     return generator
-
-
-def run_generated_sources(environment_tuple: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Execute generated tool, solution, and verifier source for one tuple."""
-    tool_namespace: dict[str, Any] = {}
-    exec(environment_tuple["tool_module_source"], tool_namespace)
-    tools = {tool["name"]: tool_namespace[tool["name"]] for tool in environment_tuple["tools"]}
-
-    solution_namespace: dict[str, Any] = {}
-    exec(environment_tuple["solution"]["source"], solution_namespace)
-    answer = solution_namespace["solve"](tools)
-
-    verifier_namespace: dict[str, Any] = {}
-    exec(environment_tuple["verifier"]["source"], verifier_namespace)
-    verified = verifier_namespace["verify"](answer, environment_tuple["environment"]["database"])
-    return answer, verified
 
 
 class TestGeneralistAgentEnvColumnConfig:
@@ -114,10 +99,12 @@ class TestGeneralistAgentEnvHelpers:
             row_number=0,
         )
 
-        answer, verified = run_generated_sources(environment_tuple)
+        validation = verify_environment_tuple(environment_tuple)
 
-        assert verified is True
-        assert answer == environment_tuple["reference_answer"]
+        assert validation.passed is True
+        assert validation.verifier_passed is True
+        assert validation.tools_passed is True
+        assert validation.answer == environment_tuple["reference_answer"]
         assert environment_tuple["verifier"]["reference_solution_passed"] is True
         assert environment_tuple["task"]["constraints"]["required_tag"] == "family"
 
@@ -179,10 +166,38 @@ class TestGeneralistAgentEnvColumnGenerator:
         generator = make_generator(config)
         result = generator.generate(source_df)
 
-        answer, verified = run_generated_sources(result.loc[0, "agent_env"])
+        validation = verify_environment_tuple(result.loc[0, "agent_env"])
 
-        assert verified is True
-        assert answer["record_id"]
+        assert validation.passed is True
+        assert validation.answer["record_id"]
+        assert {check.name for check in validation.tool_checks} == set(selected_tool_names("hard"))
+        assert [check.difficulty for check in validation.iteration_checks] == ["simple", "medium", "hard"]
+
+    def test_row_record_validation_reads_named_output_column(self) -> None:
+        source_df = pd.DataFrame({"category": ["planning a travel itinerary"]})
+        config = GeneralistAgentEnvColumnConfig(name="agent_env", task_category_column="category")
+        generator = make_generator(config)
+        result = generator.generate(source_df)
+
+        validation = verify_row_record(result.loc[0], output_column="agent_env")
+
+        assert validation.passed is True
+        assert validation.verifier_passed is True
+
+    def test_row_record_validation_reports_missing_tool_implementation(self) -> None:
+        config = GeneralistAgentEnvColumnConfig(name="agent_env", task_category_column="category")
+        environment_tuple = build_environment_tuple("planning a travel itinerary", {}, config, row_number=0)
+        broken_tuple = deepcopy(environment_tuple)
+        broken_tuple["tool_module_source"] = broken_tuple["tool_module_source"].replace(
+            "def rank_records(",
+            "def missing_rank_records(",
+        )
+
+        validation = verify_environment_tuple(broken_tuple)
+
+        assert validation.passed is False
+        assert validation.tools_passed is False
+        assert any("rank_records" in error for error in validation.errors)
 
 
 class TestGeneralistAgentEnvPreviewIntegration:

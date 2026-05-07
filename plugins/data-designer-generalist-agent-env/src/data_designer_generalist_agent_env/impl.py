@@ -512,6 +512,7 @@ def build_solution_source(constraints: dict[str, Any], difficulty: Difficulty) -
     lines = [
         "def solve(tools):",
         '    """Solve the task using only synthesized tool functions and local logic."""',
+        f"    required_tag = {required_tag}",
     ]
 
     if difficulty == "simple":
@@ -523,7 +524,7 @@ def build_solution_source(constraints: dict[str, Any], difficulty: Difficulty) -
                 "            continue",
                 f'        if int(record["score"]) < {constraints["min_score"]}:',
                 "            continue",
-                f'        if {required_tag} is not None and {required_tag} not in record.get("tags", []):',
+                '        if required_tag is not None and required_tag not in record.get("tags", []):',
                 "            continue",
                 "        candidates.append(record)",
             ]
@@ -534,7 +535,7 @@ def build_solution_source(constraints: dict[str, Any], difficulty: Difficulty) -
                 '    candidates = tools["filter_records"](',
                 f"        max_cost={constraints['max_cost']},",
                 f"        min_score={constraints['min_score']},",
-                f"        required_tag={required_tag},",
+                "        required_tag=required_tag,",
                 "    )",
             ]
         )

@@ -32,20 +32,14 @@ result = DataDesigner(artifact_path="artifacts").preview(builder, num_records=1)
 environment_tuple = result.dataset.loc[0, "agent_env"]
 ```
 
-The solution can be smoke-tested by executing the generated source:
+The generated row can be validated with the package helper:
 
 ```python
-tool_namespace = {}
-exec(environment_tuple["tool_module_source"], tool_namespace)
-tools = {tool["name"]: tool_namespace[tool["name"]] for tool in environment_tuple["tools"]}
+from data_designer_generalist_agent_env.validation import verify_environment_tuple
 
-solution_namespace = {}
-exec(environment_tuple["solution"]["source"], solution_namespace)
-answer = solution_namespace["solve"](tools)
-
-verifier_namespace = {}
-exec(environment_tuple["verifier"]["source"], verifier_namespace)
-assert verifier_namespace["verify"](answer, environment_tuple["environment"]["database"])
+validation = verify_environment_tuple(environment_tuple)
+assert validation.passed, validation.errors
+assert validation.answer == environment_tuple["reference_answer"]
 ```
 
 The output task is intentionally search-like: the solving agent must inspect,
