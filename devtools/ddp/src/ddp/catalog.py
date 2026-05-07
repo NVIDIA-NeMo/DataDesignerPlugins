@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlparse
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
-from packaging.utils import canonicalize_name
+from packaging.utils import InvalidName, canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from ddp._repo import find_repo_root, load_toml
@@ -30,6 +30,24 @@ PLUGINS_CATALOG_FILENAME = "plugins.json"
 PLUGINS_CATALOG_PATH = CATALOG_BASE_PATH / PLUGINS_CATALOG_FILENAME
 DATA_DESIGNER_DISTRIBUTION_NAME = "data-designer"
 PLUGIN_ENTRY_POINT_GROUP = "data_designer.plugins"
+SUPPORTED_PLUGIN_TYPES = {"column-generator", "processor", "seed-reader"}
+CATALOG_DOCUMENT_KEYS = {"plugins", "schema_version"}
+CATALOG_PLUGIN_KEYS = {
+    "compatibility",
+    "description",
+    "docs",
+    "entry_point",
+    "name",
+    "package",
+    "plugin_type",
+    "source",
+}
+CATALOG_PACKAGE_KEYS = {"name", "path", "version"}
+CATALOG_ENTRY_POINT_KEYS = {"group", "name", "value"}
+CATALOG_COMPATIBILITY_KEYS = {"data_designer", "python"}
+CATALOG_PYTHON_COMPATIBILITY_KEYS = {"specifier"}
+CATALOG_DATA_DESIGNER_COMPATIBILITY_KEYS = {"marker", "requirement", "specifier"}
+CATALOG_DOCS_KEYS = {"url"}
 
 
 class CatalogError(RuntimeError):
@@ -139,6 +157,347 @@ def check_catalog() -> bool:
     new_path.parent.mkdir(parents=True, exist_ok=True)
     new_path.write_text(expected, encoding="utf-8")
     return False
+
+
+def validate_catalog_document(document: object) -> None:
+    """Validate one schema v2 catalog JSON document without importing plugins.
+
+    Args:
+        document: Decoded JSON value to validate.
+
+    Raises:
+        CatalogError: If the document does not match the schema v2 catalog
+            contract.
+    """
+    catalog_document = required_catalog_object("catalog document", document, CATALOG_DOCUMENT_KEYS)
+    schema_version = catalog_document["schema_version"]
+    if schema_version != CATALOG_SCHEMA_VERSION:
+        raise CatalogError(f"unsupported catalog schema_version {schema_version!r}; expected {CATALOG_SCHEMA_VERSION}")
+
+    plugins = catalog_document["plugins"]
+    if not isinstance(plugins, list):
+        raise CatalogError("catalog document has invalid plugins; expected a list")
+
+    entries = [catalog_entry_for_catalog_plugin(raw_plugin, index) for index, raw_plugin in enumerate(plugins)]
+    validate_catalog_entries(entries)
+
+
+def catalog_entry_for_catalog_plugin(raw_plugin: object, index: int) -> CatalogEntry:
+    """Return a validated catalog entry from one decoded JSON plugin object.
+
+    Args:
+        raw_plugin: Decoded JSON plugin value.
+        index: Position of the plugin value in the document's ``plugins`` list.
+
+    Returns:
+        Catalog entry matching the schema v2 JSON object.
+
+    Raises:
+        CatalogError: If the plugin object is malformed.
+    """
+    context = f"catalog plugins[{index}]"
+    plugin = required_catalog_object(context, raw_plugin, CATALOG_PLUGIN_KEYS)
+    package = required_catalog_object(f"{context}.package", plugin["package"], CATALOG_PACKAGE_KEYS)
+    entry_point = required_catalog_object(f"{context}.entry_point", plugin["entry_point"], CATALOG_ENTRY_POINT_KEYS)
+    compatibility = required_catalog_object(
+        f"{context}.compatibility",
+        plugin["compatibility"],
+        CATALOG_COMPATIBILITY_KEYS,
+    )
+    python_compatibility = required_catalog_object(
+        f"{context}.compatibility.python",
+        compatibility["python"],
+        CATALOG_PYTHON_COMPATIBILITY_KEYS,
+    )
+    data_designer_compatibility = required_catalog_object(
+        f"{context}.compatibility.data_designer",
+        compatibility["data_designer"],
+        CATALOG_DATA_DESIGNER_COMPATIBILITY_KEYS,
+    )
+    source = required_catalog_object(f"{context}.source", plugin["source"])
+    docs = required_catalog_object(f"{context}.docs", plugin["docs"], CATALOG_DOCS_KEYS)
+
+    package_name = catalog_package_name(f"{context}.package.name", package["name"])
+    data_designer_requirement, data_designer_specifier, data_designer_marker = catalog_data_designer_compatibility(
+        package_name=package_name,
+        context=f"{context}.compatibility.data_designer",
+        compatibility=data_designer_compatibility,
+    )
+    plugin_type = required_catalog_plugin_type(context, plugin["plugin_type"])
+    entry_point_group = required_catalog_string(f"{context}.entry_point.group", entry_point["group"])
+    if entry_point_group != PLUGIN_ENTRY_POINT_GROUP:
+        raise CatalogError(
+            f"{context}.entry_point.group {entry_point_group!r} is invalid; expected {PLUGIN_ENTRY_POINT_GROUP!r}"
+        )
+
+    return CatalogEntry(
+        plugin_package=package_name,
+        version=project_version(
+            package_name, required_catalog_string(f"{context}.package.version", package["version"])
+        ),
+        name=required_catalog_string(f"{context}.name", plugin["name"]),
+        plugin_type=plugin_type,
+        description=required_catalog_string(f"{context}.description", plugin["description"]),
+        entry_point_name=required_catalog_string(f"{context}.entry_point.name", entry_point["name"]),
+        entry_point_value=required_catalog_string(f"{context}.entry_point.value", entry_point["value"]),
+        repository_path=required_catalog_string(f"{context}.package.path", package["path"]),
+        python_requires=catalog_version_specifier(
+            package_name=package_name,
+            context=f"{context}.compatibility.python.specifier",
+            value=python_compatibility["specifier"],
+        ),
+        data_designer_requirement=data_designer_requirement,
+        data_designer_version_specifier=data_designer_specifier,
+        data_designer_marker=data_designer_marker,
+        source=source,
+        docs_url=catalog_http_url(f"{context}.docs.url", docs["url"]),
+    )
+
+
+def required_catalog_object(
+    context: str,
+    value: object,
+    expected_keys: set[str] | None = None,
+) -> dict[str, object]:
+    """Return a validated JSON object.
+
+    Args:
+        context: Human-readable object path used in error messages.
+        value: Decoded JSON value.
+        expected_keys: Optional exact key set for the object.
+
+    Returns:
+        JSON object as a dictionary.
+
+    Raises:
+        CatalogError: If the value is not an object or has unexpected keys.
+    """
+    if not isinstance(value, dict):
+        raise CatalogError(f"{context} is invalid; expected an object")
+    if expected_keys is not None:
+        validate_catalog_object_keys(context, value, expected_keys)
+    return value
+
+
+def validate_catalog_object_keys(context: str, value: dict[str, object], expected_keys: set[str]) -> None:
+    """Validate that a catalog JSON object has exactly the expected fields.
+
+    Args:
+        context: Human-readable object path used in error messages.
+        value: JSON object to validate.
+        expected_keys: Exact field names allowed for the object.
+
+    Raises:
+        CatalogError: If the object has missing or extra fields.
+    """
+    keys = set(value)
+    if keys != expected_keys:
+        raise CatalogError(
+            f"{context} has invalid fields; expected {{{format_catalog_keys(expected_keys)}}}, "
+            f"got {{{format_catalog_keys(keys)}}}"
+        )
+
+
+def required_catalog_string(context: str, value: object) -> str:
+    """Return a required non-empty string from a decoded catalog value.
+
+    Args:
+        context: Human-readable value path used in error messages.
+        value: Decoded JSON value.
+
+    Returns:
+        Non-empty string value.
+
+    Raises:
+        CatalogError: If the value is not a non-empty string.
+    """
+    if not isinstance(value, str) or not value:
+        raise CatalogError(f"{context} is invalid; expected a non-empty string")
+    return value
+
+
+def required_catalog_nullable_string(context: str, value: object) -> str | None:
+    """Return a required string-or-null field from a decoded catalog value.
+
+    Args:
+        context: Human-readable value path used in error messages.
+        value: Decoded JSON value.
+
+    Returns:
+        String value or ``None``.
+
+    Raises:
+        CatalogError: If the value is neither a string nor ``None``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    raise CatalogError(f"{context} is invalid; expected a string or null")
+
+
+def catalog_package_name(context: str, value: object) -> str:
+    """Return a validated Python distribution package name.
+
+    Args:
+        context: Human-readable value path used in error messages.
+        value: Decoded JSON value.
+
+    Returns:
+        Package name string.
+
+    Raises:
+        CatalogError: If the value is not a valid package name.
+    """
+    package_name = required_catalog_string(context, value)
+    try:
+        canonicalize_name(package_name, validate=True)
+    except InvalidName as exc:
+        raise CatalogError(f"{context} {package_name!r} is invalid; expected a valid package name") from exc
+    return package_name
+
+
+def required_catalog_plugin_type(context: str, value: object) -> str:
+    """Return a validated schema v2 plugin type.
+
+    Args:
+        context: Human-readable plugin object path used in error messages.
+        value: Decoded plugin type value.
+
+    Returns:
+        Plugin type string.
+
+    Raises:
+        CatalogError: If the plugin type is missing or unsupported.
+    """
+    plugin_type = required_catalog_string(f"{context}.plugin_type", value)
+    if plugin_type not in SUPPORTED_PLUGIN_TYPES:
+        raise CatalogError(
+            f"{context}.plugin_type {plugin_type!r} is invalid; expected one of "
+            f"{format_catalog_choices(SUPPORTED_PLUGIN_TYPES)}"
+        )
+    return plugin_type
+
+
+def catalog_version_specifier(package_name: str, context: str, value: object) -> str:
+    """Return a validated catalog version specifier string.
+
+    Args:
+        package_name: Plugin package distribution name for error context.
+        context: Human-readable value path used in error messages.
+        value: Decoded JSON value.
+
+    Returns:
+        Validated version specifier.
+
+    Raises:
+        CatalogError: If the specifier is missing, malformed, or empty.
+    """
+    raw_specifier = required_catalog_string(context, value)
+    try:
+        specifier = SpecifierSet(raw_specifier)
+    except InvalidSpecifier as exc:
+        raise CatalogError(f"package {package_name!r} has invalid {context} {raw_specifier!r}: {exc}") from exc
+    if not str(specifier):
+        raise CatalogError(f"package {package_name!r} has invalid {context}; expected at least one version specifier")
+    return str(specifier)
+
+
+def catalog_data_designer_compatibility(
+    package_name: str,
+    context: str,
+    compatibility: dict[str, object],
+) -> tuple[str, str, str | None]:
+    """Return validated Data Designer compatibility metadata.
+
+    Args:
+        package_name: Plugin package distribution name for error context.
+        context: Human-readable compatibility object path used in errors.
+        compatibility: Decoded ``compatibility.data_designer`` object.
+
+    Returns:
+        Requirement string, version specifier, and marker.
+
+    Raises:
+        CatalogError: If compatibility metadata is malformed or inconsistent.
+    """
+    requirement_text = required_catalog_string(f"{context}.requirement", compatibility["requirement"])
+    try:
+        requirement = Requirement(requirement_text)
+    except InvalidRequirement as exc:
+        raise CatalogError(
+            f"package {package_name!r} has invalid {context}.requirement {requirement_text!r}: {exc}"
+        ) from exc
+    if canonicalize_name(requirement.name) != DATA_DESIGNER_DISTRIBUTION_NAME:
+        raise CatalogError(
+            f"package {package_name!r} has invalid {context}.requirement {requirement_text!r}; "
+            f"expected a {DATA_DESIGNER_DISTRIBUTION_NAME!r} requirement"
+        )
+    if not requirement.specifier:
+        raise CatalogError(f"package {package_name!r} has invalid {context}.requirement; expected a version specifier")
+
+    specifier = catalog_version_specifier(
+        package_name=package_name,
+        context=f"{context}.specifier",
+        value=compatibility["specifier"],
+    )
+    if specifier != str(requirement.specifier):
+        raise CatalogError(
+            f"package {package_name!r} has invalid {context}.specifier {specifier!r}; "
+            f"expected {str(requirement.specifier)!r} from requirement"
+        )
+
+    marker = required_catalog_nullable_string(f"{context}.marker", compatibility["marker"])
+    expected_marker = str(requirement.marker) if requirement.marker is not None else None
+    if marker != expected_marker:
+        raise CatalogError(
+            f"package {package_name!r} has invalid {context}.marker {marker!r}; expected {expected_marker!r}"
+        )
+    return requirement_text, specifier, marker
+
+
+def catalog_http_url(context: str, value: object) -> str:
+    """Return a validated absolute HTTP(S) catalog URL.
+
+    Args:
+        context: Human-readable value path used in error messages.
+        value: Decoded JSON value.
+
+    Returns:
+        Absolute HTTP(S) URL string.
+
+    Raises:
+        CatalogError: If the value is not an absolute HTTP(S) URL.
+    """
+    url = required_catalog_string(context, value)
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise CatalogError(f"{context} {url!r} is invalid; expected an absolute HTTP(S) URL")
+    return url
+
+
+def format_catalog_keys(keys: set[str]) -> str:
+    """Format a set of JSON object keys for an error message.
+
+    Args:
+        keys: Key names to format.
+
+    Returns:
+        Comma-separated sorted key names.
+    """
+    return ", ".join(sorted(keys))
+
+
+def format_catalog_choices(choices: set[str]) -> str:
+    """Format a set of choices for an error message.
+
+    Args:
+        choices: Choice values to format.
+
+    Returns:
+        Comma-separated sorted choice values.
+    """
+    return ", ".join(repr(choice) for choice in sorted(choices))
 
 
 def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
