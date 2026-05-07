@@ -1,7 +1,8 @@
 # Data Designer Plugins
 
 This repository contains first-class NVIDIA-provided plugins for
-[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner). Use these
+[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner). It is the
+NVIDIA-maintained curated first-party plugin tap for Data Designer. Use these
 docs when you need to create, review, validate, or release a plugin.
 
 ## What lives here
@@ -27,7 +28,7 @@ DataDesignerPlugins/
   documentation builds, and GitHub CI.
 - [Tap catalog schema v2](tap-catalog-schema-v2.md) defines the plugin tap
   catalog contract, including the default raw NVIDIA tap URL, install source
-  objects, freshness semantics, and docs URLs.
+  objects, freshness semantics, trust expectations, and docs URLs.
 - [Releasing](releasing.md) covers version bumps, tags, ownership checks, and
   PyPI publishing.
 - [Plugins](plugins/index.md) lists generated plugin pages assembled from each
@@ -46,6 +47,13 @@ DataDesignerPlugins/
 - Treat the default NVIDIA tap URL as the raw generated catalog at
   `https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json`;
   it is not served from GitHub Pages.
+- Treat DDPlugins as the curated NVIDIA first-party tap. New plugins belong here
+  when they are NVIDIA-maintained, broadly useful, and owned by an accountable
+  CODEOWNER.
+- Publish unrelated external, team-specific, experimental, or
+  community-maintained plugins from external schema v2 taps rather than requiring
+  them to land in this repository.
+- Treat adding a tap as a trust decision, not only a discovery preference.
 - Treat tap catalog discovery and runtime entry-point discovery as separate
   layers.
 - Run the Makefile targets locally before opening or updating a pull request.
