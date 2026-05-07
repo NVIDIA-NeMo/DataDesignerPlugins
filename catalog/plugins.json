@@ -2,9 +2,9 @@
   "schema_version": 1,
   "plugins": [
     {
-      "name": "generalist-agent-env",
+      "name": "generalist-agent-environment",
       "plugin_type": "column-generator",
-      "description": "Generalist agent environment tuple generator for Data Designer",
+      "description": "Generalist agent environment and task assemblers for generated Data Designer data",
       "package": {
         "name": "data-designer-generalist-agent-env",
         "version": "0.1.0",
@@ -12,8 +12,33 @@
       },
       "entry_point": {
         "group": "data_designer.plugins",
-        "name": "generalist-agent-env",
-        "value": "data_designer_generalist_agent_env.plugin:plugin"
+        "name": "generalist-agent-environment",
+        "value": "data_designer_generalist_agent_env.plugin:environment_plugin"
+      },
+      "compatibility": {
+        "python": {
+          "specifier": ">=3.10"
+        },
+        "data_designer": {
+          "requirement": "data-designer>=0.5.9",
+          "specifier": ">=0.5.9",
+          "marker": null
+        }
+      }
+    },
+    {
+      "name": "generalist-agent-task",
+      "plugin_type": "column-generator",
+      "description": "Generalist agent environment and task assemblers for generated Data Designer data",
+      "package": {
+        "name": "data-designer-generalist-agent-env",
+        "version": "0.1.0",
+        "path": "plugins/data-designer-generalist-agent-env"
+      },
+      "entry_point": {
+        "group": "data_designer.plugins",
+        "name": "generalist-agent-task",
+        "value": "data_designer_generalist_agent_env.plugin:task_plugin"
       },
       "compatibility": {
         "python": {

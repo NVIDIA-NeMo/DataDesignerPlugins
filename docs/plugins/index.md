@@ -10,10 +10,10 @@ Browse available Data Designer plugins by what they add to your data generation 
       <span class="plugin-doc-card__title">data-designer-generalist-agent-env</span>
       <span class="plugin-doc-card__version">v0.1.0</span>
     </span>
-    <span class="plugin-doc-card__description">Generalist agent environment tuple generator for Data Designer</span>
+    <span class="plugin-doc-card__description">Generalist agent environment and task assemblers for generated Data Designer data</span>
     <span class="plugin-doc-card__section">
       <span class="plugin-doc-card__label">Column types</span>
-      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">generalist-agent-env</span></span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">generalist-agent-environment</span><span class="plugin-doc-chip">generalist-agent-task</span></span>
     </span>
   </a>
   <a class="plugin-doc-card" href="data-designer-template/" aria-label="Open data-designer-template documentation">

@@ -8,42 +8,45 @@ import json
 import math
 import re
 import textwrap
+from collections.abc import Mapping
 from pprint import pformat
 from typing import TYPE_CHECKING, Any
 
 from data_designer.engine.column_generators.generators.base import ColumnGeneratorFullColumn
 
-from data_designer_generalist_agent_env.config import Difficulty, GeneralistAgentEnvColumnConfig
+from data_designer_generalist_agent_env.config import (
+    Difficulty,
+    GeneralistAgentEnvironmentColumnConfig,
+    GeneralistAgentTaskColumnConfig,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
 
-BASE_SANDBOX_TOOLS = ["bash", "search"]
-BASE_TAGS = [
-    "budget",
-    "reliable",
-    "fast",
-    "verified",
-    "flexible",
-    "local",
-    "safe",
-    "ranked",
-]
+BASE_SANDBOX_TOOLS = ["data_designer_generated_schema", "data_designer_generated_records"]
 DIFFICULTY_ORDER: list[Difficulty] = ["simple", "medium", "hard"]
-
-DATABASE_SCHEMA = {
-    "record_id": "Stable row-local identifier.",
-    "name": "Human-readable option name.",
-    "category": "Task category supplied by the seed row.",
-    "summary": "Short synthesized description for search.",
-    "cost": "Integer cost proxy; lower is better.",
-    "duration": "Integer duration proxy.",
-    "score": "Integer quality score from 55 to 100; higher is better.",
-    "tags": "Searchable task-specific labels.",
-    "source_values": "Context columns copied from the seed row.",
+REQUIRED_RECORD_FIELDS = ["record_id", "name", "summary", "cost", "duration", "score", "tags"]
+DEFAULT_DATABASE_SCHEMA = {
+    "record_type": "generated_candidate",
+    "primary_key": "record_id",
+    "fields": [
+        {"name": "record_id", "type": "string", "description": "Stable row-local identifier."},
+        {"name": "name", "type": "string", "description": "Human-readable candidate name."},
+        {"name": "summary", "type": "string", "description": "Short generated candidate description."},
+        {"name": "cost", "type": "integer", "description": "Integer cost proxy; lower is better."},
+        {"name": "duration", "type": "integer", "description": "Integer duration or effort proxy."},
+        {"name": "score", "type": "integer", "description": "Integer quality score from 0 to 100; higher is better."},
+        {"name": "tags", "type": "list[string]", "description": "Searchable task-specific labels."},
+        {"name": "attributes", "type": "object", "description": "Topic-specific generated attributes."},
+    ],
 }
 
 TOOL_FUNCTION_SOURCES = {
+    "describe_schema": '''
+def describe_schema():
+    """Return the generated database schema."""
+    return dict(DATABASE_SCHEMA)
+''',
     "list_records": '''
 def list_records():
     """Return every record in the sandbox database."""
@@ -51,17 +54,20 @@ def list_records():
 ''',
     "search_records": '''
 def search_records(query="", max_results=10):
-    """Search database records by name, summary, category, or tag."""
+    """Search database records by name, summary, topic, tag, or generated attribute."""
     needle = str(query or "").casefold()
     limit = max(0, int(max_results))
     matches = []
     for record in DATABASE:
+        attributes = record.get("attributes", {})
+        attribute_text = " ".join(str(value) for value in attributes.values()) if isinstance(attributes, dict) else ""
         haystack = " ".join(
             [
                 str(record.get("name", "")),
                 str(record.get("summary", "")),
-                str(record.get("category", "")),
+                str(record.get("topic", "")),
                 " ".join(str(tag) for tag in record.get("tags", [])),
+                attribute_text,
             ],
         ).casefold()
         if not needle or needle in haystack:
@@ -103,12 +109,32 @@ def rank_records(records=None, metric="score", descending=True):
 }
 
 TOOL_DESCRIPTIONS = {
-    "list_records": "Inspect all rows in the hidden sandbox database.",
-    "search_records": "Retrieve category-relevant records through a search-style interface.",
-    "get_record": "Fetch one database record by identifier.",
+    "describe_schema": "Inspect the generated row-local database schema.",
+    "list_records": "Inspect all generated rows in the hidden sandbox database.",
+    "search_records": "Retrieve topic-relevant records through a search-style interface.",
+    "get_record": "Fetch one generated database record by identifier.",
     "filter_records": "Apply verifier-aligned constraints without exposing the database directly.",
-    "rank_records": "Rank candidate records for the final combinatorial selection step.",
+    "rank_records": "Rank generated candidate records for the final selection step.",
 }
+
+
+def is_null_like(value: object) -> bool:
+    """Return whether a value is empty or pandas-null-like.
+
+    Args:
+        value: Candidate cell value.
+
+    Returns:
+        ``True`` when the value should be treated as missing.
+    """
+    if value is None:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    try:
+        return bool(value != value)
+    except (TypeError, ValueError):
+        return False
 
 
 def normalize_cell(value: object) -> str:
@@ -120,15 +146,8 @@ def normalize_cell(value: object) -> str:
     Returns:
         A stripped string, or an empty string for null-like values.
     """
-    if value is None:
+    if is_null_like(value):
         return ""
-    if isinstance(value, float) and math.isnan(value):
-        return ""
-    try:
-        if value != value:
-            return ""
-    except (TypeError, ValueError):
-        pass
     return str(value).strip()
 
 
@@ -160,101 +179,312 @@ def stable_int(seed: str, modulo: int) -> int:
     return int(digest[:12], 16) % modulo
 
 
-def unique_values(values: list[str]) -> list[str]:
-    """Return values with duplicates removed while preserving order.
+def coerce_list_like(value: Any) -> list[Any] | None:
+    """Coerce common list-like values into a Python list.
 
     Args:
-        values: Candidate values.
+        value: Candidate list-like value.
 
     Returns:
-        De-duplicated values.
+        A Python list when coercion is possible, otherwise ``None``.
     """
-    result: list[str] = []
-    for value in values:
-        if value and value not in result:
-            result.append(value)
-    return result
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        converted = tolist()
+        if isinstance(converted, list):
+            return converted
+    return None
 
 
-def context_tags(category: str, context_values: dict[str, str], required_tag: str | None) -> list[str]:
-    """Build a task-specific tag vocabulary.
+def to_plain_data(value: Any) -> Any:
+    """Convert nested array-like values into JSON-style Python containers.
 
     Args:
-        category: Seed task category.
-        context_values: Row context values.
-        required_tag: Optional tag that must be present in the database.
+        value: Arbitrary generated artifact value.
 
     Returns:
-        A non-empty tag list used to populate synthesized records.
+        The value with mappings and list-like values recursively normalized.
     """
-    seed_text = " ".join([category, *context_values.values()])
-    words = [word for word in re.findall(r"[a-z0-9]+", seed_text.lower()) if len(word) > 3]
-    tags = unique_values([required_tag or "", *words[:6], *BASE_TAGS])
-    return tags[:12]
+    if isinstance(value, Mapping):
+        return {key: to_plain_data(nested_value) for key, nested_value in value.items()}
+
+    values = coerce_list_like(value)
+    if values is not None:
+        return [to_plain_data(nested_value) for nested_value in values]
+
+    item = getattr(value, "item", None)
+    if callable(item) and not isinstance(value, (str, bytes)):
+        try:
+            return item()
+        except (TypeError, ValueError):
+            return value
+    return value
 
 
-def build_context_summary(context_values: dict[str, str]) -> str:
-    """Summarize row context for record descriptions.
+def parse_generated_payload(value: Any, field_name: str) -> Any:
+    """Parse generated JSON-like cell values.
 
     Args:
-        context_values: Context columns extracted from the seed row.
+        value: Cell value generated by a previous Data Designer column.
+        field_name: Name used in validation errors.
 
     Returns:
-        Compact text suitable for generated summaries.
+        Parsed JSON-like data.
+
+    Raises:
+        ValueError: If the value is missing or a JSON string cannot be parsed.
     """
-    if not context_values:
-        return "seed category only"
-    return "; ".join(f"{name}: {value}" for name, value in context_values.items() if value) or "empty context"
+    if is_null_like(value):
+        msg = f"{field_name} must not be empty"
+        raise ValueError(msg)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            msg = f"{field_name} must not be empty"
+            raise ValueError(msg)
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            return stripped
+    return to_plain_data(value)
 
 
-def build_database(
-    category: str,
-    context_values: dict[str, str],
-    database_size: int,
-    required_tag: str | None,
-) -> list[dict[str, Any]]:
-    """Synthesize a row-local sandbox database.
+def constraint_payload_to_text(value: Any) -> str:
+    """Flatten a generated constraints payload into compact text.
 
     Args:
-        category: Seed task category.
-        context_values: Optional context copied from the input row.
-        database_size: Number of database records to create.
-        required_tag: Optional tag that must be inserted into at least one record.
+        value: Constraint value from a row. Supported values include strings,
+            mappings, lists, JSON strings, and scalar values.
 
     Returns:
-        JSON-compatible database records.
+        Text used for environment provenance.
     """
-    category_slug = slugify(category, "task")
-    seed_context = json.dumps(context_values, sort_keys=True)
-    tags = context_tags(category, context_values, required_tag)
-    context_summary = build_context_summary(context_values)
-    records: list[dict[str, Any]] = []
+    if is_null_like(value):
+        return ""
 
-    for position in range(database_size):
-        record_seed = f"{category}|{seed_context}|{position}"
-        cost = 80 + stable_int(f"{record_seed}|cost", 920)
-        duration = 1 + stable_int(f"{record_seed}|duration", 14)
-        score = 55 + stable_int(f"{record_seed}|score", 46)
-        tag_start = stable_int(f"{record_seed}|tags", len(tags))
-        record_tags = [tags[(tag_start + offset) % len(tags)] for offset in range(min(3, len(tags)))]
-        if required_tag and position == 0 and required_tag not in record_tags:
-            record_tags[0] = required_tag
-        name = f"{category.title()} Option {position + 1}"
-        records.append(
-            {
-                "record_id": f"{category_slug}-{position + 1:03d}",
-                "name": name,
-                "category": category,
-                "summary": f"{name} synthesized from {context_summary}.",
-                "cost": cost,
-                "duration": duration,
-                "score": score,
-                "tags": unique_values(record_tags),
-                "source_values": dict(context_values),
-            }
-        )
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return ""
+        try:
+            return constraint_payload_to_text(json.loads(stripped))
+        except json.JSONDecodeError:
+            return stripped
 
+    plain = to_plain_data(value)
+    if isinstance(plain, Mapping):
+        parts = []
+        for key, nested_value in plain.items():
+            nested_text = constraint_payload_to_text(nested_value)
+            if nested_text:
+                parts.append(f"{key}: {nested_text}")
+        return "; ".join(parts)
+
+    values = coerce_list_like(plain)
+    if values is not None:
+        return "; ".join(text for text in (constraint_payload_to_text(item) for item in values) if text)
+
+    return normalize_cell(plain)
+
+
+def normalize_database_schema(value: Any) -> dict[str, Any]:
+    """Normalize a generated database schema payload.
+
+    Args:
+        value: Generated schema value from a row.
+
+    Returns:
+        Schema metadata as a dictionary.
+
+    Raises:
+        ValueError: If the schema is not mapping-like.
+    """
+    parsed = parse_generated_payload(value, "database_schema")
+    if not isinstance(parsed, Mapping):
+        msg = "database_schema must be a mapping generated by an upstream Data Designer column"
+        raise ValueError(msg)
+
+    schema = dict(parsed)
+    if "record_type" not in schema:
+        schema["record_type"] = DEFAULT_DATABASE_SCHEMA["record_type"]
+    if "primary_key" not in schema:
+        schema["primary_key"] = DEFAULT_DATABASE_SCHEMA["primary_key"]
+    if "fields" not in schema:
+        schema["fields"] = DEFAULT_DATABASE_SCHEMA["fields"]
+    return schema
+
+
+def extract_records_payload(value: Any) -> list[Any]:
+    """Extract generated record payloads from common structured output shapes.
+
+    Args:
+        value: Generated records value from a row.
+
+    Returns:
+        List of record payloads.
+
+    Raises:
+        ValueError: If no list-like records can be extracted.
+    """
+    parsed = parse_generated_payload(value, "database_records")
+    if isinstance(parsed, Mapping):
+        for key in ("records", "items", "data", "rows"):
+            nested = parsed.get(key)
+            if nested is not None:
+                records = coerce_list_like(nested)
+                if records is not None:
+                    return records
+        msg = "database_records mapping must contain a records, items, data, or rows list"
+        raise ValueError(msg)
+
+    records = coerce_list_like(parsed)
+    if records is None:
+        msg = "database_records must be a list or an object containing a records list"
+        raise ValueError(msg)
     return records
+
+
+def normalize_tags(value: Any, record_id: str) -> list[str]:
+    """Normalize generated record tags.
+
+    Args:
+        value: Generated tags value.
+        record_id: Record id used in errors.
+
+    Returns:
+        List of tag strings.
+
+    Raises:
+        ValueError: If tags are missing or cannot be interpreted as a non-empty list.
+    """
+    tags = coerce_list_like(value)
+    if tags is None and isinstance(value, str):
+        tags = [tag.strip() for tag in re.split(r"[,;]", value) if tag.strip()]
+    if tags is None or not tags:
+        msg = f"generated record {record_id!r} must include at least one tag"
+        raise ValueError(msg)
+    return [str(tag).strip().lower() for tag in tags if str(tag).strip()]
+
+
+def normalize_int_field(value: Any, field_name: str, record_id: str) -> int:
+    """Normalize an integer field from a generated record.
+
+    Args:
+        value: Generated field value.
+        field_name: Field name.
+        record_id: Record id used in errors.
+
+    Returns:
+        Integer field value.
+
+    Raises:
+        ValueError: If the value cannot be converted to an integer.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        msg = f"generated record {record_id!r} field {field_name!r} must be an integer"
+        raise ValueError(msg) from exc
+
+
+def normalize_generated_record(value: Any, index: int, topic: str) -> dict[str, Any]:
+    """Normalize and validate one generated database record.
+
+    Args:
+        value: Generated record value.
+        index: Zero-based record index.
+        topic: Generated task topic.
+
+    Returns:
+        Normalized record.
+
+    Raises:
+        ValueError: If required fields are absent or invalid.
+    """
+    value = to_plain_data(value)
+    if not isinstance(value, Mapping):
+        msg = f"database_records[{index}] must be a mapping"
+        raise ValueError(msg)
+
+    record = dict(value)
+    missing = [field for field in REQUIRED_RECORD_FIELDS if field not in record]
+    if missing:
+        msg = f"database_records[{index}] is missing required fields: {', '.join(missing)}"
+        raise ValueError(msg)
+
+    record_id = str(record["record_id"]).strip()
+    if not record_id:
+        msg = f"database_records[{index}].record_id must not be empty"
+        raise ValueError(msg)
+
+    normalized = dict(record)
+    normalized["record_id"] = record_id
+    normalized["name"] = str(record["name"]).strip()
+    normalized["summary"] = str(record["summary"]).strip()
+    normalized["topic"] = str(record.get("topic") or topic)
+    normalized["cost"] = normalize_int_field(record["cost"], "cost", record_id)
+    normalized["duration"] = normalize_int_field(record["duration"], "duration", record_id)
+    normalized["score"] = normalize_int_field(record["score"], "score", record_id)
+    normalized["tags"] = normalize_tags(record["tags"], record_id)
+    attributes = record.get("attributes", {})
+    normalized["attributes"] = dict(attributes) if isinstance(attributes, Mapping) else {"value": attributes}
+    return normalized
+
+
+def normalize_database_records(value: Any, topic: str | None = None) -> list[dict[str, Any]]:
+    """Normalize generated records restored from memory or saved artifacts.
+
+    Args:
+        value: Database records payload.
+        topic: Generated topic used when records omit a topic field.
+
+    Returns:
+        Database records as plain dictionaries.
+
+    Raises:
+        ValueError: If records are absent or invalid.
+    """
+    records = extract_records_payload(value)
+    if not records:
+        msg = "database_records must contain at least one generated record"
+        raise ValueError(msg)
+    topic = topic or "general task"
+    normalized = [normalize_generated_record(record, index, topic) for index, record in enumerate(records)]
+    duplicate_ids = sorted(
+        {
+            record["record_id"]
+            for record in normalized
+            if [candidate["record_id"] for candidate in normalized].count(record["record_id"]) > 1
+        }
+    )
+    if duplicate_ids:
+        msg = f"database_records contain duplicate record_id values: {', '.join(duplicate_ids)}"
+        raise ValueError(msg)
+    return normalized
+
+
+def validate_schema_covers_records(schema: Mapping[str, Any], records: list[dict[str, Any]]) -> None:
+    """Validate that generated records are compatible with the generated schema.
+
+    Args:
+        schema: Generated schema metadata.
+        records: Normalized generated records.
+
+    Raises:
+        ValueError: If the schema primary key is incompatible with records.
+    """
+    primary_key = str(schema.get("primary_key", "record_id"))
+    if primary_key != "record_id":
+        msg = "generated database schema primary_key must be 'record_id'"
+        raise ValueError(msg)
+    for field in REQUIRED_RECORD_FIELDS:
+        if field not in records[0]:
+            msg = f"generated records must include required field {field!r}"
+            raise ValueError(msg)
 
 
 def record_matches_constraints(record: dict[str, Any], constraints: dict[str, Any]) -> bool:
@@ -304,14 +534,14 @@ def select_best_record(records: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 def default_constraints(
     database: list[dict[str, Any]],
-    config: GeneralistAgentEnvColumnConfig,
+    config: GeneralistAgentTaskColumnConfig,
     difficulty: Difficulty | None = None,
 ) -> dict[str, Any]:
     """Create feasible default constraints for the requested difficulty.
 
     Args:
         database: Sandbox database records.
-        config: Column configuration.
+        config: Task column configuration.
         difficulty: Difficulty to synthesize; defaults to the configured final difficulty.
 
     Returns:
@@ -390,7 +620,7 @@ def selected_tool_names(difficulty: Difficulty) -> list[str]:
     Returns:
         Tool names to expose to the solution function.
     """
-    tool_names = ["list_records", "search_records", "get_record"]
+    tool_names = ["describe_schema", "list_records", "search_records", "get_record"]
     if difficulty in ("medium", "hard"):
         tool_names.append("filter_records")
     if difficulty == "hard":
@@ -417,26 +647,32 @@ def build_tool_specs(tool_names: list[str]) -> list[dict[str, str]]:
     ]
 
 
-def build_tool_module_source(database: list[dict[str, Any]], tool_names: list[str]) -> str:
-    """Build executable Python source for the synthesized tool module.
+def build_tool_module_source(
+    database_schema: Mapping[str, Any], database: list[dict[str, Any]], tool_names: list[str]
+) -> str:
+    """Build executable Python source for the generated tool module.
 
     Args:
-        database: Hidden sandbox database.
+        database_schema: Generated row-local database schema.
+        database: Generated sandbox database.
         tool_names: Selected tool names.
 
     Returns:
-        Python module source defining ``DATABASE`` and tool functions.
+        Python module source defining ``DATABASE_SCHEMA``, ``DATABASE``, and tool functions.
     """
-    parts = [f"DATABASE = {pformat(database, sort_dicts=False, width=120)}"]
+    parts = [
+        f"DATABASE_SCHEMA = {pformat(dict(database_schema), sort_dicts=False, width=120)}",
+        f"DATABASE = {pformat(database, sort_dicts=False, width=120)}",
+    ]
     parts.extend(textwrap.dedent(TOOL_FUNCTION_SOURCES[tool_name]).strip() for tool_name in tool_names)
     return "\n\n".join(parts) + "\n"
 
 
-def build_task_prompt(category: str, difficulty: Difficulty, constraints: dict[str, Any]) -> str:
+def build_task_prompt(topic: str, difficulty: Difficulty, constraints: dict[str, Any]) -> str:
     """Create the task prompt presented to a solving agent.
 
     Args:
-        category: Seed task category.
+        topic: Generated task topic.
         difficulty: Final task difficulty.
         constraints: Task constraints.
 
@@ -444,7 +680,8 @@ def build_task_prompt(category: str, difficulty: Difficulty, constraints: dict[s
         Natural language task prompt.
     """
     clauses = [
-        f"Use the synthesized tools to solve this {difficulty} {category!r} task.",
+        f"Use the synthesized tools to solve this {difficulty} {topic!r} task.",
+        "Inspect the generated schema and records through the tool interface; do not access the database directly.",
         "Return the record_id for the eligible database record with the highest score.",
         f"Only consider records with cost <= {constraints['max_cost']} and score >= {constraints['min_score']}.",
     ]
@@ -512,6 +749,7 @@ def build_solution_source(constraints: dict[str, Any], difficulty: Difficulty) -
     lines = [
         "def solve(tools):",
         '    """Solve the task using only synthesized tool functions and local logic."""',
+        '    tools["describe_schema"]()',
         f"    required_tag = {required_tag}",
     ]
 
@@ -624,17 +862,17 @@ def build_verifier_source(constraints: dict[str, Any]) -> str:
 
 
 def build_task_iteration(
-    category: str,
+    topic: str,
     database: list[dict[str, Any]],
-    config: GeneralistAgentEnvColumnConfig,
+    config: GeneralistAgentTaskColumnConfig,
     difficulty: Difficulty,
 ) -> dict[str, Any]:
     """Build one synthesized task, solution, and verifier iteration.
 
     Args:
-        category: Seed task category.
+        topic: Generated task topic.
         database: Sandbox database records.
-        config: Column configuration.
+        config: Task column configuration.
         difficulty: Difficulty level for this iteration.
 
     Returns:
@@ -646,7 +884,7 @@ def build_task_iteration(
     return {
         "difficulty": difficulty,
         "tool_names": selected_tool_names(difficulty),
-        "task_prompt": build_task_prompt(category, difficulty, constraints),
+        "task_prompt": build_task_prompt(topic, difficulty, constraints),
         "constraints": constraints,
         "solution_source": build_solution_source(constraints, difficulty),
         "verifier_source": build_verifier_source(constraints),
@@ -654,27 +892,6 @@ def build_task_iteration(
         "reference_solution_passed": verified,
         "augmentation_required": difficulty in ("medium", "hard"),
     }
-
-
-def build_task_iterations(
-    category: str,
-    database: list[dict[str, Any]],
-    config: GeneralistAgentEnvColumnConfig,
-) -> list[dict[str, Any]]:
-    """Build the simple-to-final task synthesis iterations.
-
-    Args:
-        category: Seed task category.
-        database: Sandbox database records.
-        config: Column configuration.
-
-    Returns:
-        Ordered task iteration artifacts.
-    """
-    return [
-        build_task_iteration(category, database, config, difficulty)
-        for difficulty in difficulty_trace(config.difficulty)
-    ]
 
 
 def difficulty_trace(final_difficulty: Difficulty) -> list[Difficulty]:
@@ -689,17 +906,37 @@ def difficulty_trace(final_difficulty: Difficulty) -> list[Difficulty]:
     return DIFFICULTY_ORDER[: DIFFICULTY_ORDER.index(final_difficulty) + 1]
 
 
-def build_synthesis_trace(
-    category: str,
+def build_task_iterations(
+    topic: str,
+    database: list[dict[str, Any]],
+    config: GeneralistAgentTaskColumnConfig,
+) -> list[dict[str, Any]]:
+    """Build the simple-to-final task synthesis iterations.
+
+    Args:
+        topic: Generated task topic.
+        database: Sandbox database records.
+        config: Task column configuration.
+
+    Returns:
+        Ordered task iteration artifacts.
+    """
+    return [
+        build_task_iteration(topic, database, config, difficulty) for difficulty in difficulty_trace(config.difficulty)
+    ]
+
+
+def build_task_synthesis_trace(
+    topic: str,
     difficulty: Difficulty,
     tool_names: list[str],
     constraints: dict[str, Any],
     verified: bool,
 ) -> list[dict[str, Any]]:
-    """Describe the Generalist-style synthesis workflow for one row.
+    """Describe the task synthesis workflow for one row.
 
     Args:
-        category: Seed task category.
+        topic: Generated task topic.
         difficulty: Final task difficulty.
         tool_names: Synthesized tool names.
         constraints: Final task constraints.
@@ -708,20 +945,13 @@ def build_synthesis_trace(
     Returns:
         Ordered workflow events.
     """
-    trace: list[dict[str, Any]] = [
-        {
-            "stage": "environment_and_toolset_construction",
-            "category": category,
-            "sandbox_tools": list(BASE_SANDBOX_TOOLS),
-            "database_created": True,
-        }
-    ]
+    trace: list[dict[str, Any]] = []
     for level in difficulty_trace(difficulty):
         trace.append(
             {
                 "stage": "task_synthesis",
                 "difficulty": level,
-                "goal": "hard to solve through search, easy to verify by deterministic constraints",
+                "goal": "hard to solve through tools, easy to verify by deterministic constraints",
             }
         )
         if level in ("medium", "hard"):
@@ -735,6 +965,7 @@ def build_synthesis_trace(
     trace.append(
         {
             "stage": "solution_generation",
+            "topic": topic,
             "solution_restriction": "solution source calls synthesized tools and uses local logical computation only",
             "final_tools": tool_names,
         }
@@ -749,60 +980,127 @@ def build_synthesis_trace(
     return trace
 
 
-def build_environment_tuple(
-    category: str,
-    context_values: dict[str, str],
-    config: GeneralistAgentEnvColumnConfig,
-    row_number: int,
-) -> dict[str, Any]:
-    """Build one ``<environment, tools, task, verifier>`` tuple.
+def build_environment_id(topic: str, context_values: dict[str, str], row_number: int) -> str:
+    """Build a stable row-local environment identifier.
 
     Args:
-        category: Seed task category.
+        topic: Generated task topic.
         context_values: Context copied from the seed row.
-        config: Column configuration.
+        row_number: Zero-based row position.
+
+    Returns:
+        Stable environment identifier.
+    """
+    topic_slug = slugify(topic, "task")
+    context_slug = stable_int(json.dumps(context_values, sort_keys=True), 10_000)
+    return f"{topic_slug}-{row_number + 1:04d}-{context_slug:04d}"
+
+
+def build_environment_artifact(
+    topic: str,
+    constraints_payload: Any,
+    constraints_text: str,
+    context_values: dict[str, str],
+    database_schema: dict[str, Any],
+    database: list[dict[str, Any]],
+    row_number: int,
+) -> dict[str, Any]:
+    """Build one standalone generated environment and toolset artifact.
+
+    Args:
+        topic: Generated task topic.
+        constraints_payload: Raw generated constraints payload normalized to JSON-like data.
+        constraints_text: Generated constraints flattened to text.
+        context_values: Context copied from the seed row.
+        database_schema: Generated database schema.
+        database: Generated database records.
         row_number: Zero-based row position used for stable ids.
 
     Returns:
-        Structured Generalist environment tuple.
+        Structured Generalist environment artifact.
     """
-    database = build_database(category, context_values, config.database_size, config.required_tag)
-    task_iterations = build_task_iterations(category, database, config)
+    validate_schema_covers_records(database_schema, database)
+    environment_id = build_environment_id(topic, context_values, row_number)
+    tool_names = selected_tool_names("hard")
+    return {
+        "schema_version": "generalist-agent-environment/v1",
+        "source_workflow": "Generated Generalist environment and toolset assembly",
+        "environment": {
+            "environment_id": environment_id,
+            "topic": topic,
+            "sandbox": {
+                "base_tools": list(BASE_SANDBOX_TOOLS),
+                "database_name": f"{environment_id}_db",
+            },
+            "database_schema": database_schema,
+            "database": database,
+            "database_record_count": len(database),
+            "task_constraints": constraints_payload,
+            "task_constraints_text": constraints_text,
+            "source_context": dict(context_values),
+            "data_generation": {
+                "mode": "generated_by_data_designer_columns",
+                "note": "Topic, constraints, schema, and records are generated upstream by Data Designer columns.",
+            },
+        },
+        "tools": build_tool_specs(tool_names),
+        "tool_module_source": build_tool_module_source(database_schema, database, tool_names),
+        "synthesis_trace": [
+            {
+                "stage": "topic_and_constraint_intake",
+                "topic": topic,
+                "constraints_available": bool(constraints_text),
+            },
+            {
+                "stage": "schema_intake",
+                "record_type": database_schema.get("record_type"),
+                "primary_key": database_schema.get("primary_key"),
+            },
+            {
+                "stage": "generated_data_intake",
+                "database_record_count": len(database),
+                "toolset": tool_names,
+            },
+        ],
+    }
+
+
+def build_task_tuple(
+    environment_artifact: dict[str, Any],
+    config: GeneralistAgentTaskColumnConfig,
+) -> dict[str, Any]:
+    """Build one ``<environment, tools, task, verifier>`` tuple from an environment.
+
+    Args:
+        environment_artifact: Output from ``generalist-agent-environment``.
+        config: Task column configuration.
+
+    Returns:
+        Structured Generalist task tuple.
+    """
+    environment = dict(environment_artifact["environment"])
+    database_schema = normalize_database_schema(environment["database_schema"])
+    topic = str(environment.get("topic") or "general task")
+    database = normalize_database_records(environment["database"], topic)
+    environment["database_schema"] = database_schema
+    environment["database"] = database
+    task_iterations = build_task_iterations(topic, database, config)
     final_iteration = task_iterations[-1]
     constraints = final_iteration["constraints"]
     answer = final_iteration["reference_answer"]
     verified = bool(final_iteration["reference_solution_passed"])
     tool_names = final_iteration["tool_names"]
-    category_slug = slugify(category, "task")
-    context_slug = stable_int(json.dumps(context_values, sort_keys=True), 10_000)
-    environment_id = f"{category_slug}-{row_number + 1:04d}-{context_slug:04d}"
 
     return {
-        "schema_version": "generalist-agent-env/v1",
-        "source_workflow": "DeepSeek-V3.2 Generalist automatic environment synthesis",
-        "environment": {
-            "environment_id": environment_id,
-            "category": category,
-            "sandbox": {
-                "base_tools": list(BASE_SANDBOX_TOOLS),
-                "database_name": f"{environment_id}_db",
-                "database_schema": dict(DATABASE_SCHEMA),
-            },
-            "database": database,
-            "database_record_count": len(database),
-            "source_context": dict(context_values),
-            "data_acquisition": {
-                "mode": "synthetic",
-                "base_sandbox_tools": list(BASE_SANDBOX_TOOLS),
-                "note": "Records are generated locally from seed data; downstream workflows may replace them with search-retrieved records.",
-            },
-        },
+        "schema_version": "generalist-agent-task/v1",
+        "source_workflow": "Generalist task synthesis from generated environment",
+        "environment": environment,
         "tools": build_tool_specs(tool_names),
-        "tool_module_source": build_tool_module_source(database, tool_names),
+        "tool_module_source": build_tool_module_source(database_schema, database, tool_names),
         "task": {
             "difficulty": config.difficulty,
-            "category": category,
-            "prompt": build_task_prompt(category, config.difficulty, constraints),
+            "topic": topic,
+            "prompt": build_task_prompt(topic, config.difficulty, constraints),
             "constraints": constraints,
             "answer_schema": {
                 "record_id": "string or null",
@@ -829,31 +1127,76 @@ def build_environment_tuple(
         },
         "reference_answer": answer,
         "task_iterations": task_iterations,
-        "synthesis_trace": build_synthesis_trace(category, config.difficulty, tool_names, constraints, verified),
+        "synthesis_trace": [
+            *environment_artifact.get("synthesis_trace", []),
+            *build_task_synthesis_trace(topic, config.difficulty, tool_names, constraints, verified),
+        ],
         "rl_filter_note": "Downstream RL retention can keep generated tuples with non-zero pass@100.",
     }
 
 
-class GeneralistAgentEnvColumnGenerator(ColumnGeneratorFullColumn[GeneralistAgentEnvColumnConfig]):
-    """Generate Generalist agent environment tuples for each input row."""
+class GeneralistAgentEnvironmentColumnGenerator(ColumnGeneratorFullColumn[GeneralistAgentEnvironmentColumnConfig]):
+    """Assemble generated Generalist environment and toolset artifacts."""
 
     def generate(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate structured environment tuples.
+        """Generate environment artifacts from upstream generated schema and records.
 
         Args:
-            data: Input DataFrame containing the configured task category and context columns.
+            data: Input DataFrame containing generated task topic, optional
+                generated constraints, generated database schema, generated
+                database records, and optional context columns.
 
         Returns:
             The input DataFrame with the configured output column populated.
         """
-        tuples: list[dict[str, Any]] = []
+        artifacts: list[dict[str, Any]] = []
         for row_number, (_, row) in enumerate(data.iterrows()):
-            category = normalize_cell(row[self.config.task_category_column]) or "general task"
+            topic = normalize_cell(row[self.config.task_topic_column]) or "general task"
+            constraints_cell = (
+                row[self.config.task_constraints_column] if self.config.task_constraints_column is not None else None
+            )
+            constraints_payload = to_plain_data(constraints_cell) if constraints_cell is not None else {}
+            constraints_text = constraint_payload_to_text(constraints_cell)
+            database_schema = normalize_database_schema(row[self.config.database_schema_column])
+            database = normalize_database_records(row[self.config.database_records_column], topic)
             context_values = {
                 column: normalize_cell(row[column])
                 for column in self.config.context_columns
                 if normalize_cell(row[column])
             }
-            tuples.append(build_environment_tuple(category, context_values, self.config, row_number))
+            artifacts.append(
+                build_environment_artifact(
+                    topic,
+                    constraints_payload,
+                    constraints_text,
+                    context_values,
+                    database_schema,
+                    database,
+                    row_number,
+                )
+            )
+        data[self.config.name] = artifacts
+        return data
+
+
+class GeneralistAgentTaskColumnGenerator(ColumnGeneratorFullColumn[GeneralistAgentTaskColumnConfig]):
+    """Generate Generalist task tuples from constructed generated environments."""
+
+    def generate(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate task, solution, and verifier tuples from environments.
+
+        Args:
+            data: Input DataFrame containing the configured environment column.
+
+        Returns:
+            The input DataFrame with the configured output column populated.
+        """
+        tuples: list[dict[str, Any]] = []
+        for _, row in data.iterrows():
+            environment_artifact = row[self.config.environment_column]
+            if not isinstance(environment_artifact, dict):
+                msg = f"{self.config.environment_column!r} must contain environment artifact dictionaries"
+                raise ValueError(msg)
+            tuples.append(build_task_tuple(environment_artifact, self.config))
         data[self.config.name] = tuples
         return data

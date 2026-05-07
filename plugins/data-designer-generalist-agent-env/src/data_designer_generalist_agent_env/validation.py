@@ -248,6 +248,8 @@ def tool_output_error(tool_name: str, output: Any) -> str | None:
     Returns:
         An error message when the output shape is unexpected, otherwise ``None``.
     """
+    if tool_name == "describe_schema" and not isinstance(output, dict):
+        return f"{tool_name} returned {type(output).__name__}; expected dict"
     if tool_name in {"list_records", "search_records", "filter_records", "rank_records"}:
         if not isinstance(output, list):
             return f"{tool_name} returned {type(output).__name__}; expected list"
@@ -273,6 +275,8 @@ def invoke_tool_for_smoke_check(
     Returns:
         The tool output.
     """
+    if tool_name == "describe_schema":
+        return tool()
     if tool_name == "list_records":
         return tool()
     if tool_name == "search_records":
@@ -475,7 +479,7 @@ def verify_environment_tuple(environment_tuple: Mapping[str, Any]) -> RowRecordV
     replays every artifact in ``task_iterations`` when present.
 
     Args:
-        environment_tuple: Generated ``generalist-agent-env`` output value.
+        environment_tuple: Generated ``generalist-agent-task`` output value.
 
     Returns:
         A structured validation result with per-artifact status and errors.

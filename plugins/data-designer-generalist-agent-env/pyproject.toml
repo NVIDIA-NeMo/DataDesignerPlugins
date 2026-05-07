@@ -4,7 +4,7 @@
 [project]
 name = "data-designer-generalist-agent-env"
 version = "0.1.0"
-description = "Generalist agent environment tuple generator for Data Designer"
+description = "Generalist agent environment and task assemblers for generated Data Designer data"
 requires-python = ">=3.10"
 dependencies = [
     "data-designer>=0.5.9",
@@ -20,7 +20,8 @@ classifiers = [
 ]
 
 [project.entry-points."data_designer.plugins"]
-generalist-agent-env = "data_designer_generalist_agent_env.plugin:plugin"
+generalist-agent-environment = "data_designer_generalist_agent_env.plugin:environment_plugin"
+generalist-agent-task = "data_designer_generalist_agent_env.plugin:task_plugin"
 
 [project.urls]
 Repository = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"

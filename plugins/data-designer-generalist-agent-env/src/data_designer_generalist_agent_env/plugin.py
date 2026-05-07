@@ -3,8 +3,14 @@
 
 from data_designer.plugins.plugin import Plugin, PluginType
 
-plugin = Plugin(
-    config_qualified_name="data_designer_generalist_agent_env.config.GeneralistAgentEnvColumnConfig",
-    impl_qualified_name="data_designer_generalist_agent_env.impl.GeneralistAgentEnvColumnGenerator",
+environment_plugin = Plugin(
+    config_qualified_name="data_designer_generalist_agent_env.config.GeneralistAgentEnvironmentColumnConfig",
+    impl_qualified_name="data_designer_generalist_agent_env.impl.GeneralistAgentEnvironmentColumnGenerator",
+    plugin_type=PluginType.COLUMN_GENERATOR,
+)
+
+task_plugin = Plugin(
+    config_qualified_name="data_designer_generalist_agent_env.config.GeneralistAgentTaskColumnConfig",
+    impl_qualified_name="data_designer_generalist_agent_env.impl.GeneralistAgentTaskColumnGenerator",
     plugin_type=PluginType.COLUMN_GENERATOR,
 )
