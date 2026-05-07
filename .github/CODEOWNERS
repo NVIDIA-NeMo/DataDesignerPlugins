@@ -7,4 +7,5 @@
 /.github/ @NVIDIA-NeMo/data_designer_reviewers
 
 # Plugins
+/plugins/data-designer-generalist-agent-env/ eric.tramel@gmail.com
 /plugins/data-designer-template/ @NVIDIA-NeMo/data_designer_reviewers

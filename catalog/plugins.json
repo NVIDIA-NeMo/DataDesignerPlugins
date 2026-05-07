@@ -2,6 +2,31 @@
   "schema_version": 1,
   "plugins": [
     {
+      "name": "generalist-agent-env",
+      "plugin_type": "column-generator",
+      "description": "Generalist agent environment tuple generator for Data Designer",
+      "package": {
+        "name": "data-designer-generalist-agent-env",
+        "version": "0.1.0",
+        "path": "plugins/data-designer-generalist-agent-env"
+      },
+      "entry_point": {
+        "group": "data_designer.plugins",
+        "name": "generalist-agent-env",
+        "value": "data_designer_generalist_agent_env.plugin:plugin"
+      },
+      "compatibility": {
+        "python": {
+          "specifier": ">=3.10"
+        },
+        "data_designer": {
+          "requirement": "data-designer>=0.5.9",
+          "specifier": ">=0.5.9",
+          "marker": null
+        }
+      }
+    },
+    {
       "name": "text-transform",
       "plugin_type": "column-generator",
       "description": "Template Data Designer plugin \u2014 text transform column generator",
