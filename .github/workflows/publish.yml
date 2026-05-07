@@ -60,7 +60,8 @@ jobs:
           # as a PAT secret if team resolution fails.
           GH_TOKEN: ${{ secrets.MEMBERSHIP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          OWNERS=$(grep -v '^\s*#' "${PLUGIN_DIR}/CODEOWNERS" | grep -v '^\s*$' | awk '{for(i=2;i<=NF;i++) print $i}')
+          ALL_OWNERS=$(uv run python -m ddp.release_owners --all "${PLUGIN_DIR}/CODEOWNERS")
+          OWNERS=$(uv run python -m ddp.release_owners "${PLUGIN_DIR}/CODEOWNERS")
           MATCH=0
           for owner in $OWNERS; do
             case "$owner" in
@@ -78,7 +79,7 @@ jobs:
           done
           if [ "$MATCH" -eq 0 ]; then
             echo "ERROR: @${ACTOR} is not an authorized owner of ${PLUGIN_DIR}/CODEOWNERS"
-            echo "Listed owners: $OWNERS"
+            echo "Listed owners: $ALL_OWNERS"
             exit 1
           fi
 

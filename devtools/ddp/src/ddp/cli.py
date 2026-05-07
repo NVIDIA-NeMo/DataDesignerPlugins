@@ -140,9 +140,9 @@ def build_parser() -> argparse.ArgumentParser:
         "check-release",
         help="Validate plugin metadata for release",
         description=(
-            "Validate that a plugin's pyproject.toml is release-ready: checks that "
-            "the file version matches the expected tag version and that all required "
-            "PyPI metadata fields (description, license, readme, authors) are present."
+            "Validate that a plugin package is release-ready: checks pyproject metadata, "
+            "the release ref contract, release-eligible CODEOWNERS, and checked-in "
+            "schema v2 catalog entries for the package."
         ),
     )
     p_check_release.add_argument("plugin_name", help="Plugin name (e.g. data-designer-my-plugin)")
