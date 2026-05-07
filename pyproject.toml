@@ -46,7 +46,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["ddp", "data_designer_template"]
+known-first-party = ["ddp", "data_designer_template", "data_designer_retrieval_sdg"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

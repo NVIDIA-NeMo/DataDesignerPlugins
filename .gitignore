@@ -36,3 +36,6 @@ site/
 
 # Distribution
 *.tar.gz
+
+# CI artifacts
+*artifacts/
