@@ -7,6 +7,33 @@ and documentation URLs so consumers can implement plugin info and install flows.
 This page defines the v2 contract implemented by the checked-in
 `catalog/plugins.json` file.
 
+## Default NVIDIA Tap
+
+The default NVIDIA tap catalog URL is:
+
+```text
+https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
+```
+
+That URL points at the generated and checked-in catalog for the accepted `main`
+branch. Data Designer can read it as ordinary unauthenticated JSON over HTTP; it
+does not require GitHub API authentication and does not depend on GitHub Pages.
+
+The `/main/catalog/plugins.json` URL is mutable because it tracks the current
+accepted `main` branch. Use a tag or commit SHA in the raw URL when consumers
+need an immutable snapshot:
+
+```text
+https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/<tag-or-sha>/catalog/plugins.json
+```
+
+Release assets can be added later if raw tag or SHA snapshots are not enough for
+a downstream distribution workflow.
+
+External taps are not required to use GitHub. They may expose schema v2 from any
+unauthenticated raw JSON endpoint, or from a local catalog file path for
+authoring and offline workflows.
+
 ## Layering
 
 Tap discovery and runtime entry-point discovery are separate layers.
@@ -21,6 +48,11 @@ environment. Data Designer discovers installed plugins from the
 `data_designer.plugins` entry-point group. Schema v2 records the entry-point
 group, key, and import target as catalog metadata, but a catalog entry does not
 make a plugin available at runtime by itself.
+
+Catalog delivery is separate from documentation delivery. Plugin entries include
+`docs.url` for human-readable docs, but consumers should read machine-readable
+catalog data from the configured local file path or raw tap URL, not from a
+documentation page.
 
 `package.path` is repo-local metadata only. It identifies where the package
 lives in the repository that produced the catalog, for example

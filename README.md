@@ -38,6 +38,30 @@ DataDesignerPlugins/
 
 Each plugin is an independent Python package with its own `pyproject.toml`, docs, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
 
+## Plugin Tap Catalog
+
+The default NVIDIA plugin tap catalog URL is:
+
+```text
+https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
+```
+
+`catalog/plugins.json` is generated, checked in, and consumable by Data Designer
+from the raw GitHub URL with unauthenticated HTTP. It does not require GitHub
+API credentials or GitHub Pages.
+
+The `/main/catalog/plugins.json` URL tracks the accepted `main` branch and is
+therefore mutable. For an immutable snapshot, use a tag or commit SHA in the raw
+URL, for example:
+
+```text
+https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/<tag-or-sha>/catalog/plugins.json
+```
+
+Release assets can be added later if raw Git snapshots are not sufficient.
+External taps may use any unauthenticated raw JSON endpoint or a local catalog
+file path.
+
 ## Development
 
 Use the repo's `Makefile` targets for all development tasks:

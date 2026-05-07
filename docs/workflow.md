@@ -74,6 +74,20 @@ pages directly. `catalog/plugins.json` is generated from installed local plugin
 entry points, package metadata, and direct `data-designer` dependency specifiers
 for compatibility checks by external tools.
 
+`catalog/plugins.json` is also checked in as the machine-readable NVIDIA tap
+catalog. The default tap URL is the unauthenticated raw GitHub URL:
+
+```text
+https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
+```
+
+This URL tracks accepted `main` and is mutable. Tag or commit SHA raw URLs are
+immutable snapshots, for example
+`https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/<tag-or-sha>/catalog/plugins.json`.
+Release assets can be added later only if a distribution workflow needs them.
+External taps may use any unauthenticated raw JSON endpoint or a local catalog
+file path.
+
 ## GitHub CI
 
 Pull requests run the main CI workflow:
@@ -81,8 +95,11 @@ Pull requests run the main CI workflow:
 - lint
 - isolated plugin tests
 - plugin validation
-- generated metadata and license header checks
+- generated metadata and license header checks, including `make check-catalog`
+  for checked-in catalog freshness and schema v2 shape
 
 Documentation changes also run the documentation workflow. On pull requests the
 workflow builds the site and uploads a preview artifact. On pushes to `main`, it
-builds the same site and deploys `site/` to GitHub Pages.
+builds the same site and deploys `site/` to GitHub Pages. GitHub Pages is only
+for human-readable documentation; the machine-readable catalog is exposed from
+the raw `catalog/plugins.json` URL above.
