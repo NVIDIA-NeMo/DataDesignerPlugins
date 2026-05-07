@@ -19,6 +19,10 @@ nav = [
   {"Plugins" = [
     {"Overview" = "plugins/index.md"},
     # BEGIN GENERATED PLUGIN DOCS NAV
+    {"data-designer-generalist-agent-env" = [
+      {"Overview" = "plugins/data-designer-generalist-agent-env/index.md"},
+      {"Usage" = "plugins/data-designer-generalist-agent-env/usage.md"},
+    ]},
     {"data-designer-template" = [
       {"Overview" = "plugins/data-designer-template/index.md"},
       {"Usage" = "plugins/data-designer-template/usage.md"},
