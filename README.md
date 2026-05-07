@@ -1,4 +1,6 @@
-# 🔌 🎨 NeMo Data Designer Plugins
+# NeMo Data Designer Plugins
+
+[![Documentation](https://img.shields.io/badge/docs-documentation-blue)](https://nvidia-nemo.github.io/DataDesignerPlugins/)
 
 First-class NVIDIA-provided plugins for [NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
 
@@ -16,20 +18,21 @@ Create a new plugin:
 uv run ddp new my-plugin
 ```
 
-This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, tests, and CODEOWNERS. See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full authoring guide.
+This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, docs, tests, and CODEOWNERS. See [docs/authoring.md](docs/authoring.md) for the full authoring guide.
 
 ## Repository Structure
 
 ```
 DataDesignerPlugins/
-├── devtools/
-│   └── ddp/                          # Monorepo management tooling (ddp CLI, dev-only)
-├── plugins/                          # One directory per plugin (auto-discovered by uv)
-│   └── data-designer-template/       # Reference implementation
-└── docs/                             # Authoring guide, plugin catalog
+|-- devtools/
+|   `-- ddp/                          # Monorepo management tooling (ddp CLI, dev-only)
+|-- catalog/                          # Machine-consumable plugin catalog data
+|-- plugins/                          # One directory per plugin (auto-discovered by uv)
+|   `-- data-designer-template/       # Reference implementation
+`-- docs/                             # Zensical documentation source
 ```
 
-Each plugin is an independent Python package with its own `pyproject.toml`, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
+Each plugin is an independent Python package with its own `pyproject.toml`, docs, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
 
 ## Development
 
@@ -41,8 +44,12 @@ make lint               # Lint and format check (ruff)
 make format             # Auto-fix lint issues and reformat
 make test               # Test each plugin in an isolated venv
 make validate           # Run assert_valid_plugin on all entry points
-make check              # Verify catalog, CODEOWNERS, and license headers are up to date
-make all                # lint + test + validate + check (full local CI)
+make check              # Verify generated plugin docs, catalog, CODEOWNERS, and license headers are up to date
+make plugin-docs        # Regenerate docs/plugins/ from per-plugin docs and metadata
+make catalog            # Regenerate catalog/plugins.json
+make docs               # Build the Zensical documentation site
+make docs-server        # Serve docs locally at http://localhost:8000
+make all                # lint + test + validate + check + docs (full local CI)
 ```
 
 To test a single plugin in isolation:
@@ -51,10 +58,11 @@ To test a single plugin in isolation:
 make test-plugin PLUGIN=data-designer-my-plugin
 ```
 
-If you change plugin metadata or ownership, regenerate derived files:
+If you change plugin docs, plugin metadata, or ownership, regenerate derived files:
 
 ```bash
-make catalog                  # Regenerate docs/catalog.md
+make plugin-docs              # Regenerate plugin documentation site inputs
+make catalog                  # Regenerate catalog/plugins.json
 make codeowners               # Regenerate CODEOWNERS
 make update-license-headers   # Fix SPDX headers
 ```
@@ -66,8 +74,9 @@ The `ddp` command manages the monorepo. Run `uv run ddp --help` to see all subco
 | Command | Description |
 |---------|-------------|
 | `ddp new <name>` | Scaffold a new plugin |
+| `ddp sync catalog` | Sync the static plugin catalog JSON |
 | `ddp validate` | Validate all installed plugins |
-| `ddp catalog` | Generate plugin catalog to stdout |
+| `ddp plugin-docs` | Generate plugin docs site inputs |
 | `ddp codeowners` | Aggregate CODEOWNERS to stdout |
 | `ddp license-headers` | Add or check SPDX license headers |
 | `ddp bump <plugin> <part>` | Bump a plugin's semantic version |
@@ -83,7 +92,7 @@ make release PLUGIN=data-designer-my-plugin            # Tag + build
 git push origin data-designer-my-plugin/v0.1.1         # Triggers CI publish
 ```
 
-See [docs/adding-a-plugin.md](docs/adding-a-plugin.md) for the full release guide.
+See [docs/releasing.md](docs/releasing.md) for the full release guide.
 
 ## License
 

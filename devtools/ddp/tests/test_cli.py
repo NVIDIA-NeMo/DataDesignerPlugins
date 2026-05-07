@@ -15,7 +15,16 @@ from ddp.cli import build_parser
 class TestBuildParser:
     """Tests for build_parser producing correct subcommands."""
 
-    EXPECTED_COMMANDS = ("new", "catalog", "codeowners", "license-headers", "validate", "check-release", "bump")
+    EXPECTED_COMMANDS = (
+        "new",
+        "plugin-docs",
+        "sync",
+        "codeowners",
+        "license-headers",
+        "validate",
+        "check-release",
+        "bump",
+    )
 
     def test_all_subcommands_registered(self) -> None:
         parser = build_parser()
@@ -58,6 +67,18 @@ class TestBuildParser:
         args = parser.parse_args(["license-headers"])
         assert args.check is False
 
+    def test_plugin_docs_check_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["plugin-docs", "--check"])
+        assert args.check is True
+
+    def test_sync_catalog_parses_args(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["sync", "catalog", "--check"])
+        assert args.command == "sync"
+        assert args.sync_target == "catalog"
+        assert args.check is True
+
     def test_no_command_prints_help(self) -> None:
         parser = build_parser()
         args = parser.parse_args([])
@@ -75,11 +96,19 @@ class TestDispatch:
         args.func(args)
         mock_run.assert_called_once_with(args)
 
-    @patch("ddp.cli._run_catalog")
-    def test_catalog_dispatches(self, mock_run: MagicMock) -> None:
+    @patch("ddp.cli._run_plugin_docs")
+    def test_plugin_docs_dispatches(self, mock_run: MagicMock) -> None:
         mock_run.return_value = 0
         parser = build_parser()
-        args = parser.parse_args(["catalog"])
+        args = parser.parse_args(["plugin-docs"])
+        args.func(args)
+        mock_run.assert_called_once_with(args)
+
+    @patch("ddp.cli._run_sync_catalog")
+    def test_sync_catalog_dispatches(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = 0
+        parser = build_parser()
+        args = parser.parse_args(["sync", "catalog"])
         args.func(args)
         mock_run.assert_called_once_with(args)
 

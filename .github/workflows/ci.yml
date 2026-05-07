@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.10"
           enable-cache: true
-      # test uses isolated venvs, not workspace sync
+      - run: make sync
       - run: make test
 
   validate:
@@ -58,6 +58,8 @@ jobs:
         with:
           name: generated-metadata
           path: |
-            docs/catalog.md.new
+            docs/plugins/**
+            zensical.toml
+            catalog/plugins.json.new
             .github/CODEOWNERS.new
           if-no-files-found: ignore

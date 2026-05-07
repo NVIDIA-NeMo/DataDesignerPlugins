@@ -59,3 +59,8 @@ line-ending = "auto"
 
 [tool.pytest.ini_options]
 testpaths = ["plugins"]
+
+[dependency-groups]
+dev = [
+    "zensical>=0.0.40",
+]

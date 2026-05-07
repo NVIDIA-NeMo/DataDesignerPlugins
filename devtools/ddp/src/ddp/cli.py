@@ -7,6 +7,8 @@ Usage::
 
     ddp --help              # List all subcommands
     ddp new my-plugin       # Scaffold a new plugin
+    ddp plugin-docs         # Generate plugin documentation pages
+    ddp sync catalog        # Sync generated catalog JSON
     ddp validate            # Validate all installed plugins
     ddp bump <plugin> patch # Bump a plugin version
 """
@@ -42,17 +44,47 @@ def build_parser() -> argparse.ArgumentParser:
     p_new.add_argument("name", help="Plugin name in kebab-case (e.g., my-cool-thing)")
     p_new.set_defaults(func=_run_new)
 
-    # ddp catalog
-    p_catalog = sub.add_parser(
-        "catalog",
-        help="Generate plugin catalog to stdout",
+    # ddp plugin-docs
+    p_plugin_docs = sub.add_parser(
+        "plugin-docs",
+        help="Generate plugin documentation pages",
         description=(
-            "Generate a markdown table of all plugins and their metadata "
-            "(name, version, column type, description) to stdout. "
-            "Typically redirected to docs/catalog.md."
+            "Generate docs/plugins/ from each plugin's docs/ directory and "
+            "package metadata, then update the generated plugin navigation in zensical.toml."
         ),
     )
-    p_catalog.set_defaults(func=_run_catalog)
+    p_plugin_docs.add_argument(
+        "--check",
+        action="store_true",
+        help="Check generated plugin docs without modifying files",
+    )
+    p_plugin_docs.set_defaults(func=_run_plugin_docs)
+
+    # ddp sync <artifact>
+    p_sync = sub.add_parser(
+        "sync",
+        help="Sync generated repository artifacts",
+        description=(
+            "Sync generated repository artifacts from the current workspace state. "
+            "Use subcommands such as `ddp sync catalog` for individual artifacts."
+        ),
+    )
+    sync_sub = p_sync.add_subparsers(dest="sync_target", required=True)
+
+    p_sync_catalog = sync_sub.add_parser(
+        "catalog",
+        help="Sync plugin catalog JSON",
+        description=(
+            "Sync catalog/plugins.json from installed local DataDesigner plugins and package metadata "
+            "(package, version, runtime plugin name, type, description, entry point, and compatibility)."
+        ),
+    )
+    p_sync_catalog.add_argument(
+        "--check",
+        action="store_true",
+        help="Check whether the catalog is current without updating catalog/plugins.json",
+    )
+    p_sync_catalog.set_defaults(func=_run_sync_catalog)
 
     # ddp codeowners
     p_codeowners = sub.add_parser(
@@ -136,10 +168,30 @@ def _run_new(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_catalog(args: argparse.Namespace) -> int:
-    from ddp.catalog import main as catalog_main
+def _run_plugin_docs(args: argparse.Namespace) -> int:
+    from ddp.plugin_docs import main as plugin_docs_main
 
-    catalog_main()
+    argv = ["--check"] if args.check else []
+    return plugin_docs_main(argv)
+
+
+def _run_sync_catalog(args: argparse.Namespace) -> int:
+    from ddp.catalog import CatalogError, check_catalog, sync_catalog
+
+    try:
+        if args.check:
+            if check_catalog():
+                print("Catalog is up to date.")
+                return 0
+            print("ERROR: catalog is out of date; run `uv run ddp sync catalog`.", file=sys.stderr)
+            return 1
+
+        output_path = sync_catalog()
+    except CatalogError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Synced catalog: {output_path}")
     return 0
 
 

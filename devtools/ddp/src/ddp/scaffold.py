@@ -80,7 +80,7 @@ Data Designer {slug} plugin.
 ## Installation
 
 ```bash
-pip install data-designer-{slug}
+uv add data-designer data-designer-{slug}
 ```
 
 ## Usage
@@ -89,7 +89,28 @@ Once installed, the `{slug}` column type is automatically discovered by
 [NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
 
 For the full plugin authoring guide, see the
-[main repository docs](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/docs/adding-a-plugin.md).
+[main repository docs](https://nvidia-nemo.github.io/DataDesignerPlugins/authoring/).
+
+Plugin documentation for the repository site lives in this package's `docs/`
+directory.
+"""
+
+
+def generate_docs_index(slug: str) -> str:
+    return f"""# data-designer-{slug}
+
+Data Designer {slug} plugin.
+
+## Installation
+
+```bash
+uv add data-designer data-designer-{slug}
+```
+
+## Usage
+
+Once installed, the `{slug}` column type is automatically discovered by
+[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
 """
 
 
@@ -239,10 +260,12 @@ def main(args: list[str] | None = None) -> None:
 
     src_dir = plugin_dir / "src" / import_name
     test_dir = plugin_dir / "tests"
+    docs_dir = plugin_dir / "docs"
 
     # Create directories
     src_dir.mkdir(parents=True)
     test_dir.mkdir(parents=True)
+    docs_dir.mkdir(parents=True)
 
     # Write files
     owner = _discover_owner()
@@ -250,6 +273,7 @@ def main(args: list[str] | None = None) -> None:
         plugin_dir / "pyproject.toml": generate_pyproject(slug, import_name),
         plugin_dir / "README.md": generate_readme(slug),
         plugin_dir / "CODEOWNERS": generate_codeowners(owner),
+        docs_dir / "index.md": generate_docs_index(slug),
         src_dir / "__init__.py": generate_init(),
         src_dir / "config.py": generate_config(slug, import_name, class_prefix),
         src_dir / "impl.py": generate_impl(slug, import_name, class_prefix),
@@ -270,8 +294,9 @@ def main(args: list[str] | None = None) -> None:
     print(f"  1. cd {plugin_dir}")
     print(f"  2. Edit src/{import_name}/config.py to define your column config")
     print(f"  3. Edit src/{import_name}/impl.py to implement generation logic")
-    print("  4. uv sync --all-packages && uv run pytest tests/")
-    print(f"  5. make release PLUGIN=data-designer-{slug}")
+    print("  4. Edit docs/index.md to document your plugin")
+    print("  5. uv sync --all-packages && uv run pytest tests/")
+    print(f"  6. make release PLUGIN=data-designer-{slug}")
 
 
 if __name__ == "__main__":
