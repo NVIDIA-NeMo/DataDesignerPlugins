@@ -13,7 +13,15 @@ make sync
 uv run ddp new my-plugin
 ```
 
-This creates a package named `data-designer-my-plugin`:
+This creates a column generator by default. To scaffold another plugin type,
+pass one of the supported `--type` values:
+
+```bash
+uv run ddp new my-seed-reader --type seed-reader
+uv run ddp new my-processor --type processor
+```
+
+The command creates a package named `data-designer-my-plugin`:
 
 ```text
 plugins/data-designer-my-plugin/
@@ -38,7 +46,10 @@ introducing a new structure.
 ## Naming and discovery
 
 Plugin packages use the `data-designer-` prefix. The entry point key is the
-column type slug that Data Designer discovers at runtime:
+slug that Data Designer discovers at runtime. For column generators, this is the
+column type. For seed readers, use the same slug as the `seed_type`
+discriminator. For processors, use the same slug as the `processor_type`
+discriminator:
 
 ```toml
 [project]
@@ -58,12 +69,12 @@ Do not use relative imports in this repository.
 
 ## Implement the plugin
 
-The scaffold separates the plugin into three concerns:
+The scaffold separates each plugin type into three concerns:
 
 | File | Responsibility |
 | --- | --- |
-| `config.py` | Column configuration, parameters, dependencies, and metadata. |
-| `impl.py` | Runtime generation logic. |
+| `config.py` | Plugin configuration, discriminator, parameters, dependencies, and metadata. |
+| `impl.py` | Runtime column generation, seed reading, or processing logic. |
 | `plugin.py` | Data Designer plugin object and entry point target. |
 
 Keep functions and methods short enough to read in one pass. Prefer reusable

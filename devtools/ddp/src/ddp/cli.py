@@ -32,6 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     # ddp new <name>
+    from ddp.scaffold import DEFAULT_PLUGIN_SCAFFOLD_TYPE, PLUGIN_SCAFFOLD_TYPES
+
     p_new = sub.add_parser(
         "new",
         help="Scaffold a new plugin",
@@ -42,6 +44,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_new.add_argument("name", help="Plugin name in kebab-case (e.g., my-cool-thing)")
+    p_new.add_argument(
+        "--type",
+        choices=PLUGIN_SCAFFOLD_TYPES,
+        default=DEFAULT_PLUGIN_SCAFFOLD_TYPE,
+        dest="plugin_type",
+        help="Plugin type to scaffold (default: column-generator).",
+    )
     p_new.set_defaults(func=_run_new)
 
     # ddp plugin-docs
@@ -164,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _run_new(args: argparse.Namespace) -> int:
     from ddp.scaffold import main as scaffold_main
 
-    scaffold_main([args.name])
+    scaffold_main([args.name, "--type", args.plugin_type])
     return 0
 
 
