@@ -4,8 +4,8 @@ Schema v2 is the concrete JSON contract for Data Designer plugin tap catalogs.
 It extends the current read-only catalog shape with installation source metadata
 and documentation URLs so consumers can implement plugin info and install flows.
 
-This page defines the v2 contract. The checked-in `catalog/plugins.json` file
-may remain schema v1 until the catalog generation work is implemented.
+This page defines the v2 contract implemented by the checked-in
+`catalog/plugins.json` file.
 
 ## Layering
 

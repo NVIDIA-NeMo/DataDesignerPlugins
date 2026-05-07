@@ -20,8 +20,9 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from ddp._repo import find_repo_root, load_toml
+from ddp.tap_config import TapConfig, TapConfigError, load_tap_config
 
-CATALOG_SCHEMA_VERSION = 1
+CATALOG_SCHEMA_VERSION = 2
 REPO_ROOT = find_repo_root()
 PLUGINS_DIR = REPO_ROOT / "plugins"
 CATALOG_BASE_PATH = REPO_ROOT / "catalog"
@@ -56,6 +57,8 @@ class CatalogEntry:
         data_designer_marker: Environment marker from the package's direct
             ``data-designer`` dependency, or ``None`` when the requirement is
             unconditionally active.
+        source: Install source metadata for the package.
+        docs_url: Absolute documentation URL for the package.
     """
 
     plugin_package: str
@@ -70,17 +73,20 @@ class CatalogEntry:
     data_designer_requirement: str
     data_designer_version_specifier: str
     data_designer_marker: str | None
+    source: dict[str, object]
+    docs_url: str
 
 
 def main() -> None:
     """Generate a JSON catalog of all plugin entry points and print to stdout."""
     try:
         entries = discover_catalog_entries(PLUGINS_DIR)
+        output = render_catalog_json(entries)
     except CatalogError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print(render_catalog_json(entries), end="")
+    print(output, end="")
 
 
 def sync_catalog() -> Path:
@@ -135,6 +141,7 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
         CatalogError: If a local entry point is not installed, cannot be loaded,
             or does not load to a DataDesigner ``Plugin`` object.
     """
+    tap_config = catalog_tap_config_for_plugins_dir(plugins_dir)
     entries: list[CatalogEntry] = []
     for toml_path in sorted(plugins_dir.glob("*/pyproject.toml")):
         data = load_toml(toml_path)
@@ -154,6 +161,13 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
 
         entry_points = data_designer_entry_points(name, project)
         repository_path = toml_path.parent.relative_to(plugins_dir.parent).as_posix()
+        source = source_metadata_for_package(
+            tap_config=tap_config,
+            package_name=name,
+            version=version,
+            repository_path=repository_path,
+        )
+        docs_url = tap_config.docs_url_for_package(name)
         for entry_point_name, entry_point_value in sorted(entry_points.items()):
             entries.append(
                 catalog_entry_for_entry_point(
@@ -168,10 +182,55 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
                     data_designer_requirement=data_designer_requirement,
                     data_designer_version_specifier=data_designer_version_specifier,
                     data_designer_marker=data_designer_marker,
+                    source=source,
+                    docs_url=docs_url,
                 )
             )
 
     return sorted(entries, key=lambda entry: (entry.plugin_package, entry.name))
+
+
+def catalog_tap_config_for_plugins_dir(plugins_dir: Path) -> TapConfig:
+    """Load tap metadata for a plugins directory.
+
+    Args:
+        plugins_dir: Repository ``plugins/`` directory.
+
+    Returns:
+        Validated tap metadata for the repository containing the plugins.
+
+    Raises:
+        CatalogError: If tap metadata is missing or malformed.
+    """
+    try:
+        return load_tap_config(plugins_dir.parent)
+    except TapConfigError as exc:
+        raise CatalogError(f"could not load tap metadata for catalog generation: {exc}") from exc
+
+
+def source_metadata_for_package(
+    tap_config: TapConfig,
+    package_name: str,
+    version: str,
+    repository_path: str,
+) -> dict[str, object]:
+    """Return validated catalog source metadata for a package.
+
+    Args:
+        tap_config: Repository-level tap metadata.
+        package_name: Plugin package distribution name.
+        version: Plugin package version.
+        repository_path: Repository-relative plugin package path.
+
+    Returns:
+        Validated source metadata.
+
+    Raises:
+        CatalogError: If the generated source object is malformed.
+    """
+    source = tap_config.source_metadata_for_package(package_name, version, repository_path)
+    validate_source_metadata(package_name, source)
+    return source
 
 
 def catalog_entry_for_entry_point(
@@ -186,6 +245,8 @@ def catalog_entry_for_entry_point(
     data_designer_requirement: str,
     data_designer_version_specifier: str,
     data_designer_marker: str | None,
+    source: dict[str, object],
+    docs_url: str,
 ) -> CatalogEntry:
     """Build a catalog entry from an installed DataDesigner plugin entry point.
 
@@ -206,6 +267,8 @@ def catalog_entry_for_entry_point(
         data_designer_marker: Environment marker from the package's direct
             ``data-designer`` dependency, or ``None`` when the requirement is
             unconditionally active.
+        source: Install source metadata for the package.
+        docs_url: Absolute documentation URL for the package.
 
     Returns:
         Catalog entry with runtime plugin metadata.
@@ -250,6 +313,8 @@ def catalog_entry_for_entry_point(
         data_designer_requirement=data_designer_requirement,
         data_designer_version_specifier=data_designer_version_specifier,
         data_designer_marker=data_designer_marker,
+        source=source,
+        docs_url=docs_url,
     )
 
 
@@ -635,6 +700,178 @@ def normalize_distribution_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+def validate_source_metadata(package_name: str, source: object) -> None:
+    """Validate one schema v2 catalog source object.
+
+    Args:
+        package_name: Plugin package distribution name.
+        source: Source metadata object to validate.
+
+    Raises:
+        CatalogError: If the source metadata does not match a supported source
+            object shape.
+    """
+    if not isinstance(source, dict):
+        raise CatalogError(f"package {package_name!r} has invalid source; expected an object")
+
+    source_type = source.get("type")
+    if source_type == "pypi":
+        validate_pypi_source_metadata(package_name, source)
+        return
+    if source_type == "git":
+        validate_git_source_metadata(package_name, source)
+        return
+    if source_type == "path":
+        validate_path_source_metadata(package_name, source)
+        return
+    raise CatalogError(
+        f"package {package_name!r} has invalid source.type {source_type!r}; expected one of 'pypi', 'git', or 'path'"
+    )
+
+
+def validate_source_keys(
+    package_name: str,
+    source: dict[str, object],
+    source_type: str,
+    expected_keys: set[str],
+) -> None:
+    """Validate that a source object has exactly the expected fields.
+
+    Args:
+        package_name: Plugin package distribution name.
+        source: Source metadata object to validate.
+        source_type: Expected source type.
+        expected_keys: Exact field names allowed for the source object.
+
+    Raises:
+        CatalogError: If the source object has missing or extra fields.
+    """
+    source_keys = set(source)
+    if source_keys != expected_keys:
+        expected = ", ".join(sorted(expected_keys))
+        actual = ", ".join(sorted(source_keys))
+        raise CatalogError(
+            f"package {package_name!r} has invalid {source_type!r} source fields; "
+            f"expected {{{expected}}}, got {{{actual}}}"
+        )
+
+
+def required_source_string(package_name: str, source: dict[str, object], source_type: str, key: str) -> str:
+    """Return a required non-empty string from a source object.
+
+    Args:
+        package_name: Plugin package distribution name.
+        source: Source metadata object to read.
+        source_type: Source object type used in error messages.
+        key: Source field to read.
+
+    Returns:
+        Non-empty string value.
+
+    Raises:
+        CatalogError: If the field is missing or not a non-empty string.
+    """
+    value = source.get(key)
+    if not isinstance(value, str) or not value:
+        raise CatalogError(
+            f"package {package_name!r} has invalid {source_type!r} source field {key!r}; expected a non-empty string"
+        )
+    return value
+
+
+def validate_pypi_source_metadata(package_name: str, source: dict[str, object]) -> None:
+    """Validate a PyPI source object.
+
+    Args:
+        package_name: Plugin package distribution name.
+        source: Source metadata object to validate.
+
+    Raises:
+        CatalogError: If the PyPI source object is malformed.
+    """
+    validate_source_keys(package_name, source, "pypi", {"type", "package"})
+    source_package = required_source_string(package_name, source, "pypi", "package")
+    if source_package != package_name:
+        raise CatalogError(
+            f"package {package_name!r} has invalid pypi source package {source_package!r}; "
+            "expected the source package to match [project].name"
+        )
+
+
+def validate_git_source_metadata(package_name: str, source: dict[str, object]) -> None:
+    """Validate a Git source object.
+
+    Args:
+        package_name: Plugin package distribution name.
+        source: Source metadata object to validate.
+
+    Raises:
+        CatalogError: If the Git source object is malformed.
+    """
+    validate_source_keys(package_name, source, "git", {"type", "url", "ref", "subdirectory"})
+    url = required_source_string(package_name, source, "git", "url")
+    required_source_string(package_name, source, "git", "ref")
+    required_source_string(package_name, source, "git", "subdirectory")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise CatalogError(
+            f"package {package_name!r} has invalid git source url {url!r}; expected an absolute HTTP(S) URL"
+        )
+
+
+def validate_path_source_metadata(package_name: str, source: dict[str, object]) -> None:
+    """Validate a path source object.
+
+    Args:
+        package_name: Plugin package distribution name.
+        source: Source metadata object to validate.
+
+    Raises:
+        CatalogError: If the path source object is malformed.
+    """
+    validate_source_keys(package_name, source, "path", {"type", "path", "editable"})
+    required_source_string(package_name, source, "path", "path")
+    editable = source.get("editable")
+    if not isinstance(editable, bool):
+        raise CatalogError(f"package {package_name!r} has invalid path source field 'editable'; expected a boolean")
+
+
+def validate_unique_runtime_plugin_names(entries: list[CatalogEntry]) -> None:
+    """Validate that runtime plugin names are unique within the catalog.
+
+    Args:
+        entries: Catalog entries to validate.
+
+    Raises:
+        CatalogError: If two entries share the same runtime plugin name.
+    """
+    seen: dict[str, CatalogEntry] = {}
+    for entry in entries:
+        previous = seen.get(entry.name)
+        if previous is not None:
+            raise CatalogError(
+                f"duplicate runtime plugin name {entry.name!r} from "
+                f"{previous.plugin_package!r} entry point {previous.entry_point_name!r} and "
+                f"{entry.plugin_package!r} entry point {entry.entry_point_name!r}"
+            )
+        seen[entry.name] = entry
+
+
+def validate_catalog_entries(entries: list[CatalogEntry]) -> None:
+    """Validate catalog entries before JSON rendering.
+
+    Args:
+        entries: Catalog entries to validate.
+
+    Raises:
+        CatalogError: If an entry violates the schema v2 generation contract.
+    """
+    validate_unique_runtime_plugin_names(entries)
+    for entry in entries:
+        validate_source_metadata(entry.plugin_package, entry.source)
+
+
 def render_catalog_json(entries: list[CatalogEntry]) -> str:
     """Render catalog entries as deterministic JSON.
 
@@ -644,6 +881,7 @@ def render_catalog_json(entries: list[CatalogEntry]) -> str:
     Returns:
         JSON catalog content.
     """
+    validate_catalog_entries(entries)
     catalog = {
         "schema_version": CATALOG_SCHEMA_VERSION,
         "plugins": [
@@ -670,6 +908,10 @@ def render_catalog_json(entries: list[CatalogEntry]) -> str:
                         "specifier": entry.data_designer_version_specifier,
                         "marker": entry.data_designer_marker,
                     },
+                },
+                "source": entry.source,
+                "docs": {
+                    "url": entry.docs_url,
                 },
             }
             for entry in entries
