@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
+from argparse import Namespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ddp.cli import build_parser
+from ddp.cli import _run_new, build_parser
 
 
 class TestBuildParser:
@@ -44,6 +45,29 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["new", "my-plugin"])
         assert args.name == "my-plugin"
+        assert args.plugin_type == "column-generator"
+
+    @pytest.mark.parametrize(
+        "plugin_type",
+        ["column-generator", "seed-reader", "processor"],
+    )
+    def test_new_parses_valid_plugin_types(self, plugin_type: str) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["new", "my-plugin", "--type", plugin_type])
+        assert args.name == "my-plugin"
+        assert args.plugin_type == plugin_type
+
+    def test_new_rejects_invalid_plugin_type(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["new", "my-plugin", "--type", "not-a-type"])
+        assert exc_info.value.code == 2
+
+    def test_new_help_mentions_column_generator_default(self) -> None:
+        parser = build_parser()
+        subparsers_actions = [a for a in parser._subparsers._actions if hasattr(a, "_parser_class")]
+        new_parser = subparsers_actions[0].choices["new"]
+        assert "default: column-generator" in new_parser.format_help()
 
     def test_bump_parses_args(self) -> None:
         parser = build_parser()
@@ -92,9 +116,17 @@ class TestDispatch:
     def test_new_dispatches(self, mock_run: MagicMock) -> None:
         mock_run.return_value = 0
         parser = build_parser()
-        args = parser.parse_args(["new", "test-plugin"])
+        args = parser.parse_args(["new", "test-plugin", "--type", "seed-reader"])
         args.func(args)
         mock_run.assert_called_once_with(args)
+        assert args.plugin_type == "seed-reader"
+
+    @patch("ddp.scaffold.main")
+    def test_run_new_passes_plugin_type_to_scaffold(self, mock_scaffold: MagicMock) -> None:
+        result = _run_new(Namespace(name="test-plugin", plugin_type="processor"))
+
+        assert result == 0
+        mock_scaffold.assert_called_once_with(["test-plugin", "--type", "processor"])
 
     @patch("ddp.cli._run_plugin_docs")
     def test_plugin_docs_dispatches(self, mock_run: MagicMock) -> None:

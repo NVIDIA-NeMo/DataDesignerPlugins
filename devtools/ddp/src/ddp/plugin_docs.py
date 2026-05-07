@@ -31,7 +31,7 @@ class PluginDocs:
         docs_slug: URL-safe directory name used under ``docs/plugins``.
         version: Package version from plugin metadata.
         description: Package description from plugin metadata.
-        column_types: Data Designer entry point keys exposed by the plugin.
+        entry_points: Data Designer entry point keys exposed by the plugin.
         plugin_dir: Source plugin package directory.
         source_docs_dir: Optional source documentation directory.
     """
@@ -40,7 +40,7 @@ class PluginDocs:
     docs_slug: str
     version: str
     description: str
-    column_types: tuple[str, ...]
+    entry_points: tuple[str, ...]
     plugin_dir: Path
     source_docs_dir: Path | None
 
@@ -101,7 +101,7 @@ def discover_plugin_docs(repo_root: Path) -> list[PluginDocs]:
                 docs_slug=docs_slug,
                 version=str(project.get("version", "unknown")),
                 description=str(project.get("description", "")),
-                column_types=tuple(sorted(str(key) for key in entry_points)),
+                entry_points=tuple(sorted(str(key) for key in entry_points)),
                 plugin_dir=toml_path.parent,
                 source_docs_dir=source_docs_dir if source_docs_dir.is_dir() else None,
             )
@@ -187,8 +187,8 @@ def render_plugins_index(plugins: list[PluginDocs], repo_root: Path) -> str:
                 "    </span>",
                 f'    <span class="plugin-doc-card__description">{escape(plugin.description)}</span>',
                 '    <span class="plugin-doc-card__section">',
-                '      <span class="plugin-doc-card__label">Column types</span>',
-                f'      <span class="plugin-doc-card__chips">{format_html_chips(plugin.column_types)}</span>',
+                '      <span class="plugin-doc-card__label">Entry points</span>',
+                f'      <span class="plugin-doc-card__chips">{format_html_chips(plugin.entry_points)}</span>',
                 "    </span>",
                 "  </a>",
             ]
@@ -225,7 +225,7 @@ def render_fallback_plugin_page(plugin: PluginDocs, repo_root: Path) -> str:
             "## Metadata",
             "",
             f"- Version: `{plugin.version}`",
-            f"- Column types: {format_markdown_code_list(plugin.column_types)}",
+            f"- Entry points: {format_markdown_code_list(plugin.entry_points)}",
             "",
             "## Installation",
             "",

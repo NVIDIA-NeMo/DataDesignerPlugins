@@ -18,7 +18,11 @@ Create a new plugin:
 uv run ddp new my-plugin
 ```
 
-This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, docs, tests, and CODEOWNERS. See [docs/authoring.md](docs/authoring.md) for the full authoring guide.
+This generates a column generator by default. Pass `--type seed-reader` or
+`--type processor` to scaffold those plugin types instead. Each scaffold creates
+a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config,
+implementation, entry point, docs, tests, and CODEOWNERS. See
+[docs/authoring.md](docs/authoring.md) for the full authoring guide.
 
 ## Repository Structure
 
