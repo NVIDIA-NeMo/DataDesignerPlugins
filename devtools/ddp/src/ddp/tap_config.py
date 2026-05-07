@@ -19,19 +19,19 @@ from ddp._repo import find_repo_root, load_toml
 
 TAP_CONFIG_PATH = "[tool.ddp.tap]"
 DEFAULT_SOURCE_VALUES = ("pypi", "git", "path")
-URL_FIELDS = ("catalog-url", "repository-url", "repository-git-url", "docs-base-url")
+URL_FIELDS = ("catalog-url", "repository-url", "docs-base-url")
 REQUIRED_FIELDS = (
     "catalog-url",
     "repository-url",
-    "repository-git-url",
     "docs-base-url",
     "package-prefix",
     "default-source",
-    "release-ref-template",
     "default-data-designer-requirement",
     "author-name",
 )
 DATA_DESIGNER_DISTRIBUTION_NAME = "data-designer"
+PACKAGE_PATH_ROOT = "plugins"
+PACKAGE_PATH_SEGMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 class TapConfigError(RuntimeError):
@@ -56,11 +56,11 @@ class TapConfig:
 
     catalog_url: str
     repository_url: str
-    repository_git_url: str
+    repository_git_url: str | None
     docs_base_url: str
     package_prefix: str
     default_source: Literal["pypi", "git", "path"]
-    release_ref_template: str
+    release_ref_template: str | None
     default_data_designer_requirement: str
     author_name: str
 
@@ -109,6 +109,8 @@ class TapConfig:
         Returns:
             Release ref generated from ``release_ref_template``.
         """
+        if self.release_ref_template is None:
+            raise TapConfigError("git source metadata requires [tool.ddp.tap].release-ref-template")
         return self.release_ref_template.format(package=package_name, version=version)
 
     def source_metadata_for_package(self, package_name: str, version: str, repository_path: str) -> dict[str, object]:
@@ -122,12 +124,16 @@ class TapConfig:
         Returns:
             Source metadata derived from ``default_source``.
         """
+        validate_repository_package_path(repository_path, "package path")
+
         if self.default_source == "pypi":
             return {
                 "type": "pypi",
                 "package": package_name,
             }
         if self.default_source == "git":
+            if self.repository_git_url is None:
+                raise TapConfigError("git source metadata requires [tool.ddp.tap].repository-git-url")
             return {
                 "type": "git",
                 "url": self.repository_git_url,
@@ -197,18 +203,37 @@ def tap_config_from_table(table: dict[str, Any], pyproject_path: Path) -> TapCon
     values = {field: required_tap_string(table, field, pyproject_path) for field in REQUIRED_FIELDS}
     for field in URL_FIELDS:
         validate_url(field, values[field], pyproject_path)
-    validate_default_source(values["default-source"], pyproject_path)
-    validate_release_ref_template(values["release-ref-template"], pyproject_path)
+    default_source = values["default-source"]
+    validate_default_source(default_source, pyproject_path)
     validate_data_designer_requirement(values["default-data-designer-requirement"], pyproject_path)
+
+    repository_git_url = optional_tap_string(table, "repository-git-url", pyproject_path)
+    release_ref_template = optional_tap_string(table, "release-ref-template", pyproject_path)
+    if default_source == "git":
+        repository_git_url = required_git_source_tap_string(
+            repository_git_url,
+            "repository-git-url",
+            pyproject_path,
+        )
+        release_ref_template = required_git_source_tap_string(
+            release_ref_template,
+            "release-ref-template",
+            pyproject_path,
+        )
+
+    if repository_git_url is not None:
+        validate_url("repository-git-url", repository_git_url, pyproject_path)
+    if release_ref_template is not None:
+        validate_release_ref_template(release_ref_template, pyproject_path)
 
     return TapConfig(
         catalog_url=values["catalog-url"],
         repository_url=values["repository-url"],
-        repository_git_url=values["repository-git-url"],
+        repository_git_url=repository_git_url,
         docs_base_url=values["docs-base-url"],
         package_prefix=values["package-prefix"],
-        default_source=cast(Literal["pypi", "git", "path"], values["default-source"]),
-        release_ref_template=values["release-ref-template"],
+        default_source=cast(Literal["pypi", "git", "path"], default_source),
+        release_ref_template=release_ref_template,
         default_data_designer_requirement=values["default-data-designer-requirement"],
         author_name=values["author-name"],
     )
@@ -231,6 +256,50 @@ def required_tap_string(table: dict[str, Any], field: str, pyproject_path: Path)
     value = table.get(field)
     if not isinstance(value, str) or not value:
         raise TapConfigError(f"{pyproject_path} has invalid {TAP_CONFIG_PATH}.{field}; expected a non-empty string")
+    return value
+
+
+def optional_tap_string(table: dict[str, Any], field: str, pyproject_path: Path) -> str | None:
+    """Return an optional non-empty tap config string.
+
+    Args:
+        table: Parsed ``[tool.ddp.tap]`` table.
+        field: Field name to read.
+        pyproject_path: Path used in deterministic error messages.
+
+    Returns:
+        Non-empty string field value, or ``None`` when omitted.
+
+    Raises:
+        TapConfigError: If the field is present but is not a non-empty string.
+    """
+    if field not in table:
+        return None
+
+    value = table.get(field)
+    if not isinstance(value, str) or not value:
+        raise TapConfigError(
+            f"{pyproject_path} has invalid {TAP_CONFIG_PATH}.{field}; expected a non-empty string when provided"
+        )
+    return value
+
+
+def required_git_source_tap_string(value: str | None, field: str, pyproject_path: Path) -> str:
+    """Return a Git-source-only required tap config string.
+
+    Args:
+        value: Previously parsed optional field value.
+        field: Field name to read.
+        pyproject_path: Path used in deterministic error messages.
+
+    Returns:
+        Non-empty string field value.
+
+    Raises:
+        TapConfigError: If the value is missing for a Git default source.
+    """
+    if value is None:
+        raise TapConfigError(f"{pyproject_path} is missing required {TAP_CONFIG_PATH}.{field} for default-source 'git'")
     return value
 
 
@@ -337,3 +406,28 @@ def normalize_docs_slug(package_name: str) -> str:
     """
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", package_name.lower()).strip("-")
     return slug or "plugin"
+
+
+def validate_repository_package_path(value: str, context: str) -> None:
+    """Validate a generated package path used in tap source metadata.
+
+    Args:
+        value: Repository-relative package path.
+        context: Human-readable field name used in error messages.
+
+    Raises:
+        TapConfigError: If the path is not a normalized package path under
+            ``plugins/``.
+    """
+    parts = value.split("/")
+    if (
+        "\\" in value
+        or value.startswith("/")
+        or len(parts) < 2
+        or parts[0] != PACKAGE_PATH_ROOT
+        or any(part in {"", ".", ".."} for part in parts)
+        or not all(PACKAGE_PATH_SEGMENT_PATTERN.fullmatch(part) for part in parts[1:])
+    ):
+        raise TapConfigError(
+            f"invalid {context} {value!r}; expected a normalized repository-relative path under {PACKAGE_PATH_ROOT!r}"
+        )

@@ -14,7 +14,7 @@ from ddp._repo import find_repo_root
 from ddp.tap_config import TapConfigError, load_tap_config
 
 
-def write_tap_pyproject(root: Path, overrides: dict[str, str] | None = None) -> None:
+def write_tap_pyproject(root: Path, overrides: dict[str, str | None] | None = None) -> None:
     """Write a root pyproject.toml containing a complete tap config.
 
     Args:
@@ -41,7 +41,7 @@ def write_tap_pyproject(root: Path, overrides: dict[str, str] | None = None) -> 
         "",
         "[tool.ddp.tap]",
     ]
-    lines.extend(f'{key} = "{value}"' for key, value in values.items())
+    lines.extend(f'{key} = "{value}"' for key, value in values.items() if value is not None)
     (root / "pyproject.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -97,6 +97,40 @@ def test_source_metadata_for_git_source_uses_configured_repository_and_release_r
     }
 
 
+def test_git_source_requires_repository_git_url(tmp_path: Path) -> None:
+    write_tap_pyproject(
+        tmp_path,
+        {
+            "default-source": "git",
+            "repository-git-url": None,
+        },
+    )
+
+    with pytest.raises(TapConfigError) as exc_info:
+        load_tap_config(tmp_path)
+
+    message = str(exc_info.value)
+    assert "[tool.ddp.tap].repository-git-url" in message
+    assert "default-source 'git'" in message
+
+
+def test_git_source_requires_release_ref_template(tmp_path: Path) -> None:
+    write_tap_pyproject(
+        tmp_path,
+        {
+            "default-source": "git",
+            "release-ref-template": None,
+        },
+    )
+
+    with pytest.raises(TapConfigError) as exc_info:
+        load_tap_config(tmp_path)
+
+    message = str(exc_info.value)
+    assert "[tool.ddp.tap].release-ref-template" in message
+    assert "default-source 'git'" in message
+
+
 def test_source_metadata_for_path_source_uses_editable_local_path(tmp_path: Path) -> None:
     write_tap_pyproject(tmp_path, {"default-source": "path"})
 
@@ -107,6 +141,37 @@ def test_source_metadata_for_path_source_uses_editable_local_path(tmp_path: Path
         "path": "plugins/acme-dd-widget",
         "editable": True,
     }
+
+
+def test_non_git_sources_allow_omitting_git_only_fields(tmp_path: Path) -> None:
+    write_tap_pyproject(
+        tmp_path,
+        {
+            "repository-git-url": None,
+            "release-ref-template": None,
+        },
+    )
+
+    config = load_tap_config(tmp_path)
+
+    assert config.repository_git_url is None
+    assert config.release_ref_template is None
+    assert config.source_metadata_for_package("acme-dd-widget", "1.2.3", "plugins/acme-dd-widget") == {
+        "type": "pypi",
+        "package": "acme-dd-widget",
+    }
+
+
+def test_source_metadata_rejects_malformed_package_paths(tmp_path: Path) -> None:
+    write_tap_pyproject(tmp_path)
+    config = load_tap_config(tmp_path)
+
+    with pytest.raises(TapConfigError) as exc_info:
+        config.source_metadata_for_package("acme-dd-widget", "1.2.3", "../acme-dd-widget")
+
+    message = str(exc_info.value)
+    assert "package path" in message
+    assert "plugins" in message
 
 
 def test_missing_tap_config_errors_deterministically(tmp_path: Path) -> None:
