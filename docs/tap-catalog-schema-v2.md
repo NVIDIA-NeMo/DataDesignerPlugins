@@ -251,6 +251,26 @@ Required fields:
 
 The default NVIDIA raw catalog must not use `path` sources.
 
+## Contract Fixtures
+
+Small checked-in JSON fixtures live in
+`devtools/ddp/tests/fixtures/catalogs/`:
+
+- `schema-v2-valid.json` is a valid schema v2 catalog with compatible PyPI and
+  Git entries, incompatible Python and Data Designer compatibility entries,
+  docs URLs, and a multi-plugin package represented by two entries sharing the
+  same `package` and `source`.
+- `schema-v2-invalid-source.json` is a schema v2 catalog with a malformed Git
+  source object.
+- `schema-v2-unsupported-version.json` uses an unsupported `schema_version`.
+
+These fixtures are intended for Data Designer CLI and downstream consumer
+contract tests. Consumers should load them as raw JSON from the repository path
+or raw file content and validate their own catalog parsing, compatibility
+filtering, source handling, docs URL handling, and multi-plugin package logic.
+Do not import DDPlugins devtool modules, plugin packages, or runtime entry
+points when using the fixtures; the fixture contract is JSON-only.
+
 ## Validation Rules
 
 - Consumers must reject catalogs whose `schema_version` is unsupported.
