@@ -25,6 +25,8 @@ DataDesignerPlugins/
   entry point contract, implementation expectations, and test shape.
 - [Development workflow](workflow.md) covers local checks, generated metadata,
   documentation builds, and GitHub CI.
+- [Tap catalog schema v2](tap-catalog-schema-v2.md) defines the plugin tap
+  catalog contract, including install source objects and docs URLs.
 - [Releasing](releasing.md) covers version bumps, tags, ownership checks, and
   PyPI publishing.
 - [Plugins](plugins/index.md) lists generated plugin pages assembled from each
@@ -40,4 +42,6 @@ DataDesignerPlugins/
   changes.
 - Keep `catalog/plugins.json` current when plugin package metadata or entry
   points change.
+- Treat tap catalog discovery and runtime entry-point discovery as separate
+  layers.
 - Run the Makefile targets locally before opening or updating a pull request.
