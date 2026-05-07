@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 from ddp._repo import SPDX_HEADER
+from ddp.tap_config import TapConfig, TapConfigError, load_tap_config
 
 
 def to_underscored(slug: str) -> str:
@@ -33,21 +35,33 @@ def validate_slug(slug: str) -> str | None:
     return None
 
 
-def generate_pyproject(slug: str, import_name: str) -> str:
+def toml_string(value: str) -> str:
+    """Format a string for use in generated TOML.
+
+    Args:
+        value: String value.
+
+    Returns:
+        Double-quoted TOML-compatible string.
+    """
+    return json.dumps(value)
+
+
+def generate_pyproject(package_name: str, slug: str, import_name: str, tap_config: TapConfig) -> str:
     return f"""{SPDX_HEADER}
 
 [project]
-name = "data-designer-{slug}"
+name = {toml_string(package_name)}
 version = "0.1.0"
 description = "Data Designer {slug} plugin"
 requires-python = ">=3.10"
 dependencies = [
-    "data-designer>=0.5.3",
+    {toml_string(tap_config.default_data_designer_requirement)},
 ]
 license = "Apache-2.0"
 readme = "README.md"
 authors = [
-    {{name = "NVIDIA Corporation"}},
+    {{name = {toml_string(tap_config.author_name)}}},
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -58,7 +72,7 @@ classifiers = [
 {slug} = "{import_name}.plugin:plugin"
 
 [project.urls]
-Repository = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"
+Repository = {toml_string(tap_config.repository_url)}
 
 [build-system]
 requires = ["hatchling"]
@@ -72,45 +86,48 @@ extend = "../../pyproject.toml"
 """
 
 
-def generate_readme(slug: str) -> str:
-    return f"""# data-designer-{slug}
+def generate_readme(package_name: str, slug: str, tap_config: TapConfig) -> str:
+    return f"""# {package_name}
 
 Data Designer {slug} plugin.
 
 ## Installation
 
 ```bash
-uv add data-designer data-designer-{slug}
+uv add data-designer {package_name}
 ```
 
 ## Usage
 
 Once installed, the `{slug}` column type is automatically discovered by
-[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
+Data Designer.
 
 For the full plugin authoring guide, see the
-[main repository docs](https://nvidia-nemo.github.io/DataDesignerPlugins/authoring/).
+[main repository docs]({tap_config.docs_url("authoring/")}).
 
 Plugin documentation for the repository site lives in this package's `docs/`
 directory.
 """
 
 
-def generate_docs_index(slug: str) -> str:
-    return f"""# data-designer-{slug}
+def generate_docs_index(package_name: str, slug: str, tap_config: TapConfig) -> str:
+    return f"""# {package_name}
 
 Data Designer {slug} plugin.
 
 ## Installation
 
 ```bash
-uv add data-designer data-designer-{slug}
+uv add data-designer {package_name}
 ```
 
 ## Usage
 
 Once installed, the `{slug}` column type is automatically discovered by
-[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
+Data Designer.
+
+For the full plugin authoring guide, see the
+[main repository docs]({tap_config.docs_url("authoring/")}).
 """
 
 
@@ -245,11 +262,18 @@ def main(args: list[str] | None = None) -> None:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
-    import_name = f"data_designer_{to_underscored(slug)}"
+    plugins_dir = find_plugins_dir()
+    try:
+        tap_config = load_tap_config(plugins_dir.parent)
+    except TapConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    package_name = tap_config.package_name_for_slug(slug)
+    import_name = to_underscored(package_name)
     class_prefix = to_pascal(slug)
 
-    plugins_dir = find_plugins_dir()
-    plugin_dir = plugins_dir / f"data-designer-{slug}"
+    plugin_dir = plugins_dir / package_name
 
     if plugin_dir.exists():
         print(
@@ -270,10 +294,10 @@ def main(args: list[str] | None = None) -> None:
     # Write files
     owner = _discover_owner()
     files = {
-        plugin_dir / "pyproject.toml": generate_pyproject(slug, import_name),
-        plugin_dir / "README.md": generate_readme(slug),
+        plugin_dir / "pyproject.toml": generate_pyproject(package_name, slug, import_name, tap_config),
+        plugin_dir / "README.md": generate_readme(package_name, slug, tap_config),
         plugin_dir / "CODEOWNERS": generate_codeowners(owner),
-        docs_dir / "index.md": generate_docs_index(slug),
+        docs_dir / "index.md": generate_docs_index(package_name, slug, tap_config),
         src_dir / "__init__.py": generate_init(),
         src_dir / "config.py": generate_config(slug, import_name, class_prefix),
         src_dir / "impl.py": generate_impl(slug, import_name, class_prefix),
@@ -284,7 +308,7 @@ def main(args: list[str] | None = None) -> None:
     for path, content in files.items():
         path.write_text(content)
 
-    print(f"Created plugin 'data-designer-{slug}' at {plugin_dir}/")
+    print(f"Created plugin '{package_name}' at {plugin_dir}/")
     print()
     print("Generated files:")
     for path in sorted(files):
@@ -296,7 +320,7 @@ def main(args: list[str] | None = None) -> None:
     print(f"  3. Edit src/{import_name}/impl.py to implement generation logic")
     print("  4. Edit docs/index.md to document your plugin")
     print("  5. uv sync --all-packages && uv run pytest tests/")
-    print(f"  6. make release PLUGIN=data-designer-{slug}")
+    print(f"  6. make release PLUGIN={package_name}")
 
 
 if __name__ == "__main__":
