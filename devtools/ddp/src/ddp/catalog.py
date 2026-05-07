@@ -20,7 +20,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from ddp._repo import find_repo_root, load_toml
-from ddp.tap_config import TapConfig, TapConfigError, load_tap_config
+from ddp.tap_config import TapConfig, TapConfigError, load_tap_config, validate_repository_package_path
 
 CATALOG_SCHEMA_VERSION = 2
 REPO_ROOT = find_repo_root()
@@ -75,6 +75,19 @@ class CatalogEntry:
     data_designer_marker: str | None
     source: dict[str, object]
     docs_url: str
+
+
+@dataclass(frozen=True)
+class InstallTarget:
+    """Concrete package install target derived from catalog source metadata.
+
+    Attributes:
+        target: Requirement string or local path to pass to the installer.
+        editable: Whether local path installation should be editable.
+    """
+
+    target: str
+    editable: bool = False
 
 
 def main() -> None:
@@ -228,7 +241,11 @@ def source_metadata_for_package(
     Raises:
         CatalogError: If the generated source object is malformed.
     """
-    source = tap_config.source_metadata_for_package(package_name, version, repository_path)
+    validate_package_path(package_name, repository_path, "package.path")
+    try:
+        source = tap_config.source_metadata_for_package(package_name, version, repository_path)
+    except TapConfigError as exc:
+        raise CatalogError(f"could not generate source metadata for package {package_name!r}: {exc}") from exc
     validate_source_metadata(package_name, source)
     return source
 
@@ -729,6 +746,61 @@ def validate_source_metadata(package_name: str, source: object) -> None:
     )
 
 
+def install_target_for_source_metadata(package_name: str, version: str, source: object) -> InstallTarget:
+    """Derive the default DataDesigner package install target for a source.
+
+    Args:
+        package_name: Plugin package distribution name.
+        version: Plugin package version.
+        source: Source metadata object to derive from.
+
+    Returns:
+        Concrete install target and editable flag.
+
+    Raises:
+        CatalogError: If the source metadata or package version is malformed.
+    """
+    version = project_version(package_name, version)
+    validate_source_metadata(package_name, source)
+    if not isinstance(source, dict):
+        raise CatalogError(f"package {package_name!r} has invalid source; expected an object")
+
+    source_type = source["type"]
+    if source_type == "pypi":
+        source_package = required_source_string(package_name, source, "pypi", "package")
+        return InstallTarget(target=f"{source_package}=={version}")
+    if source_type == "git":
+        url = required_source_string(package_name, source, "git", "url")
+        ref = required_source_string(package_name, source, "git", "ref")
+        subdirectory = required_source_string(package_name, source, "git", "subdirectory")
+        return InstallTarget(
+            target=f"{package_name} @ git+{url}@{ref}#subdirectory={subdirectory}",
+        )
+
+    path = required_source_string(package_name, source, "path", "path")
+    editable = source["editable"]
+    if not isinstance(editable, bool):
+        raise CatalogError(f"package {package_name!r} has invalid path source field 'editable'; expected a boolean")
+    return InstallTarget(target=path, editable=editable)
+
+
+def validate_package_path(package_name: str, value: str, context: str) -> None:
+    """Validate a repository-relative package path for a catalog entry.
+
+    Args:
+        package_name: Plugin package distribution name.
+        value: Repository-relative package path.
+        context: Human-readable field name used in error messages.
+
+    Raises:
+        CatalogError: If the path is malformed.
+    """
+    try:
+        validate_repository_package_path(value, context)
+    except TapConfigError as exc:
+        raise CatalogError(f"package {package_name!r} has {exc}") from exc
+
+
 def validate_source_keys(
     package_name: str,
     source: dict[str, object],
@@ -811,7 +883,8 @@ def validate_git_source_metadata(package_name: str, source: dict[str, object]) -
     validate_source_keys(package_name, source, "git", {"type", "url", "ref", "subdirectory"})
     url = required_source_string(package_name, source, "git", "url")
     required_source_string(package_name, source, "git", "ref")
-    required_source_string(package_name, source, "git", "subdirectory")
+    subdirectory = required_source_string(package_name, source, "git", "subdirectory")
+    validate_package_path(package_name, subdirectory, "git source field 'subdirectory'")
 
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -831,7 +904,8 @@ def validate_path_source_metadata(package_name: str, source: dict[str, object]) 
         CatalogError: If the path source object is malformed.
     """
     validate_source_keys(package_name, source, "path", {"type", "path", "editable"})
-    required_source_string(package_name, source, "path", "path")
+    path = required_source_string(package_name, source, "path", "path")
+    validate_package_path(package_name, path, "path source field 'path'")
     editable = source.get("editable")
     if not isinstance(editable, bool):
         raise CatalogError(f"package {package_name!r} has invalid path source field 'editable'; expected a boolean")
@@ -869,6 +943,7 @@ def validate_catalog_entries(entries: list[CatalogEntry]) -> None:
     """
     validate_unique_runtime_plugin_names(entries)
     for entry in entries:
+        validate_package_path(entry.plugin_package, entry.repository_path, "package.path")
         validate_source_metadata(entry.plugin_package, entry.source)
 
 

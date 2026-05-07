@@ -90,31 +90,34 @@ class FakeEntryPoint:
         self.value = value
 
 
-def write_tap_pyproject(root: Path) -> None:
+def write_tap_pyproject(root: Path, overrides: dict[str, str | None] | None = None) -> None:
     """Write root tap metadata for catalog tests.
 
     Args:
         root: Temporary repository root.
+        overrides: Optional field values to override in ``[tool.ddp.tap]``.
     """
-    pyproject = textwrap.dedent(
-        """
-        [project]
-        name = "test-workspace"
-
-        [tool.ddp.tap]
-        catalog-url = "https://catalog.example.test/plugins.json"
-        repository-url = "https://git.example.test/acme/dd-plugins"
-        repository-git-url = "https://git.example.test/acme/dd-plugins.git"
-        docs-base-url = "https://docs.example.test/ddp/"
-        package-prefix = "data-designer-"
-        default-source = "pypi"
-        release-ref-template = "{package}/v{version}"
-        default-data-designer-requirement = "data-designer>=0.5.7"
-        author-name = "ACME Labs"
-        """
-    ).lstrip()
+    values = {
+        "catalog-url": "https://catalog.example.test/plugins.json",
+        "repository-url": "https://git.example.test/acme/dd-plugins",
+        "repository-git-url": "https://git.example.test/acme/dd-plugins.git",
+        "docs-base-url": "https://docs.example.test/ddp/",
+        "package-prefix": "data-designer-",
+        "default-source": "pypi",
+        "release-ref-template": "{package}/v{version}",
+        "default-data-designer-requirement": "data-designer>=0.5.7",
+        "author-name": "ACME Labs",
+    }
+    values.update(overrides or {})
+    lines = [
+        "[project]",
+        'name = "test-workspace"',
+        "",
+        "[tool.ddp.tap]",
+    ]
+    lines.extend(f'{key} = "{value}"' for key, value in values.items() if value is not None)
     root.mkdir(parents=True, exist_ok=True)
-    (root / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    (root / "pyproject.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_plugin_pyproject(
@@ -125,6 +128,7 @@ def write_plugin_pyproject(
     entry_points: dict[str, str] | None,
     dependencies: list[str] | None = None,
     requires_python: str = ">=3.10",
+    tap_overrides: dict[str, str | None] | None = None,
 ) -> None:
     """Write a minimal plugin pyproject for catalog tests.
 
@@ -136,8 +140,9 @@ def write_plugin_pyproject(
         entry_points: Entry points for ``data_designer.plugins``.
         dependencies: Requirement strings for ``[project].dependencies``.
         requires_python: Python compatibility specifier.
+        tap_overrides: Optional root tap metadata overrides.
     """
-    write_tap_pyproject(plugins_dir.parent)
+    write_tap_pyproject(plugins_dir.parent, tap_overrides)
     plugin_dir = plugins_dir / package_name
     plugin_dir.mkdir(parents=True)
     dependencies = dependencies or ["data-designer>=0.5.7"]
@@ -386,6 +391,133 @@ def test_render_catalog_json_keeps_multi_entry_package_source_and_docs_metadata(
     )
 
 
+def test_discover_catalog_entries_reuses_one_source_object_for_multi_plugin_package(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    plugins_dir = tmp_path / "plugins"
+    write_plugin_pyproject(
+        plugins_dir=plugins_dir,
+        package_name="data-designer-multi",
+        version="1.2.3",
+        description="Package-level description",
+        entry_points={
+            "first-entry": "example.plugin:first_plugin",
+            "second-entry": "example.plugin:second_plugin",
+        },
+    )
+    loader = FakePluginLoader(
+        {
+            "first-entry": FakePlugin(name="first-runtime-name", plugin_type="seed-reader"),
+            "second-entry": FakePlugin(name="second-runtime-name", plugin_type="processor"),
+        }
+    )
+    monkeypatch.setattr(catalog, "load_plugin_from_entry_point", loader)
+
+    entries = catalog.discover_catalog_entries(plugins_dir)
+
+    assert entries[0].source is entries[1].source
+
+
+def test_discover_catalog_entries_generates_git_source_from_tap_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    plugins_dir = tmp_path / "plugins"
+    write_plugin_pyproject(
+        plugins_dir=plugins_dir,
+        package_name="data-designer-example",
+        version="0.2.0",
+        description="Package-level description",
+        entry_points={"runtime-entry": "example.plugin:plugin"},
+        tap_overrides={"default-source": "git"},
+    )
+    monkeypatch.setattr(
+        catalog,
+        "load_plugin_from_entry_point",
+        FakePluginLoader({"runtime-entry": FakePlugin(name="runtime-name", plugin_type="seed-reader")}),
+    )
+
+    [entry] = catalog.discover_catalog_entries(plugins_dir)
+
+    assert entry.source == {
+        "type": "git",
+        "url": "https://git.example.test/acme/dd-plugins.git",
+        "ref": "data-designer-example/v0.2.0",
+        "subdirectory": "plugins/data-designer-example",
+    }
+
+
+def test_discover_catalog_entries_generates_path_source_from_tap_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    plugins_dir = tmp_path / "plugins"
+    write_plugin_pyproject(
+        plugins_dir=plugins_dir,
+        package_name="data-designer-example",
+        version="0.2.0",
+        description="Package-level description",
+        entry_points={"runtime-entry": "example.plugin:plugin"},
+        tap_overrides={"default-source": "path"},
+    )
+    monkeypatch.setattr(
+        catalog,
+        "load_plugin_from_entry_point",
+        FakePluginLoader({"runtime-entry": FakePlugin(name="runtime-name", plugin_type="seed-reader")}),
+    )
+
+    [entry] = catalog.discover_catalog_entries(plugins_dir)
+
+    assert entry.source == {
+        "type": "path",
+        "path": "plugins/data-designer-example",
+        "editable": True,
+    }
+
+
+def test_install_target_for_pypi_source_uses_exact_default_version() -> None:
+    assert catalog.install_target_for_source_metadata(
+        package_name="data-designer-example",
+        version="0.2.0",
+        source={
+            "type": "pypi",
+            "package": "data-designer-example",
+        },
+    ) == catalog.InstallTarget(target="data-designer-example==0.2.0")
+
+
+def test_install_target_for_git_source_uses_pep_508_direct_ref() -> None:
+    assert catalog.install_target_for_source_metadata(
+        package_name="data-designer-example",
+        version="0.2.0",
+        source={
+            "type": "git",
+            "url": "https://git.example.test/acme/dd-plugins.git",
+            "ref": "data-designer-example/v0.2.0",
+            "subdirectory": "plugins/data-designer-example",
+        },
+    ) == catalog.InstallTarget(
+        target=(
+            "data-designer-example @ "
+            "git+https://git.example.test/acme/dd-plugins.git@data-designer-example/v0.2.0"
+            "#subdirectory=plugins/data-designer-example"
+        ),
+    )
+
+
+def test_install_target_for_path_source_preserves_local_editable_plan() -> None:
+    assert catalog.install_target_for_source_metadata(
+        package_name="data-designer-example",
+        version="0.2.0",
+        source={
+            "type": "path",
+            "path": "plugins/data-designer-example",
+            "editable": True,
+        },
+    ) == catalog.InstallTarget(target="plugins/data-designer-example", editable=True)
+
+
 def test_render_catalog_json_errors_on_duplicate_runtime_plugin_names() -> None:
     with pytest.raises(catalog.CatalogError) as exc_info:
         catalog.render_catalog_json(
@@ -416,6 +548,68 @@ def test_validate_pypi_source_metadata_requires_matching_package_name() -> None:
     message = str(exc_info.value)
     assert "data-designer-example" in message
     assert "pypi source package" in message
+
+
+def test_validate_git_source_metadata_rejects_malformed_package_path() -> None:
+    with pytest.raises(catalog.CatalogError) as exc_info:
+        catalog.validate_source_metadata(
+            package_name="data-designer-example",
+            source={
+                "type": "git",
+                "url": "https://git.example.test/acme/dd-plugins.git",
+                "ref": "data-designer-example/v0.2.0",
+                "subdirectory": "../data-designer-example",
+            },
+        )
+
+    message = str(exc_info.value)
+    assert "data-designer-example" in message
+    assert "subdirectory" in message
+    assert "plugins" in message
+
+
+def test_validate_path_source_metadata_rejects_malformed_package_path() -> None:
+    with pytest.raises(catalog.CatalogError) as exc_info:
+        catalog.validate_source_metadata(
+            package_name="data-designer-example",
+            source={
+                "type": "path",
+                "path": "/tmp/data-designer-example",
+                "editable": True,
+            },
+        )
+
+    message = str(exc_info.value)
+    assert "data-designer-example" in message
+    assert "path" in message
+    assert "plugins" in message
+
+
+def test_render_catalog_json_rejects_malformed_package_path() -> None:
+    entry = fake_catalog_entry(plugin_name="runtime-name")
+    malformed_entry = catalog.CatalogEntry(
+        plugin_package=entry.plugin_package,
+        version=entry.version,
+        name=entry.name,
+        plugin_type=entry.plugin_type,
+        description=entry.description,
+        entry_point_name=entry.entry_point_name,
+        entry_point_value=entry.entry_point_value,
+        repository_path="../data-designer-example",
+        python_requires=entry.python_requires,
+        data_designer_requirement=entry.data_designer_requirement,
+        data_designer_version_specifier=entry.data_designer_version_specifier,
+        data_designer_marker=entry.data_designer_marker,
+        source=entry.source,
+        docs_url=entry.docs_url,
+    )
+
+    with pytest.raises(catalog.CatalogError) as exc_info:
+        catalog.render_catalog_json([malformed_entry])
+
+    message = str(exc_info.value)
+    assert "package.path" in message
+    assert "plugins" in message
 
 
 def test_sync_and_check_catalog_use_default_repo_path(monkeypatch, tmp_path: Path) -> None:
@@ -654,3 +848,9 @@ def test_main_includes_template_plugin() -> None:
             "url": "https://nvidia-nemo.github.io/DataDesignerPlugins/plugins/data-designer-template/",
         },
     } in output["plugins"]
+
+
+def test_checked_in_nvidia_catalog_remains_pypi_only() -> None:
+    output = json.loads(catalog.PLUGINS_CATALOG_PATH.read_text(encoding="utf-8"))
+
+    assert {plugin["source"]["type"] for plugin in output["plugins"]} == {"pypi"}
