@@ -159,6 +159,85 @@ def output_size(output: Any) -> int | None:
     return None
 
 
+def coerce_list_like(value: Any) -> list[Any] | None:
+    """Coerce common list-like values into a Python list.
+
+    Args:
+        value: Candidate list-like value. This includes values restored from
+            nested Parquet structures, such as NumPy arrays, without importing
+            optional array libraries directly.
+
+    Returns:
+        A Python list when coercion is possible, otherwise ``None``.
+    """
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        converted = tolist()
+        if isinstance(converted, list):
+            return converted
+    return None
+
+
+def to_plain_data(value: Any) -> Any:
+    """Convert nested array-like values into JSON-style Python containers.
+
+    Args:
+        value: Arbitrary generated artifact value.
+
+    Returns:
+        The value with mappings and list-like values recursively normalized.
+    """
+    if isinstance(value, Mapping):
+        return {key: to_plain_data(nested_value) for key, nested_value in value.items()}
+
+    values = coerce_list_like(value)
+    if values is not None:
+        return [to_plain_data(nested_value) for nested_value in values]
+
+    item = getattr(value, "item", None)
+    if callable(item) and not isinstance(value, (str, bytes)):
+        try:
+            return item()
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
+def normalize_database(database: Any) -> tuple[list[dict[str, Any]] | None, str | None]:
+    """Normalize an environment database for execution.
+
+    Args:
+        database: Database value from a generated row. In-memory Data Designer
+            rows use lists, while saved Parquet artifacts may restore nested
+            lists as array-like values.
+
+    Returns:
+        A tuple of normalized database records and an error message. Exactly one
+        element is non-``None``.
+    """
+    records = coerce_list_like(database)
+    if records is None:
+        return None, "environment.database must be list-like"
+
+    normalized_records: list[dict[str, Any]] = []
+    for index, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            return None, f"environment.database[{index}] must be a mapping"
+        normalized_record = dict(record)
+        tags = normalized_record.get("tags")
+        if tags is not None and not isinstance(tags, list):
+            normalized_tags = coerce_list_like(tags)
+            if normalized_tags is None:
+                return None, f"environment.database[{index}].tags must be list-like"
+            normalized_record["tags"] = normalized_tags
+        normalized_records.append(normalized_record)
+    return normalized_records, None
+
+
 def tool_output_error(tool_name: str, output: Any) -> str | None:
     """Validate the expected output shape for a generated tool.
 
@@ -277,8 +356,9 @@ def tool_names_from_specs(tool_specs: Any) -> tuple[list[str], list[str]]:
     Returns:
         A tuple of tool names and validation errors.
     """
-    if not isinstance(tool_specs, list):
-        return [], ["environment tuple tools field must be a list"]
+    tool_specs = coerce_list_like(tool_specs)
+    if tool_specs is None:
+        return [], ["environment tuple tools field must be list-like"]
 
     tool_names: list[str] = []
     errors: list[str] = []
@@ -349,12 +429,12 @@ def run_iteration_execution_check(
         A structured per-iteration execution result.
     """
     difficulty = str(iteration.get("difficulty", "unknown"))
-    tool_names = iteration.get("tool_names", [])
-    if not isinstance(tool_names, list) or not all(isinstance(tool_name, str) for tool_name in tool_names):
+    tool_names = coerce_list_like(iteration.get("tool_names", []))
+    if tool_names is None or not all(isinstance(tool_name, str) for tool_name in tool_names):
         return IterationExecutionCheck(
             difficulty=difficulty,
             passed=False,
-            error="iteration tool_names must be a list of strings",
+            error="iteration tool_names must be a list-like value of strings",
         )
 
     tools, tool_errors = build_tools_from_namespace(tool_names, tool_namespace)
@@ -370,7 +450,7 @@ def run_iteration_execution_check(
         database,
     )
     reference_answer = iteration.get("reference_answer")
-    if reference_answer is not None and answer != reference_answer:
+    if reference_answer is not None and to_plain_data(answer) != to_plain_data(reference_answer):
         errors.append("iteration answer does not match reference_answer")
 
     expected_passed = iteration.get("reference_solution_passed")
@@ -409,10 +489,9 @@ def verify_environment_tuple(environment_tuple: Mapping[str, Any]) -> RowRecordV
     except KeyError as exc:
         return failed_validation(f"environment tuple is missing required key: {exc}")
 
-    if not isinstance(database, list):
-        return failed_validation("environment.database must be a list")
-    if not all(isinstance(record, dict) for record in database):
-        return failed_validation("environment.database must contain dict records")
+    database, database_error = normalize_database(database)
+    if database_error is not None or database is None:
+        return failed_validation(database_error or "environment.database could not be normalized")
     if not isinstance(constraints, Mapping):
         return failed_validation("task.constraints must be a mapping")
 
@@ -463,7 +542,7 @@ def verify_environment_tuple(environment_tuple: Mapping[str, Any]) -> RowRecordV
     errors.extend(source_errors)
 
     reference_answer = environment_tuple.get("reference_answer")
-    if reference_answer is not None and answer != reference_answer:
+    if reference_answer is not None and to_plain_data(answer) != to_plain_data(reference_answer):
         errors.append("final solution answer does not match reference_answer")
 
     expected_passed = verifier.get("reference_solution_passed")
@@ -472,7 +551,8 @@ def verify_environment_tuple(environment_tuple: Mapping[str, Any]) -> RowRecordV
 
     iteration_checks: list[IterationExecutionCheck] = []
     task_iterations = environment_tuple.get("task_iterations", [])
-    if isinstance(task_iterations, list):
+    task_iterations = coerce_list_like(task_iterations)
+    if task_iterations is not None:
         iteration_checks = [
             run_iteration_execution_check(iteration, tool_namespace, database)
             for iteration in task_iterations
@@ -483,8 +563,8 @@ def verify_environment_tuple(environment_tuple: Mapping[str, Any]) -> RowRecordV
             for check in iteration_checks
             if not check.passed
         )
-    elif task_iterations is not None:
-        errors.append("task_iterations must be a list when present")
+    else:
+        errors.append("task_iterations must be list-like when present")
 
     passed = not errors and tools_passed and verifier_passed and all(check.passed for check in iteration_checks)
     return RowRecordValidationResult(

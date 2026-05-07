@@ -161,8 +161,17 @@ class TestGeneralistAgentEnvColumnGenerator:
         ]
 
     def test_generated_python_sources_pass_verifier(self) -> None:
-        source_df = pd.DataFrame({"category": ["planning a travel itinerary"]})
-        config = GeneralistAgentEnvColumnConfig(name="agent_env", task_category_column="category")
+        source_df = pd.DataFrame(
+            {
+                "category": ["planning a travel itinerary"],
+                "constraints": ["compare candidate plans by score, cost, and family suitability"],
+            }
+        )
+        config = GeneralistAgentEnvColumnConfig(
+            name="agent_env",
+            task_category_column="category",
+            context_columns=["constraints"],
+        )
         generator = make_generator(config)
         result = generator.generate(source_df)
 
@@ -198,6 +207,30 @@ class TestGeneralistAgentEnvColumnGenerator:
         assert validation.passed is False
         assert validation.tools_passed is False
         assert any("rank_records" in error for error in validation.errors)
+
+    def test_row_record_validation_accepts_parquet_restored_arrays(self, tmp_path: Path) -> None:
+        source_df = pd.DataFrame(
+            {
+                "category": ["planning a travel itinerary"],
+                "constraints": ["compare candidate plans by score, cost, and family suitability"],
+            }
+        )
+        config = GeneralistAgentEnvColumnConfig(
+            name="agent_env",
+            task_category_column="category",
+            context_columns=["constraints"],
+        )
+        generator = make_generator(config)
+        result = generator.generate(source_df)
+        environment_tuple = result.loc[0, "agent_env"]
+        dataset_path = tmp_path / "dataset.parquet"
+        pd.DataFrame({"agent_env": [environment_tuple]}).to_parquet(dataset_path)
+        restored = pd.read_parquet(dataset_path)
+
+        validation = verify_row_record(restored.loc[0], output_column="agent_env")
+
+        assert validation.passed is True
+        assert validation.answer == environment_tuple["reference_answer"]
 
 
 class TestGeneralistAgentEnvPreviewIntegration:
