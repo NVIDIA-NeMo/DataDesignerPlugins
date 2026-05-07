@@ -26,7 +26,8 @@ DataDesignerPlugins/
 - [Development workflow](workflow.md) covers local checks, generated metadata,
   documentation builds, and GitHub CI.
 - [Tap catalog schema v2](tap-catalog-schema-v2.md) defines the plugin tap
-  catalog contract, including install source objects and docs URLs.
+  catalog contract, including the default raw NVIDIA tap URL, install source
+  objects, freshness semantics, and docs URLs.
 - [Releasing](releasing.md) covers version bumps, tags, ownership checks, and
   PyPI publishing.
 - [Plugins](plugins/index.md) lists generated plugin pages assembled from each
@@ -42,6 +43,9 @@ DataDesignerPlugins/
   changes.
 - Keep `catalog/plugins.json` current when plugin package metadata or entry
   points change.
+- Treat the default NVIDIA tap URL as the raw generated catalog at
+  `https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json`;
+  it is not served from GitHub Pages.
 - Treat tap catalog discovery and runtime entry-point discovery as separate
   layers.
 - Run the Makefile targets locally before opening or updating a pull request.
