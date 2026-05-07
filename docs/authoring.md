@@ -19,8 +19,9 @@ Plugins that are external, team-specific, experimental, or community-maintained
 can still be useful without landing in DDPlugins. Publish those from an
 external tap instead. External taps should expose a schema v2 catalog from an
 unauthenticated raw JSON URL, or from a local catalog file path for authoring
-and offline workflows. See [Tap catalog schema v2](tap-catalog-schema-v2.md)
-for the JSON contract and install source metadata.
+and offline workflows. See [Plugin taps](taps.md) for the consumer and
+maintainer workflow, and [Tap catalog schema v2](tap-catalog-schema-v2.md) for
+the JSON contract and install source metadata.
 
 Adding a tap is a trust decision, not only a discovery preference. A tap is a
 pointer to Python packages. Installing from a tap runs package-manager
@@ -41,9 +42,15 @@ This creates a column generator by default. To scaffold another plugin type,
 pass one of the supported `--type` values:
 
 ```bash
+uv run ddp new my-column-generator --type column-generator
 uv run ddp new my-seed-reader --type seed-reader
 uv run ddp new my-processor --type processor
 ```
+
+The supported scaffold types are `column-generator`, `seed-reader`, and
+`processor`. The default is `column-generator`, so `uv run ddp new my-plugin`
+and `uv run ddp new my-plugin --type column-generator` create the same plugin
+type.
 
 The command creates a package named `data-designer-my-plugin`:
 
@@ -90,6 +97,35 @@ from data_designer_my_plugin.config import MyPluginColumnConfig
 ```
 
 Do not use relative imports in this repository.
+
+Tap discovery and runtime entry-point discovery are related but separate. The
+tap catalog lets a consumer find package metadata and installation sources
+before a package is installed. Runtime discovery happens later, after
+installation, when Data Designer loads the `data_designer.plugins` entry-point
+group from the active Python environment.
+
+## How catalog entries are generated
+
+`make catalog` builds `catalog/plugins.json` from installed local entry points,
+package metadata, plugin docs metadata, compatibility dependencies, and the
+repository-level `[tool.ddp.tap]` table.
+
+| Input | Catalog fields |
+| --- | --- |
+| `[project].name` | `package.name`, PyPI `source.package`, generated docs path. |
+| `[project].version` | `package.version`; consumers combine this with PyPI sources for exact installs. |
+| `[project].description` | Plugin entry `description`. |
+| `[project].requires-python` | `compatibility.python.specifier`. |
+| Direct `data-designer` dependency in `[project].dependencies` | `compatibility.data_designer.requirement`, `.specifier`, and `.marker`. |
+| `[project.entry-points."data_designer.plugins"]` | `entry_point.group`, `entry_point.name`, and `entry_point.value`. |
+| Loaded plugin object | Runtime `name` and `plugin_type`. |
+| Plugin package directory | `package.path`; also used as Git `source.subdirectory` or path `source.path` when configured. |
+| Plugin docs under `plugins/<package>/docs/` plus `[tool.ddp.tap].docs-base-url` | `docs.url`. |
+| `[tool.ddp.tap].default-source`, `repository-git-url`, and `release-ref-template` | The generated `source` object. |
+
+Catalog entries describe installability, but they do not replace runtime entry
+points. A plugin becomes available to Data Designer only after the package is
+installed and its entry point can be discovered in the active environment.
 
 ## Implement the plugin
 
@@ -156,8 +192,8 @@ for usage, configuration, and examples.
 
 ## Regenerate metadata
 
-When plugin docs, plugin metadata, or ownership changes, regenerate the derived
-files:
+When plugin docs, plugin metadata, compatibility dependencies, tap config, or
+ownership changes, regenerate the derived files:
 
 ```bash
 make sync
@@ -166,6 +202,15 @@ make catalog
 make codeowners
 ```
 
+Generated files and their inputs:
+
+| Output | Regenerate with | Inputs |
+| --- | --- | --- |
+| `docs/plugins/` | `make plugin-docs` | Plugin package docs and package metadata. |
+| Generated plugin nav block in `zensical.toml` | `make plugin-docs` | Generated plugin docs tree. |
+| `catalog/plugins.json` | `make catalog` | Installed entry points, package metadata, compatibility dependencies, plugin docs URLs, and `[tool.ddp.tap]`. |
+| `.github/CODEOWNERS` | `make codeowners` | Per-plugin `CODEOWNERS` files. |
+
 CI verifies that generated plugin docs, `catalog/plugins.json`, and
 `.github/CODEOWNERS` are current. The catalog's
 `compatibility.data_designer.requirement` and
@@ -173,3 +218,35 @@ CI verifies that generated plugin docs, `catalog/plugins.json`, and
 versioned `data-designer` dependency in `[project].dependencies`. The catalog
 also publishes the package's `requires-python` specifier and any
 `data-designer` dependency environment marker.
+
+## External tap authoring
+
+To author an external tap, copy or fork this repository structure and configure
+the root `[tool.ddp.tap]` table for your organization:
+
+```toml
+[tool.ddp.tap]
+catalog-url = "https://raw.githubusercontent.com/acme/DataDesignerPlugins/main/catalog/plugins.json"
+repository-url = "https://github.com/acme/DataDesignerPlugins"
+repository-git-url = "https://github.com/acme/DataDesignerPlugins.git"
+docs-base-url = "https://acme.github.io/DataDesignerPlugins/"
+package-prefix = "data-designer-acme-"
+default-source = "pypi"
+release-ref-template = "{package}/v{version}"
+default-data-designer-requirement = "data-designer>=0.5.7"
+author-name = "ACME"
+```
+
+Then scaffold, validate, and publish the raw JSON catalog:
+
+```bash
+make sync
+uv run ddp new my-plugin --type column-generator
+make all
+```
+
+Publish the generated `catalog/plugins.json` at the `catalog-url` as raw JSON.
+Do not point users at an HTML repository page or documentation site as the
+machine catalog. Once Data Designer supports tap configuration, tell users to
+add that raw catalog URL through the `plugins taps add` flow before discovering
+or installing plugins from the external tap.

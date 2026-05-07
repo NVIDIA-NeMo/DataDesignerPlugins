@@ -60,7 +60,8 @@ make docs-server DOCS_DEV_ADDR=localhost:8080
 
 ## Generated files
 
-Generated site inputs come from repository metadata and plugin docs:
+Generated site inputs and tap metadata come from repository metadata, plugin
+docs, package metadata, installed entry points, tap config, and ownership files:
 
 ```bash
 make plugin-docs
@@ -70,9 +71,12 @@ make codeowners
 
 `docs/plugins/` and the plugin section of `zensical.toml` are generated from
 plugin package metadata and `plugins/*/docs/`. Do not edit generated plugin site
-pages directly. `catalog/plugins.json` is generated from installed local plugin
-entry points, package metadata, and direct `data-designer` dependency specifiers
-for compatibility checks by external tools.
+pages directly.
+
+`catalog/plugins.json` is the generated machine-readable tap artifact. It is
+generated from installed local plugin entry points, package metadata,
+`[tool.ddp.tap]`, docs URL configuration, and direct `data-designer` dependency
+specifiers for compatibility checks by Data Designer and external tools.
 
 `catalog/plugins.json` is also checked in as the machine-readable NVIDIA tap
 catalog. The default tap URL is the unauthenticated raw GitHub URL:
@@ -87,6 +91,21 @@ immutable snapshots, for example
 Release assets can be added later only if a distribution workflow needs them.
 External taps may use any unauthenticated raw JSON endpoint or a local catalog
 file path.
+
+Human documentation can link to the raw JSON catalog, but the documentation site
+does not deliver the machine catalog. Consumers should fetch the configured raw
+JSON URL or local file path, not a GitHub Pages page, Zensical page, or GitHub
+HTML file browser view.
+
+Use focused regeneration and validation targets when only one generated surface
+changed:
+
+| Change | Regenerate | Validate |
+| --- | --- | --- |
+| Plugin docs or docs metadata | `make plugin-docs` | `make check-plugin-docs` or `make check` |
+| Package metadata, entry points, compatibility dependency, or `[tool.ddp.tap]` | `make catalog` | `make check-catalog` or `make check` |
+| Per-plugin ownership | `make codeowners` | `make check-codeowners` or `make check` |
+| SPDX headers | `make update-license-headers` | `make check-license-headers` or `make check` |
 
 ## GitHub CI
 

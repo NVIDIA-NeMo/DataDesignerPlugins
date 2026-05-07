@@ -15,6 +15,7 @@ nav = [
   {"Home" = "index.md"},
   {"Plugin authoring" = "authoring.md"},
   {"Development workflow" = "workflow.md"},
+  {"Plugin taps" = "taps.md"},
   {"Tap catalog schema v2" = "tap-catalog-schema-v2.md"},
   {"Releasing" = "releasing.md"},
   {"Plugins" = [

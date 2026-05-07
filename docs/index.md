@@ -26,9 +26,11 @@ DataDesignerPlugins/
   entry point contract, implementation expectations, and test shape.
 - [Development workflow](workflow.md) covers local checks, generated metadata,
   documentation builds, and GitHub CI.
-- [Tap catalog schema v2](tap-catalog-schema-v2.md) defines the plugin tap
-  catalog contract, including the default raw NVIDIA tap URL, install source
-  objects, freshness semantics, trust expectations, and docs URLs.
+- [Plugin taps](taps.md) covers tap discovery, the default raw NVIDIA tap URL,
+  schema v2 fields, source objects, trust expectations, and external tap
+  publishing.
+- [Tap catalog schema v2](tap-catalog-schema-v2.md) is the schema reference for
+  catalog validation details and fixtures.
 - [Releasing](releasing.md) covers version bumps, tags, ownership checks, and
   PyPI publishing.
 - [Plugins](plugins/index.md) lists generated plugin pages assembled from each
