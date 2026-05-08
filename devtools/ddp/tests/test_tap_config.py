@@ -65,8 +65,8 @@ def test_load_tap_config_reads_root_metadata_and_accessors(tmp_path: Path) -> No
     assert config.author_name == "ACME Labs"
     assert config.package_name_for_slug("widget") == "acme-dd-widget"
     assert config.docs_url_for_package("acme-dd-widget") == "https://docs.example.test/ddp/plugins/acme-dd-widget/"
-    assert config.install_metadata_for_package("acme-dd-widget", "1.2.3") == {
-        "requirement": "acme-dd-widget==1.2.3",
+    assert config.install_metadata_for_package("acme-dd-widget") == {
+        "requirement": "acme-dd-widget",
         "index_url": "https://docs.example.test/ddp/simple/",
     }
 
@@ -103,8 +103,8 @@ def test_git_only_fields_remain_optional_for_package_index_installs(tmp_path: Pa
 
     assert config.repository_git_url is None
     assert config.release_ref_template is None
-    assert config.install_metadata_for_package("acme-dd-widget", "1.2.3") == {
-        "requirement": "acme-dd-widget==1.2.3",
+    assert config.install_metadata_for_package("acme-dd-widget") == {
+        "requirement": "acme-dd-widget",
         "index_url": "https://docs.example.test/ddp/simple/",
     }
 

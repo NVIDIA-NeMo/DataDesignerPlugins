@@ -119,18 +119,17 @@ class TapConfig:
             raise TapConfigError("release validation requires [tool.ddp.tap].release-ref-template")
         return self.release_ref_template.format(package=package_name, version=version)
 
-    def install_metadata_for_package(self, package_name: str, version: str) -> dict[str, object]:
+    def install_metadata_for_package(self, package_name: str) -> dict[str, object]:
         """Return reusable install metadata for a plugin package.
 
         Args:
             package_name: Plugin distribution package name.
-            version: Plugin package version.
 
         Returns:
             Catalog install metadata using this tap's Simple API index.
         """
         return {
-            "requirement": f"{package_name}=={version}",
+            "requirement": package_name,
             "index_url": self.package_index_url,
         }
 

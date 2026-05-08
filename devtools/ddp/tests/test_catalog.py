@@ -205,7 +205,7 @@ def fake_catalog_entry(
         data_designer_marker=None,
         install=install
         or {
-            "requirement": f"{package_name}==0.2.0",
+            "requirement": package_name,
             "index_url": "https://docs.example.test/ddp/simple/",
         },
         docs_url=f"https://docs.example.test/ddp/plugins/{package_name}/",
@@ -262,7 +262,7 @@ def test_discover_catalog_entries_uses_entry_point_runtime_metadata(monkeypatch,
             data_designer_version_specifier=">=0.5.7",
             data_designer_marker=None,
             install={
-                "requirement": "data-designer-multi==1.2.3",
+                "requirement": "data-designer-multi",
                 "index_url": "https://docs.example.test/ddp/simple/",
             },
             docs_url="https://docs.example.test/ddp/plugins/data-designer-multi/",
@@ -281,7 +281,7 @@ def test_discover_catalog_entries_uses_entry_point_runtime_metadata(monkeypatch,
             data_designer_version_specifier=">=0.5.7",
             data_designer_marker=None,
             install={
-                "requirement": "data-designer-multi==1.2.3",
+                "requirement": "data-designer-multi",
                 "index_url": "https://docs.example.test/ddp/simple/",
             },
             docs_url="https://docs.example.test/ddp/plugins/data-designer-multi/",
@@ -306,7 +306,7 @@ def test_render_catalog_json_outputs_plugin_compatibility_contract() -> None:
                 data_designer_version_specifier=">=0.5.7,<0.6",
                 data_designer_marker='python_version >= "3.10"',
                 install={
-                    "requirement": "data-designer-example==0.2.0",
+                    "requirement": "data-designer-example",
                     "index_url": "https://docs.example.test/ddp/simple/",
                 },
                 docs_url="https://docs.example.test/ddp/plugins/data-designer-example/",
@@ -321,9 +321,8 @@ def test_render_catalog_json_outputs_plugin_compatibility_contract() -> None:
             {
                 "description": "Package description",
                 "name": "data-designer-example",
-                "version": "0.2.0",
                 "install": {
-                    "requirement": "data-designer-example==0.2.0",
+                    "requirement": "data-designer-example",
                     "index_url": "https://docs.example.test/ddp/simple/",
                 },
                 "compatibility": {
@@ -382,9 +381,8 @@ def test_render_catalog_json_keeps_multi_entry_package_install_and_docs_metadata
 
     [package] = output["packages"]
     assert package["name"] == "data-designer-multi"
-    assert package["version"] == "1.2.3"
     assert package["install"] == {
-        "requirement": "data-designer-multi==1.2.3",
+        "requirement": "data-designer-multi",
         "index_url": "https://docs.example.test/ddp/simple/",
     }
     assert package["docs"] == {
@@ -424,13 +422,12 @@ def test_discover_catalog_entries_reuses_one_install_object_for_multi_plugin_pac
 def test_install_target_for_install_metadata_uses_requirement_and_index_url() -> None:
     assert catalog.install_target_for_install_metadata(
         package_name="data-designer-example",
-        version="0.2.0",
         install={
-            "requirement": "data-designer-example==0.2.0",
+            "requirement": "data-designer-example",
             "index_url": "https://docs.example.test/ddp/simple/",
         },
     ) == catalog.InstallTarget(
-        target="data-designer-example==0.2.0",
+        target="data-designer-example",
         index_url="https://docs.example.test/ddp/simple/",
     )
 
@@ -438,7 +435,6 @@ def test_install_target_for_install_metadata_uses_requirement_and_index_url() ->
 def test_install_target_allows_direct_reference_without_index_url() -> None:
     assert catalog.install_target_for_install_metadata(
         package_name="data-designer-example",
-        version="0.2.0",
         install={
             "requirement": (
                 "data-designer-example @ https://packages.example.test/data_designer_example-0.2.0-py3-none-any.whl"
@@ -453,25 +449,20 @@ def test_install_metadata_rejects_mismatched_requirement_name() -> None:
     with pytest.raises(catalog.CatalogError) as exc_info:
         catalog.validate_install_metadata(
             package_name="data-designer-example",
-            version="0.2.0",
             install={"requirement": "data-designer-other==0.2.0"},
         )
 
     assert "expected a requirement for 'data-designer-example'" in str(exc_info.value)
 
 
-def test_install_metadata_rejects_non_exact_index_requirement() -> None:
-    with pytest.raises(catalog.CatalogError) as exc_info:
-        catalog.validate_install_metadata(
-            package_name="data-designer-example",
-            version="0.2.0",
-            install={
-                "requirement": "data-designer-example>=0.2.0",
-                "index_url": "https://docs.example.test/ddp/simple/",
-            },
-        )
-
-    assert "expected exact specifier '==0.2.0'" in str(exc_info.value)
+def test_install_metadata_allows_resolver_managed_index_requirement() -> None:
+    catalog.validate_install_metadata(
+        package_name="data-designer-example",
+        install={
+            "requirement": "data-designer-example>=0.2.0",
+            "index_url": "https://docs.example.test/ddp/simple/",
+        },
+    )
 
 
 def test_render_catalog_json_errors_on_duplicate_runtime_plugin_names() -> None:
@@ -498,10 +489,10 @@ def test_render_catalog_json_rejects_inconsistent_package_metadata() -> None:
     entry = fake_catalog_entry(plugin_name="runtime-name")
     inconsistent_entry = catalog.CatalogEntry(
         plugin_package=entry.plugin_package,
-        version="0.3.0",
+        version=entry.version,
         name="second-runtime-name",
         plugin_type=entry.plugin_type,
-        description=entry.description,
+        description="Different package description",
         entry_point_name="second-entry",
         entry_point_value=entry.entry_point_value,
         repository_path=entry.repository_path,
@@ -509,10 +500,7 @@ def test_render_catalog_json_rejects_inconsistent_package_metadata() -> None:
         data_designer_requirement=entry.data_designer_requirement,
         data_designer_version_specifier=entry.data_designer_version_specifier,
         data_designer_marker=entry.data_designer_marker,
-        install={
-            "requirement": "data-designer-example==0.3.0",
-            "index_url": "https://docs.example.test/ddp/simple/",
-        },
+        install=entry.install,
         docs_url=entry.docs_url,
     )
 
@@ -520,7 +508,7 @@ def test_render_catalog_json_rejects_inconsistent_package_metadata() -> None:
         catalog.render_catalog_json([entry, inconsistent_entry])
 
     message = str(exc_info.value)
-    assert "inconsistent catalog version" in message
+    assert "inconsistent catalog description" in message
 
 
 def test_sync_and_check_catalog_use_default_repo_path(monkeypatch, tmp_path: Path) -> None:
@@ -730,9 +718,8 @@ def test_main_includes_template_plugin() -> None:
     assert {
         "description": "Template Data Designer plugin — text transform column generator",
         "name": "data-designer-template",
-        "version": "0.1.0",
         "install": {
-            "requirement": "data-designer-template==0.1.0",
+            "requirement": "data-designer-template",
             "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/",
         },
         "compatibility": {

@@ -39,7 +39,6 @@ CATALOG_PACKAGE_KEYS = {
     "install",
     "name",
     "plugins",
-    "version",
 }
 CATALOG_PLUGIN_KEYS = {
     "entry_point",
@@ -65,7 +64,8 @@ class CatalogEntry:
 
     Attributes:
         plugin_package: Python package name from ``[project].name``.
-        version: Package version from ``[project].version``.
+        version: Package version from ``[project].version``. This is retained
+            for release validation but is not rendered into the public catalog.
         name: Runtime DataDesigner plugin name.
         plugin_type: Runtime DataDesigner plugin type value.
         description: Package description from ``[project].description``.
@@ -166,14 +166,13 @@ def check_catalog() -> bool:
 
 
 def validate_catalog_document(document: object) -> None:
-    """Validate one schema v2 catalog JSON document without importing plugins.
+    """Validate one catalog JSON document without importing plugins.
 
     Args:
         document: Decoded JSON value to validate.
 
     Raises:
-        CatalogError: If the document does not match the schema v2 catalog
-            contract.
+        CatalogError: If the document does not match the catalog contract.
     """
     catalog_document = required_catalog_object("catalog document", document, CATALOG_DOCUMENT_KEYS)
     schema_version = catalog_document["schema_version"]
@@ -200,7 +199,7 @@ def catalog_entries_for_catalog_package(raw_package: object, index: int) -> list
         index: Position of the package value in the document's ``packages`` list.
 
     Returns:
-        Catalog entries matching the schema v2 JSON object.
+        Catalog entries matching the catalog JSON object.
 
     Raises:
         CatalogError: If the package object is malformed.
@@ -226,7 +225,6 @@ def catalog_entries_for_catalog_package(raw_package: object, index: int) -> list
     docs = required_catalog_object(f"{context}.docs", package["docs"], CATALOG_DOCS_KEYS)
 
     package_name = catalog_package_name(f"{context}.name", package["name"])
-    version = project_version(package_name, required_catalog_string(f"{context}.version", package["version"]))
     description = required_catalog_string(f"{context}.description", package["description"])
     data_designer_requirement, data_designer_specifier, data_designer_marker = catalog_data_designer_compatibility(
         package_name=package_name,
@@ -239,7 +237,7 @@ def catalog_entries_for_catalog_package(raw_package: object, index: int) -> list
         value=python_compatibility["specifier"],
     )
     docs_url = catalog_http_url(f"{context}.docs.url", docs["url"])
-    validate_install_metadata(package_name, version, install)
+    validate_install_metadata(package_name, install)
 
     plugins = package["plugins"]
     if not isinstance(plugins, list) or not plugins:
@@ -250,7 +248,6 @@ def catalog_entries_for_catalog_package(raw_package: object, index: int) -> list
             raw_plugin=raw_plugin,
             context=f"{context}.plugins[{plugin_index}]",
             package_name=package_name,
-            version=version,
             description=description,
             python_requires=python_requires,
             data_designer_requirement=data_designer_requirement,
@@ -267,7 +264,6 @@ def catalog_entry_for_catalog_plugin(
     raw_plugin: object,
     context: str,
     package_name: str,
-    version: str,
     description: str,
     python_requires: str,
     data_designer_requirement: str,
@@ -282,7 +278,6 @@ def catalog_entry_for_catalog_plugin(
         raw_plugin: Decoded JSON plugin value.
         context: Human-readable object path used in error messages.
         package_name: Parent package distribution name.
-        version: Parent package version.
         description: Parent package description.
         python_requires: Parent package Python compatibility specifier.
         data_designer_requirement: Parent package Data Designer dependency.
@@ -293,7 +288,7 @@ def catalog_entry_for_catalog_plugin(
         docs_url: Parent package documentation URL.
 
     Returns:
-        Catalog entry matching the schema v2 JSON object.
+        Catalog entry matching the catalog JSON object.
     """
     plugin = required_catalog_object(context, raw_plugin, CATALOG_PLUGIN_KEYS)
     entry_point = required_catalog_object(f"{context}.entry_point", plugin["entry_point"], CATALOG_ENTRY_POINT_KEYS)
@@ -306,7 +301,7 @@ def catalog_entry_for_catalog_plugin(
 
     return CatalogEntry(
         plugin_package=package_name,
-        version=version,
+        version="",
         name=required_catalog_string(f"{context}.name", plugin["name"]),
         plugin_type=plugin_type,
         description=description,
@@ -426,7 +421,7 @@ def catalog_package_name(context: str, value: object) -> str:
 
 
 def required_catalog_plugin_type(context: str, value: object) -> str:
-    """Return a validated schema v2 plugin type.
+    """Return a validated catalog plugin type.
 
     Args:
         context: Human-readable plugin object path used in error messages.
@@ -604,7 +599,6 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
         install = install_metadata_for_package(
             tap_config=tap_config,
             package_name=name,
-            version=version,
         )
         docs_url = tap_config.docs_url_for_package(name)
         for entry_point_name, entry_point_value in sorted(entry_points.items()):
@@ -650,14 +644,12 @@ def catalog_tap_config_for_plugins_dir(plugins_dir: Path) -> TapConfig:
 def install_metadata_for_package(
     tap_config: TapConfig,
     package_name: str,
-    version: str,
 ) -> dict[str, object]:
     """Return validated catalog install metadata for a package.
 
     Args:
         tap_config: Repository-level tap metadata.
         package_name: Plugin package distribution name.
-        version: Plugin package version.
 
     Returns:
         Validated install metadata.
@@ -666,10 +658,10 @@ def install_metadata_for_package(
         CatalogError: If the generated install object is malformed.
     """
     try:
-        install = tap_config.install_metadata_for_package(package_name, version)
+        install = tap_config.install_metadata_for_package(package_name)
     except TapConfigError as exc:
         raise CatalogError(f"could not generate install metadata for package {package_name!r}: {exc}") from exc
-    validate_install_metadata(package_name, version, install)
+    validate_install_metadata(package_name, install)
     return install
 
 
@@ -1140,12 +1132,11 @@ def normalize_distribution_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def validate_install_metadata(package_name: str, version: str, install: object) -> None:
-    """Validate one schema v2 catalog install object.
+def validate_install_metadata(package_name: str, install: object) -> None:
+    """Validate one catalog install object.
 
     Args:
         package_name: Plugin package distribution name.
-        version: Plugin package version.
         install: Install metadata object to validate.
 
     Raises:
@@ -1170,34 +1161,25 @@ def validate_install_metadata(package_name: str, version: str, install: object) 
             f"expected a requirement for {package_name!r}"
         )
 
-    if requirement.url is None:
-        expected = f"=={project_version(package_name, version)}"
-        if str(requirement.specifier) != expected:
-            raise CatalogError(
-                f"package {package_name!r} has invalid install.requirement {requirement_text!r}; "
-                f"expected exact specifier {expected!r}"
-            )
-
     index_url = optional_install_string(package_name, install, "index_url")
     if index_url is not None:
         catalog_http_url(f"package {package_name!r} install.index_url", index_url)
 
 
-def install_target_for_install_metadata(package_name: str, version: str, install: object) -> InstallTarget:
+def install_target_for_install_metadata(package_name: str, install: object) -> InstallTarget:
     """Derive the default package install target from catalog install metadata.
 
     Args:
         package_name: Plugin package distribution name.
-        version: Plugin package version.
         install: Install metadata object to derive from.
 
     Returns:
         Concrete install target and optional index URL.
 
     Raises:
-        CatalogError: If install metadata or package version is malformed.
+        CatalogError: If install metadata is malformed.
     """
-    validate_install_metadata(package_name, version, install)
+    validate_install_metadata(package_name, install)
     if not isinstance(install, dict):
         raise CatalogError(f"package {package_name!r} has invalid install; expected an object")
     return InstallTarget(
@@ -1295,12 +1277,12 @@ def validate_catalog_entries(entries: list[CatalogEntry]) -> None:
         entries: Catalog entries to validate.
 
     Raises:
-        CatalogError: If an entry violates the schema v2 generation contract.
+        CatalogError: If an entry violates the catalog generation contract.
     """
     validate_unique_runtime_plugin_names(entries)
     validate_catalog_package_consistency(entries)
     for entry in entries:
-        validate_install_metadata(entry.plugin_package, entry.version, entry.install)
+        validate_install_metadata(entry.plugin_package, entry.install)
 
 
 def validate_catalog_package_consistency(entries: list[CatalogEntry]) -> None:
@@ -1321,7 +1303,6 @@ def validate_catalog_package_consistency(entries: list[CatalogEntry]) -> None:
             continue
 
         fields = {
-            "version": (previous.version, entry.version),
             "description": (previous.description, entry.description),
             "python_requires": (previous.python_requires, entry.python_requires),
             "data_designer_requirement": (previous.data_designer_requirement, entry.data_designer_requirement),
@@ -1357,7 +1338,7 @@ def catalog_entries_by_package(entries: list[CatalogEntry]) -> dict[str, list[Ca
 
 
 def render_catalog_package(entries: list[CatalogEntry]) -> dict[str, object]:
-    """Render one package object for schema v2.
+    """Render one package object for the catalog.
 
     Args:
         entries: Runtime plugin entries for a single package.
@@ -1368,7 +1349,6 @@ def render_catalog_package(entries: list[CatalogEntry]) -> dict[str, object]:
     entry = entries[0]
     return {
         "name": entry.plugin_package,
-        "version": entry.version,
         "description": entry.description,
         "install": entry.install,
         "compatibility": {

@@ -57,9 +57,8 @@ after installation.
     {
       "description": "Read local documents as chunked seed records",
       "name": "data-designer-retrieval-sdg",
-      "version": "0.1.0",
       "install": {
-        "requirement": "data-designer-retrieval-sdg==0.1.0",
+        "requirement": "data-designer-retrieval-sdg",
         "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
       },
       "compatibility": {
@@ -106,7 +105,6 @@ Package entry fields:
 | --- | --- | --- |
 | `description` | Yes | Package description from `[project].description`. |
 | `name` | Yes | Python distribution package name from `[project].name`. |
-| `version` | Yes | Package version from `[project].version`. |
 | `install.requirement` | Yes | PEP 508 package requirement to install. |
 | `install.index_url` | No | Python Simple API index URL for index-backed packages. |
 | `compatibility.python.specifier` | Yes | Python requirement from `[project].requires-python`. |
@@ -138,11 +136,11 @@ index.
 
 | Shape | Required fields | Install meaning |
 | --- | --- | --- |
-| Static index | `requirement`, `index_url` | Install an exact package version from a Simple API index, for example `data-designer-example==0.1.0`. |
-| Default installer index | `requirement` | Install an exact package version from the installer's configured default index. |
+| Static index | `requirement`, `index_url` | Resolve and install a package from a Simple API index, for example `data-designer-example`. |
+| Default installer index | `requirement` | Resolve and install from the installer's configured default index. |
 | Direct reference | `requirement` | Install from a PEP 508 direct reference such as Git or an HTTP(S) wheel URL. |
 
-The default NVIDIA catalog uses exact package requirements plus the
+The default NVIDIA catalog uses unpinned package-name requirements plus the
 DataDesignerPlugins Simple API index. External catalogs may use direct
 references when packages are hosted elsewhere.
 
@@ -160,8 +158,8 @@ instead.
 Adding a tap is a trust decision, not only a discovery preference. A tap points
 to Python packages. Installing from a tap runs package-manager resolution and
 imports code after installation. Data Designer install flows should show the tap
-URL, package name, package version, requirement, index URL or direct reference,
-and exact install command before installing from a non-default tap.
+URL, package name, requirement, index URL or direct reference, and exact install
+command before installing from a non-default tap.
 
 ## External Tap Repositories
 

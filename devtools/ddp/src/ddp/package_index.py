@@ -608,9 +608,8 @@ def run_scratch_qa(plugin_name: str, scratch_dir: Path | None, force: bool = Fal
 
     project = load_toml(plugin_dir / "pyproject.toml")["project"]
     package_name = project["name"]
-    package_version = project["version"]
-    if not isinstance(package_name, str) or not isinstance(package_version, str):
-        raise PackageIndexError(f"{plugin_dir / 'pyproject.toml'} has invalid project name or version")
+    if not isinstance(package_name, str):
+        raise PackageIndexError(f"{plugin_dir / 'pyproject.toml'} has invalid project name")
 
     packages_dir = scratch_root / "packages"
     site_dir = scratch_root / "site"
@@ -627,7 +626,7 @@ def run_scratch_qa(plugin_name: str, scratch_dir: Path | None, force: bool = Fal
     )
     run_command(["uv", "venv", venv_dir.as_posix()])
     python_path = venv_dir / "bin" / "python"
-    catalog_target = catalog_install_target_for_package(package_name, package_version)
+    catalog_target = catalog_install_target_for_package(package_name)
     run_command(
         [
             "uv",
@@ -693,13 +692,11 @@ print("validated", len(entry_points), "entry point(s)")
     run_command([python_path.as_posix(), "-c", script])
 
 
-def catalog_install_target_for_package(package_name: str, package_version: str) -> catalog.InstallTarget:
+def catalog_install_target_for_package(package_name: str) -> catalog.InstallTarget:
     """Return the checked-in catalog install target for a package.
 
     Args:
         package_name: Package name expected in the catalog.
-        package_version: Package version expected in the catalog.
-
     Returns:
         Install target derived from ``catalog/plugins.json``.
     """
@@ -714,10 +711,7 @@ def catalog_install_target_for_package(package_name: str, package_version: str) 
     if matching_package is None:
         raise PackageIndexError(f"catalog/plugins.json has no package entry for {package_name!r}")
     install = matching_package.get("install")
-    target = catalog.install_target_for_install_metadata(package_name, package_version, install)
-    expected_target = f"{package_name}=={catalog.project_version(package_name, package_version)}"
-    if target.target != expected_target:
-        raise PackageIndexError(f"catalog install target is {target.target!r}, expected {expected_target!r}")
+    target = catalog.install_target_for_install_metadata(package_name, install)
     if target.index_url is None or not target.index_url.rstrip("/").endswith("/simple"):
         raise PackageIndexError(f"catalog install index_url has unexpected shape: {target.index_url!r}")
     return target

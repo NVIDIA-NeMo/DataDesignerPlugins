@@ -86,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sync plugin catalog JSON",
         description=(
             "Sync catalog/plugins.json from installed local DataDesigner plugins and package metadata "
-            "(package, version, runtime plugin name, type, description, entry point, and compatibility)."
+            "(package, runtime plugin name, type, description, entry point, and compatibility)."
         ),
     )
     p_sync_catalog.add_argument(
@@ -155,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Validate that a plugin package is release-ready: checks pyproject metadata, "
             "the release ref contract, release-eligible CODEOWNERS, and checked-in "
-            "schema v2 catalog entries for the package."
+            "catalog entries for the package."
         ),
     )
     p_check_release.add_argument("plugin_name", help="Plugin name (e.g. data-designer-my-plugin)")

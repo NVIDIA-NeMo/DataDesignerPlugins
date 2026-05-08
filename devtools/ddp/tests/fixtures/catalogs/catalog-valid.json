@@ -3,10 +3,9 @@
   "packages": [
     {
       "name": "data-designer-compatible-column",
-      "version": "0.1.0",
       "description": "Compatible index-backed column generator fixture",
       "install": {
-        "requirement": "data-designer-compatible-column==0.1.0",
+        "requirement": "data-designer-compatible-column",
         "index_url": "https://docs.example.test/simple/"
       },
       "compatibility": {
@@ -36,7 +35,6 @@
     },
     {
       "name": "data-designer-git-seed-reader",
-      "version": "0.2.0",
       "description": "Compatible Git direct reference seed reader fixture",
       "install": {
         "requirement": "data-designer-git-seed-reader @ git+https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git@data-designer-git-seed-reader/v0.2.0#subdirectory=plugins/data-designer-git-seed-reader"
@@ -68,7 +66,6 @@
     },
     {
       "name": "data-designer-url-processor",
-      "version": "0.2.1",
       "description": "Compatible direct URL processor fixture",
       "install": {
         "requirement": "data-designer-url-processor @ https://packages.example.test/data_designer_url_processor-0.2.1-py3-none-any.whl"
@@ -100,10 +97,9 @@
     },
     {
       "name": "data-designer-python312-column",
-      "version": "0.3.0",
       "description": "Python compatibility rejection fixture",
       "install": {
-        "requirement": "data-designer-python312-column==0.3.0",
+        "requirement": "data-designer-python312-column",
         "index_url": "https://docs.example.test/simple/"
       },
       "compatibility": {
@@ -133,10 +129,9 @@
     },
     {
       "name": "data-designer-future-dd-processor",
-      "version": "0.4.0",
       "description": "Data Designer compatibility rejection fixture",
       "install": {
-        "requirement": "data-designer-future-dd-processor==0.4.0",
+        "requirement": "data-designer-future-dd-processor",
         "index_url": "https://docs.example.test/simple/"
       },
       "compatibility": {
@@ -166,10 +161,9 @@
     },
     {
       "name": "data-designer-multi-plugin-package",
-      "version": "1.4.0",
       "description": "Multi-plugin package fixture",
       "install": {
-        "requirement": "data-designer-multi-plugin-package==1.4.0",
+        "requirement": "data-designer-multi-plugin-package",
         "index_url": "https://docs.example.test/simple/"
       },
       "compatibility": {

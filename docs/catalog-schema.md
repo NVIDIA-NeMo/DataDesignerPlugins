@@ -23,10 +23,9 @@ The top-level document must contain `schema_version` and `packages`:
   "packages": [
     {
       "name": "data-designer-retrieval-sdg",
-      "version": "0.1.0",
       "description": "Retriever SDG toolkit",
       "install": {
-        "requirement": "data-designer-retrieval-sdg==0.1.0",
+        "requirement": "data-designer-retrieval-sdg",
         "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
       },
       "compatibility": {
@@ -72,7 +71,6 @@ Every item in `packages` must contain these fields:
 | Field | Type | Required | Contract |
 | --- | --- | --- | --- |
 | `name` | string | Yes | PEP 503-compatible Python distribution package name. |
-| `version` | string | Yes | PEP 440 package version. |
 | `description` | string | Yes | Package-level description. |
 | `install.requirement` | string | Yes | PEP 508 requirement used to install the package. |
 | `install.index_url` | string | No | Absolute HTTP(S) Python Simple API index URL for index-backed packages. |
@@ -104,18 +102,19 @@ index-backed packages.
 
 ### Static Index Package
 
-Use an exact package requirement plus an index URL for packages released through
+Use a package-name requirement plus an index URL for packages released through
 this repository's static package index:
 
 ```json
 {
-  "requirement": "data-designer-example==0.1.0",
+  "requirement": "data-designer-example",
   "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
 }
 ```
 
-For packages hosted in this tap's static index, `requirement` must use the
-package `name` with an exact `==version` specifier.
+For packages hosted in this tap's static index, `requirement` should usually be
+the package `name` without a version specifier so the package manager can
+resolve installs and upgrades from the Simple API index.
 
 ### Default Installer Index
 
@@ -124,7 +123,7 @@ configured default package index:
 
 ```json
 {
-  "requirement": "data-designer-example==0.1.0"
+  "requirement": "data-designer-example"
 }
 ```
 

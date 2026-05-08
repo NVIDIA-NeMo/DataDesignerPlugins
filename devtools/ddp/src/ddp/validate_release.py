@@ -117,7 +117,6 @@ def validate_release(repo_root: Path, plugin_name: str, tag_version: str) -> lis
         validate_catalog_for_release(
             repo_root=repo_root,
             project_name=project_name,
-            project_version=project_version,
             entry_points=entry_points,
             description=description,
             python_requires=python_requires,
@@ -397,19 +396,17 @@ def validate_release_codeowners(plugin_name: str, plugin_dir: Path, errors: list
 def validate_catalog_for_release(
     repo_root: Path,
     project_name: str,
-    project_version: str,
     entry_points: dict[str, str],
     description: str,
     python_requires: str,
     data_designer_requirement: str,
     tap_config: TapConfig,
 ) -> list[str]:
-    """Validate checked-in schema v2 catalog entries for a release.
+    """Validate checked-in catalog entries for a release.
 
     Args:
         repo_root: Repository root.
         project_name: Plugin package name.
-        project_version: Plugin package version.
         entry_points: Entry points declared by the package.
         description: Package description.
         python_requires: Normalized package Python specifier.
@@ -431,16 +428,8 @@ def validate_catalog_for_release(
 
     package_entries = entries_for_package(packages, project_name)
     if not package_entries:
-        errors.append(f"{CATALOG_PATH.as_posix()} has no schema v2 package for {project_name!r}")
+        errors.append(f"{CATALOG_PATH.as_posix()} has no catalog package for {project_name!r}")
         return errors
-
-    matching_version_entries = [
-        entry for _entry_index, entry in package_entries if catalog_package_version(entry) == project_version
-    ]
-    if not matching_version_entries:
-        errors.append(
-            f"{CATALOG_PATH.as_posix()} has no schema v2 entry for package {project_name!r} version {project_version!r}"
-        )
 
     seen_entry_points: dict[str, str] = {}
     expected_docs_url = tap_config.docs_url_for_package(project_name)
@@ -450,12 +439,11 @@ def validate_catalog_for_release(
                 entry=entry,
                 entry_index=entry_index,
                 project_name=project_name,
-                project_version=project_version,
                 entry_points=entry_points,
                 description=description,
                 python_requires=python_requires,
                 data_designer_requirement=data_designer_requirement,
-                expected_install=tap_config.install_metadata_for_package(project_name, project_version),
+                expected_install=tap_config.install_metadata_for_package(project_name),
                 expected_docs_url=expected_docs_url,
                 seen_entry_points=seen_entry_points,
             )
@@ -490,7 +478,7 @@ def load_catalog_json(catalog_path: Path, errors: list[str]) -> dict[str, Any] |
 
 
 def catalog_packages(data: dict[str, Any], catalog_path: Path, errors: list[str]) -> list[object] | None:
-    """Return schema v2 catalog package entries.
+    """Return catalog package entries.
 
     Args:
         data: Parsed catalog JSON.
@@ -533,23 +521,10 @@ def entries_for_package(packages: list[object], project_name: str) -> list[tuple
     return entries
 
 
-def catalog_package_version(entry: dict[str, Any]) -> object:
-    """Return the package version from a catalog package entry.
-
-    Args:
-        entry: Catalog package entry.
-
-    Returns:
-        ``version`` value, or ``None`` when absent.
-    """
-    return entry.get("version")
-
-
 def validate_catalog_package_for_release(
     entry: dict[str, Any],
     entry_index: int,
     project_name: str,
-    project_version: str,
     entry_points: dict[str, str],
     description: str,
     python_requires: str,
@@ -564,7 +539,6 @@ def validate_catalog_package_for_release(
         entry: Catalog package entry.
         entry_index: Entry index within ``packages``.
         project_name: Plugin package name.
-        project_version: Plugin package version.
         entry_points: Entry points declared by the package.
         description: Package description.
         python_requires: Normalized package Python specifier.
@@ -582,7 +556,6 @@ def validate_catalog_package_for_release(
         entry=entry,
         context=context,
         project_name=project_name,
-        project_version=project_version,
         description=description,
         errors=errors,
     )
@@ -605,7 +578,6 @@ def validate_catalog_package_for_release(
             install=install,
             context=context,
             project_name=project_name,
-            project_version=project_version,
             expected_install=expected_install,
             errors=errors,
         )
@@ -644,27 +616,22 @@ def validate_catalog_package_metadata(
     entry: dict[str, Any],
     context: str,
     project_name: str,
-    project_version: str,
     description: str,
     errors: list[str],
 ) -> None:
-    """Validate schema v2 package fields for release.
+    """Validate catalog package fields for release.
 
     Args:
         entry: Catalog package entry.
         context: Error context.
         project_name: Plugin package name.
-        project_version: Plugin package version.
         description: Expected package description.
         errors: Error accumulator.
     """
     package_name = required_catalog_string(entry, "name", context, errors)
-    version = required_catalog_string(entry, "version", context, errors)
     catalog_description = required_catalog_string(entry, "description", context, errors)
     if package_name is not None and package_name != project_name:
         errors.append(f"{context}.name is {package_name!r}, expected {project_name!r}")
-    if version is not None and version != project_version:
-        errors.append(f"{context}.version is {version!r}, expected {project_version!r}")
     if catalog_description is not None and catalog_description != description:
         errors.append(f"{context} description is stale; expected {description!r}")
 
@@ -674,7 +641,7 @@ def validate_catalog_runtime_fields(
     context: str,
     errors: list[str],
 ) -> None:
-    """Validate schema v2 runtime plugin fields.
+    """Validate catalog runtime plugin fields.
 
     Args:
         entry: Catalog plugin entry.
@@ -844,7 +811,6 @@ def validate_release_install(
     install: object,
     context: str,
     project_name: str,
-    project_version: str,
     expected_install: dict[str, object],
     errors: list[str],
 ) -> None:
@@ -854,12 +820,11 @@ def validate_release_install(
         install: Catalog ``install`` object.
         context: Error context.
         project_name: Plugin package name.
-        project_version: Plugin package version.
         expected_install: Expected install object from tap configuration.
         errors: Error accumulator.
     """
     try:
-        catalog.validate_install_metadata(project_name, project_version, install)
+        catalog.validate_install_metadata(project_name, install)
     except catalog.CatalogError as exc:
         errors.append(str(exc))
         return

@@ -41,15 +41,14 @@ def test_catalog_valid_fixture_exercises_consumer_contract() -> None:
     compatible_package, compatible_column = plugins_by_name["compatible-column"]
     assert compatible_column["plugin_type"] == "column-generator"
     assert compatible_package["install"] == {
-        "requirement": "data-designer-compatible-column==0.1.0",
+        "requirement": "data-designer-compatible-column",
         "index_url": "https://docs.example.test/simple/",
     }
     assert catalog.install_target_for_install_metadata(
         package_name=compatible_package["name"],
-        version=compatible_package["version"],
         install=compatible_package["install"],
     ) == catalog.InstallTarget(
-        target="data-designer-compatible-column==0.1.0",
+        target="data-designer-compatible-column",
         index_url="https://docs.example.test/simple/",
     )
 
@@ -64,7 +63,6 @@ def test_catalog_valid_fixture_exercises_consumer_contract() -> None:
     }
     assert catalog.install_target_for_install_metadata(
         package_name=git_package["name"],
-        version=git_package["version"],
         install=git_package["install"],
     ) == catalog.InstallTarget(
         target=(
@@ -78,7 +76,6 @@ def test_catalog_valid_fixture_exercises_consumer_contract() -> None:
     assert url_processor["plugin_type"] == "processor"
     assert catalog.install_target_for_install_metadata(
         package_name=url_package["name"],
-        version=url_package["version"],
         install=url_package["install"],
     ) == catalog.InstallTarget(
         target=(
@@ -99,7 +96,7 @@ def test_catalog_valid_fixture_exercises_consumer_contract() -> None:
     assert {plugin["name"] for plugin in multi_plugins} == {"multi-seed-reader", "multi-processor"}
     assert {plugin["plugin_type"] for plugin in multi_plugins} == {"seed-reader", "processor"}
     assert multi_package["install"] == {
-        "requirement": "data-designer-multi-plugin-package==1.4.0",
+        "requirement": "data-designer-multi-plugin-package",
         "index_url": "https://docs.example.test/simple/",
     }
 

@@ -118,18 +118,16 @@ def write_codeowners(repo_root: Path, package_name: str = PACKAGE_NAME, owners: 
 
 def catalog_entry(
     package_name: str = PACKAGE_NAME,
-    version: str = PACKAGE_VERSION,
     entry_point_name: str = "runtime-entry",
     entry_point_value: str = "example.plugin:plugin",
     runtime_name: str | None = None,
     install: dict[str, object] | None = None,
     docs_url: str | None = None,
 ) -> dict[str, object]:
-    """Return a schema v2 catalog package for release validation tests.
+    """Return a catalog package for release validation tests.
 
     Args:
         package_name: Plugin package name.
-        version: Plugin package version.
         entry_point_name: Data Designer entry point name.
         entry_point_value: Data Designer entry point target.
         runtime_name: Runtime plugin name.
@@ -142,11 +140,10 @@ def catalog_entry(
     requirement = Requirement("data-designer>=0.5.7")
     return {
         "name": package_name,
-        "version": version,
         "description": PACKAGE_DESCRIPTION,
         "install": install
         or {
-            "requirement": f"{package_name}=={version}",
+            "requirement": package_name,
             "index_url": "https://docs.example.test/ddp/simple/",
         },
         "compatibility": {
@@ -250,11 +247,11 @@ def test_valid_multi_entry_package_passes(tmp_path: Path) -> None:
 
 
 def test_stale_catalog_entry_fails(tmp_path: Path) -> None:
-    write_release_repo(tmp_path, entries=[catalog_entry(version="0.0.9")])
+    write_release_repo(tmp_path, entries=[catalog_entry(docs_url="https://docs.example.test/ddp/plugins/stale/")])
 
     errors = validate_release(tmp_path, PACKAGE_NAME, PACKAGE_VERSION)
 
-    assert any(".version" in error and "0.0.9" in error for error in errors)
+    assert any(".docs.url" in error and "stale" in error for error in errors)
 
 
 @pytest.mark.parametrize("missing_field", ["docs", "install"])
@@ -274,7 +271,7 @@ def test_mismatched_install_requirement_fails(tmp_path: Path) -> None:
         entries=[
             catalog_entry(
                 install={
-                    "requirement": "data-designer-example==0.0.9",
+                    "requirement": "data-designer-other",
                     "index_url": "https://docs.example.test/ddp/simple/",
                 },
             )
@@ -283,7 +280,7 @@ def test_mismatched_install_requirement_fails(tmp_path: Path) -> None:
 
     errors = validate_release(tmp_path, PACKAGE_NAME, PACKAGE_VERSION)
 
-    assert any("install.requirement" in error and "==0.1.0" in error for error in errors)
+    assert any("install.requirement" in error and "data-designer-example" in error for error in errors)
 
 
 def test_direct_reference_install_fails_release_validation(tmp_path: Path) -> None:

@@ -3,7 +3,6 @@
   "packages": [
     {
       "name": "data-designer-invalid-install",
-      "version": "0.1.0",
       "description": "Invalid install fixture",
       "install": {
         "requirement": "other-package==0.1.0"

@@ -26,8 +26,8 @@ the JSON contract and install metadata.
 Adding a tap is a trust decision, not only a discovery preference. A tap is a
 pointer to Python packages. Installing from a tap runs package-manager
 resolution and imports code after installation. Review the tap URL, package
-name, version, requirement, index URL or direct reference, and install command before confirming installs from
-non-default taps.
+name, requirement, index URL or direct reference, and install command before
+confirming installs from non-default taps.
 
 ## Scaffold a plugin
 
@@ -113,7 +113,7 @@ repository-level `[tool.ddp.tap]` table.
 | Input | Catalog fields |
 | --- | --- |
 | `[project].name` | Package `name`, generated install requirement, and generated docs path. |
-| `[project].version` | Package `version` and exact generated `install.requirement`. |
+| `[project].version` | Package artifact version used by build and release tooling. |
 | `[project].description` | Package `description`. |
 | `[project].requires-python` | `compatibility.python.specifier`. |
 | Direct `data-designer` dependency in `[project].dependencies` | `compatibility.data_designer.requirement`, `.specifier`, and `.marker`. |
