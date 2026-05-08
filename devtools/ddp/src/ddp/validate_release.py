@@ -17,8 +17,8 @@ from packaging.version import InvalidVersion, Version
 
 from ddp import catalog
 from ddp._repo import find_repo_root, load_toml
+from ddp.catalog_config import CatalogConfig, CatalogConfigError, load_catalog_config
 from ddp.codeowners import github_release_owners, owner_tokens_for_codeowners_path
-from ddp.tap_config import TapConfig, TapConfigError, load_tap_config
 
 REQUIRED_FIELDS = ("description", "license", "readme", "authors")
 CATALOG_PATH = Path("catalog") / "plugins.json"
@@ -80,8 +80,8 @@ def validate_release(repo_root: Path, plugin_name: str, tag_version: str) -> lis
         return errors
 
     try:
-        tap_config = load_tap_config(repo_root)
-    except TapConfigError as exc:
+        catalog_config = load_catalog_config(repo_root)
+    except CatalogConfigError as exc:
         errors.append(str(exc))
         return errors
 
@@ -98,7 +98,9 @@ def validate_release(repo_root: Path, plugin_name: str, tag_version: str) -> lis
     python_requires = release_python_requires(project_name, project, errors)
     data_designer_requirement = release_data_designer_requirement(project_name, project, errors)
     entry_points = release_entry_points(project_name, project, errors)
-    release_ref = release_ref_for_cli_args(plugin_name, project_name, project_version, tag_version, tap_config, errors)
+    release_ref = release_ref_for_cli_args(
+        plugin_name, project_name, project_version, tag_version, catalog_config, errors
+    )
     validate_release_codeowners(plugin_name, plugin_dir, errors)
 
     if (
@@ -121,7 +123,7 @@ def validate_release(repo_root: Path, plugin_name: str, tag_version: str) -> lis
             description=description,
             python_requires=python_requires,
             data_designer_requirement=data_designer_requirement,
-            tap_config=tap_config,
+            catalog_config=catalog_config,
         )
     )
     return errors
@@ -331,7 +333,7 @@ def release_ref_for_cli_args(
     project_name: str | None,
     project_version: str | None,
     tag_version: str,
-    tap_config: TapConfig,
+    catalog_config: CatalogConfig,
     errors: list[str],
 ) -> str | None:
     """Validate and return the release ref implied by CLI arguments.
@@ -341,7 +343,7 @@ def release_ref_for_cli_args(
         project_name: Parsed project name.
         project_version: Parsed project version.
         tag_version: Version parsed from the tag.
-        tap_config: Repository tap configuration.
+        catalog_config: Repository catalog configuration.
         errors: Error accumulator.
 
     Returns:
@@ -351,8 +353,8 @@ def release_ref_for_cli_args(
         return None
 
     try:
-        expected_release_ref = tap_config.release_ref_for_package(project_name, project_version)
-    except TapConfigError as exc:
+        expected_release_ref = catalog_config.release_ref_for_package(project_name, project_version)
+    except CatalogConfigError as exc:
         errors.append(str(exc))
         return None
 
@@ -360,7 +362,7 @@ def release_ref_for_cli_args(
     if implied_release_ref != expected_release_ref:
         errors.append(
             f"release ref implied by CLI arguments is {implied_release_ref!r}, "
-            f"expected {expected_release_ref!r} from [tool.ddp.tap].release-ref-template"
+            f"expected {expected_release_ref!r} from [tool.ddp.catalog].release-ref-template"
         )
     return expected_release_ref
 
@@ -400,7 +402,7 @@ def validate_catalog_for_release(
     description: str,
     python_requires: str,
     data_designer_requirement: str,
-    tap_config: TapConfig,
+    catalog_config: CatalogConfig,
 ) -> list[str]:
     """Validate checked-in catalog entries for a release.
 
@@ -411,7 +413,7 @@ def validate_catalog_for_release(
         description: Package description.
         python_requires: Normalized package Python specifier.
         data_designer_requirement: Direct Data Designer dependency string.
-        tap_config: Repository tap configuration.
+        catalog_config: Repository catalog configuration.
 
     Returns:
         Validation error messages.
@@ -432,7 +434,7 @@ def validate_catalog_for_release(
         return errors
 
     seen_entry_points: dict[str, str] = {}
-    expected_docs_url = tap_config.docs_url_for_package(project_name)
+    expected_docs_url = catalog_config.docs_url_for_package(project_name)
     for entry_index, entry in package_entries:
         errors.extend(
             validate_catalog_package_for_release(
@@ -443,7 +445,7 @@ def validate_catalog_for_release(
                 description=description,
                 python_requires=python_requires,
                 data_designer_requirement=data_designer_requirement,
-                expected_install=tap_config.install_metadata_for_package(project_name),
+                expected_install=catalog_config.install_metadata_for_package(project_name),
                 expected_docs_url=expected_docs_url,
                 seen_entry_points=seen_entry_points,
             )
@@ -820,7 +822,7 @@ def validate_release_install(
         install: Catalog ``install`` object.
         context: Error context.
         project_name: Plugin package name.
-        expected_install: Expected install object from tap configuration.
+        expected_install: Expected install object from catalog configuration.
         errors: Error accumulator.
     """
     try:

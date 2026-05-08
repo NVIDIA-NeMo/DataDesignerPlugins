@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 from ddp._repo import SPDX_HEADER
-from ddp.tap_config import TapConfig, TapConfigError, load_tap_config
+from ddp.catalog_config import CatalogConfig, CatalogConfigError, load_catalog_config
 
 PluginScaffoldType = Literal["column-generator", "seed-reader", "processor"]
 DEFAULT_PLUGIN_SCAFFOLD_TYPE: PluginScaffoldType = "column-generator"
@@ -118,7 +118,7 @@ def generate_pyproject(
     package_name: str,
     slug: str,
     import_name: str,
-    tap_config: TapConfig,
+    catalog_config: CatalogConfig,
     spec: ScaffoldSpec,
 ) -> str:
     return f"""{SPDX_HEADER}
@@ -129,12 +129,12 @@ version = "0.1.0"
 description = "Data Designer {slug} {spec.display_name} plugin"
 requires-python = ">=3.10"
 dependencies = [
-    {toml_string(tap_config.default_data_designer_requirement)},
+    {toml_string(catalog_config.default_data_designer_requirement)},
 ]
 license = "Apache-2.0"
 readme = "README.md"
 authors = [
-    {{name = {toml_string(tap_config.author_name)}}},
+    {{name = {toml_string(catalog_config.author_name)}}},
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -145,7 +145,7 @@ classifiers = [
 {slug} = "{import_name}.plugin:plugin"
 
 [project.urls]
-Repository = {toml_string(tap_config.repository_url)}
+Repository = {toml_string(catalog_config.repository_url)}
 
 [build-system]
 requires = ["hatchling"]
@@ -227,7 +227,7 @@ Processor validation note: Data Designer 0.5.7 `assert_valid_plugin` validates p
 so the generated test also imports and checks the implementation class."""
 
 
-def generate_readme(package_name: str, slug: str, tap_config: TapConfig, spec: ScaffoldSpec) -> str:
+def generate_readme(package_name: str, slug: str, catalog_config: CatalogConfig, spec: ScaffoldSpec) -> str:
     return f"""# {package_name}
 
 Data Designer {slug} {spec.display_name} plugin.
@@ -243,14 +243,14 @@ uv add data-designer {package_name}
 {generate_readme_usage(slug, spec)}
 
 For the full plugin authoring guide, see the
-[main repository docs]({tap_config.docs_url("authoring/")}).
+[main repository docs]({catalog_config.docs_url("authoring/")}).
 
 Plugin documentation for the repository site lives in this package's `docs/`
 directory.
 """
 
 
-def generate_docs_index(package_name: str, slug: str, tap_config: TapConfig, spec: ScaffoldSpec) -> str:
+def generate_docs_index(package_name: str, slug: str, catalog_config: CatalogConfig, spec: ScaffoldSpec) -> str:
     return f"""# {package_name}
 
 Data Designer {slug} {spec.display_name} plugin.
@@ -264,7 +264,7 @@ uv add data-designer {package_name}
 {generate_docs_usage(slug, spec)}
 
 For the full plugin authoring guide, see the
-[main repository docs]({tap_config.docs_url("authoring/")}).
+[main repository docs]({catalog_config.docs_url("authoring/")}).
 """
 
 
@@ -542,12 +542,12 @@ def main(args: list[str] | None = None) -> None:
 
     plugins_dir = find_plugins_dir()
     try:
-        tap_config = load_tap_config(plugins_dir.parent)
-    except TapConfigError as exc:
+        catalog_config = load_catalog_config(plugins_dir.parent)
+    except CatalogConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    package_name = tap_config.package_name_for_slug(slug)
+    package_name = catalog_config.package_name_for_slug(slug)
     import_name = to_underscored(package_name)
     class_prefix = to_pascal(slug)
 
@@ -572,10 +572,10 @@ def main(args: list[str] | None = None) -> None:
     # Write files
     owner = _discover_owner()
     files = {
-        plugin_dir / "pyproject.toml": generate_pyproject(package_name, slug, import_name, tap_config, spec),
-        plugin_dir / "README.md": generate_readme(package_name, slug, tap_config, spec),
+        plugin_dir / "pyproject.toml": generate_pyproject(package_name, slug, import_name, catalog_config, spec),
+        plugin_dir / "README.md": generate_readme(package_name, slug, catalog_config, spec),
         plugin_dir / "CODEOWNERS": generate_codeowners(owner),
-        docs_dir / "index.md": generate_docs_index(package_name, slug, tap_config, spec),
+        docs_dir / "index.md": generate_docs_index(package_name, slug, catalog_config, spec),
         src_dir / "__init__.py": generate_init(),
         src_dir / "config.py": generate_config(slug, class_prefix, spec),
         src_dir / "impl.py": generate_impl(slug, import_name, class_prefix, spec),

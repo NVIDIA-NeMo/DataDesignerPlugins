@@ -20,7 +20,7 @@ from packaging.utils import InvalidName, canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from ddp._repo import find_repo_root, load_toml
-from ddp.tap_config import TapConfig, TapConfigError, load_tap_config
+from ddp.catalog_config import CatalogConfig, CatalogConfigError, load_catalog_config
 
 CATALOG_SCHEMA_VERSION = 2
 REPO_ROOT = find_repo_root()
@@ -576,7 +576,7 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
         CatalogError: If a local entry point is not installed, cannot be loaded,
             or does not load to a DataDesigner ``Plugin`` object.
     """
-    tap_config = catalog_tap_config_for_plugins_dir(plugins_dir)
+    catalog_config = catalog_config_for_plugins_dir(plugins_dir)
     entries: list[CatalogEntry] = []
     for toml_path in sorted(plugins_dir.glob("*/pyproject.toml")):
         data = load_toml(toml_path)
@@ -597,10 +597,10 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
         entry_points = data_designer_entry_points(name, project)
         repository_path = toml_path.parent.relative_to(plugins_dir.parent).as_posix()
         install = install_metadata_for_package(
-            tap_config=tap_config,
+            catalog_config=catalog_config,
             package_name=name,
         )
-        docs_url = tap_config.docs_url_for_package(name)
+        docs_url = catalog_config.docs_url_for_package(name)
         for entry_point_name, entry_point_value in sorted(entry_points.items()):
             entries.append(
                 catalog_entry_for_entry_point(
@@ -623,32 +623,32 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
     return sorted(entries, key=lambda entry: (entry.plugin_package, entry.name))
 
 
-def catalog_tap_config_for_plugins_dir(plugins_dir: Path) -> TapConfig:
-    """Load tap metadata for a plugins directory.
+def catalog_config_for_plugins_dir(plugins_dir: Path) -> CatalogConfig:
+    """Load catalog metadata for a plugins directory.
 
     Args:
         plugins_dir: Repository ``plugins/`` directory.
 
     Returns:
-        Validated tap metadata for the repository containing the plugins.
+        Validated catalog metadata for the repository containing the plugins.
 
     Raises:
-        CatalogError: If tap metadata is missing or malformed.
+        CatalogError: If catalog metadata is missing or malformed.
     """
     try:
-        return load_tap_config(plugins_dir.parent)
-    except TapConfigError as exc:
-        raise CatalogError(f"could not load tap metadata for catalog generation: {exc}") from exc
+        return load_catalog_config(plugins_dir.parent)
+    except CatalogConfigError as exc:
+        raise CatalogError(f"could not load catalog metadata for catalog generation: {exc}") from exc
 
 
 def install_metadata_for_package(
-    tap_config: TapConfig,
+    catalog_config: CatalogConfig,
     package_name: str,
 ) -> dict[str, object]:
     """Return validated catalog install metadata for a package.
 
     Args:
-        tap_config: Repository-level tap metadata.
+        catalog_config: Repository-level catalog metadata.
         package_name: Plugin package distribution name.
 
     Returns:
@@ -658,8 +658,8 @@ def install_metadata_for_package(
         CatalogError: If the generated install object is malformed.
     """
     try:
-        install = tap_config.install_metadata_for_package(package_name)
-    except TapConfigError as exc:
+        install = catalog_config.install_metadata_for_package(package_name)
+    except CatalogConfigError as exc:
         raise CatalogError(f"could not generate install metadata for package {package_name!r}: {exc}") from exc
     validate_install_metadata(package_name, install)
     return install

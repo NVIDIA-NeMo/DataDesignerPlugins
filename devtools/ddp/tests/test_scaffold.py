@@ -31,8 +31,8 @@ EXPECTED_FILE_TREE = {
 }
 
 
-def write_external_tap_repo(root: Path) -> None:
-    """Write a minimal external-style tap repository skeleton.
+def write_external_catalog_repo(root: Path) -> None:
+    """Write a minimal external-style catalog repository skeleton.
 
     Args:
         root: Temporary repository root.
@@ -42,9 +42,9 @@ def write_external_tap_repo(root: Path) -> None:
         textwrap.dedent(
             """
             [project]
-            name = "external-tap-workspace"
+            name = "external-catalog-workspace"
 
-            [tool.ddp.tap]
+            [tool.ddp.catalog]
             catalog-url = "https://catalog.example.test/plugins.json"
             repository-url = "https://git.example.test/acme/dd-plugins"
             repository-git-url = "https://git.example.test/acme/dd-plugins.git"
@@ -67,8 +67,8 @@ def scaffold_sample_plugin(
     monkeypatch: pytest.MonkeyPatch,
     args: list[str] | None = None,
 ) -> Path:
-    """Scaffold the sample plugin in an external tap fixture."""
-    write_external_tap_repo(tmp_path)
+    """Scaffold the sample plugin in an external catalog fixture."""
+    write_external_catalog_repo(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(scaffold, "_discover_owner", lambda: "@acme/platform")
 
@@ -143,7 +143,7 @@ def test_scaffolded_plugins_import_and_validate(
         assert issubclass(plugin_module.plugin.impl_cls, Processor)
 
 
-def test_scaffold_uses_external_tap_config_in_generated_files(
+def test_scaffold_uses_external_catalog_config_in_generated_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -277,17 +277,17 @@ def test_processor_scaffold_contents(
     assert "issubclass(plugin.impl_cls, Processor)" in files["test"]
 
 
-def test_scaffold_missing_tap_config_exits_with_clear_error(
+def test_scaffold_missing_catalog_config_exits_with_clear_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     (tmp_path / "plugins").mkdir()
-    (tmp_path / "pyproject.toml").write_text('[project]\nname = "missing-tap"\n', encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "missing-catalog"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(SystemExit) as exc_info:
         scaffold.main(["sample-plugin"])
 
     assert exc_info.value.code == 1
-    assert "[tool.ddp.tap]" in capsys.readouterr().err
+    assert "[tool.ddp.catalog]" in capsys.readouterr().err

@@ -21,12 +21,12 @@ PACKAGE_DESCRIPTION = "Package description"
 DOCS_BASE_URL = "https://docs.example.test/ddp/"
 
 
-def write_tap_pyproject(
+def write_catalog_pyproject(
     repo_root: Path,
     release_ref_template: str = "{package}/v{version}",
     docs_base_url: str = DOCS_BASE_URL,
 ) -> None:
-    """Write root tap metadata for release validation tests.
+    """Write root catalog metadata for release validation tests.
 
     Args:
         repo_root: Temporary repository root.
@@ -40,7 +40,7 @@ def write_tap_pyproject(
             [project]
             name = "test-workspace"
 
-            [tool.ddp.tap]
+            [tool.ddp.catalog]
             catalog-url = "https://catalog.example.test/plugins.json"
             repository-url = "https://git.example.test/acme/dd-plugins"
             repository-git-url = "https://git.example.test/acme/dd-plugins.git"
@@ -202,7 +202,7 @@ def write_release_repo(
         entries: Catalog entries.
         codeowners: Per-plugin owner tokens.
     """
-    write_tap_pyproject(repo_root)
+    write_catalog_pyproject(repo_root)
     write_plugin_pyproject(repo_root, entry_points=entry_points)
     write_codeowners(repo_root, owners=codeowners)
     write_catalog(repo_root, entries or [catalog_entry()])
@@ -313,7 +313,7 @@ def test_email_only_codeowners_fails(tmp_path: Path) -> None:
 
 def test_release_ref_template_mismatch_fails(tmp_path: Path) -> None:
     write_release_repo(tmp_path)
-    write_tap_pyproject(tmp_path, release_ref_template="release/{package}/{version}")
+    write_catalog_pyproject(tmp_path, release_ref_template="release/{package}/{version}")
 
     errors = validate_release(tmp_path, PACKAGE_NAME, PACKAGE_VERSION)
 

@@ -1,17 +1,16 @@
 # Catalog Schema
 
-The catalog schema is the concrete JSON contract for Data Designer plugin tap
+The catalog schema is the concrete JSON contract for Data Designer plugin
 catalogs. It is package-first: a catalog lists installable Python packages, and
-each package lists the Data Designer runtime plugins exposed after
-installation.
+each package lists the Data Designer runtime plugins exposed after installation.
 
 This package-first shape keeps the catalog generic. The JSON catalog can be
 hosted anywhere that serves raw JSON, and each package can be installed from
 any Python package index or PEP 508 direct reference without assuming the
 package lives in the same repository as the catalog.
 
-For tap discovery workflow, the default NVIDIA catalog URL, external tap setup,
-and trust guidance, see [Plugin taps](taps.md).
+For catalog discovery workflow, the default NVIDIA catalog URL, external
+catalog setup, and trust guidance, see [Plugin catalogs](catalogs.md).
 
 ## Document Shape
 
@@ -112,7 +111,7 @@ this repository's static package index:
 }
 ```
 
-For packages hosted in this tap's static index, `requirement` should usually be
+For packages hosted in this catalog's static index, `requirement` should usually be
 the package `name` without a version specifier so the package manager can
 resolve installs and upgrades from the Simple API index.
 

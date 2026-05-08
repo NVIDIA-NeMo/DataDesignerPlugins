@@ -62,8 +62,8 @@ make docs-server DOCS_DEV_ADDR=localhost:8080
 
 ## Generated files
 
-Generated site inputs and tap metadata come from repository metadata, plugin
-docs, package metadata, installed entry points, tap config, and ownership files:
+Generated site inputs and catalog metadata come from repository metadata, plugin
+docs, package metadata, installed entry points, catalog config, and ownership files:
 
 ```bash
 make plugin-docs
@@ -76,13 +76,13 @@ make codeowners
 plugin package metadata and `plugins/*/docs/`. Do not edit generated plugin site
 pages directly.
 
-`catalog/plugins.json` is the generated machine-readable tap artifact. It is
+`catalog/plugins.json` is the generated machine-readable catalog artifact. It is
 generated from installed local plugin entry points, package metadata,
-`[tool.ddp.tap]`, docs URL configuration, and direct `data-designer` dependency
+`[tool.ddp.catalog]`, docs URL configuration, and direct `data-designer` dependency
 specifiers for compatibility checks by Data Designer and external tools.
 
-`catalog/plugins.json` is also checked in as the machine-readable NVIDIA tap
-catalog. The default tap URL is the GitHub Pages catalog URL:
+`catalog/plugins.json` is also checked in as the machine-readable NVIDIA
+catalog. The default catalog URL is the GitHub Pages catalog URL:
 
 ```text
 https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
@@ -90,7 +90,7 @@ https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 
 This URL is deployed with the documentation site and the static package index
 at `https://nvidia-nemo.github.io/DataDesignerPlugins/simple/`.
-External taps may use any unauthenticated raw JSON endpoint or a local catalog
+External catalogs may use any unauthenticated raw JSON endpoint or a local catalog
 file path, and may serve packages from any Python package index or direct
 reference.
 
@@ -103,7 +103,7 @@ changed:
 | Change | Regenerate | Validate |
 | --- | --- | --- |
 | Plugin docs or docs metadata | `make plugin-docs` | `make check-plugin-docs` or `make check` |
-| Package metadata, entry points, compatibility dependency, or `[tool.ddp.tap]` | `make catalog` | `make check-catalog` or `make check` |
+| Package metadata, entry points, compatibility dependency, or `[tool.ddp.catalog]` | `make catalog` | `make check-catalog` or `make check` |
 | Package-list metadata or site package-index wiring | `make package-index` | `make check-package-index` or `make check` |
 | Per-plugin ownership | `make codeowners` | `make check-codeowners` or `make check` |
 | SPDX headers | `make update-license-headers` | `make check-license-headers` or `make check` |

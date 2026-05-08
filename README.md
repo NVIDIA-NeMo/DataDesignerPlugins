@@ -3,7 +3,7 @@
 [![Documentation](https://img.shields.io/badge/docs-documentation-blue)](https://nvidia-nemo.github.io/DataDesignerPlugins/)
 
 First-class NVIDIA-provided plugins for [NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
-This repository is the NVIDIA-maintained curated first-party plugin tap for
+This repository is the NVIDIA-maintained curated first-party plugin catalog for
 Data Designer.
 
 ## Quick Start
@@ -40,19 +40,20 @@ DataDesignerPlugins/
 
 Each plugin is an independent Python package with its own `pyproject.toml`, docs, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
 
-## Plugin Tap
+## Plugin Catalog
 
-The default NVIDIA plugin tap catalog URL is:
+The default NVIDIA plugin catalog URL is:
 
 ```text
 https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
-`catalog/plugins.json` is the generated JSON tap artifact for Data Designer.
+`catalog/plugins.json` is the generated JSON catalog artifact for Data Designer.
 The published Pages site serves that catalog together with the static Python
 package index at `https://nvidia-nemo.github.io/DataDesignerPlugins/simple/`.
-See [docs/taps.md](docs/taps.md) for tap discovery, catalog fields, `install`
-metadata, trust expectations, and external tap setup guidance.
+See [docs/catalogs.md](docs/catalogs.md) for catalog discovery, catalog
+fields, `install` metadata, trust expectations, and external catalog setup
+guidance.
 
 ## Development
 

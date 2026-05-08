@@ -38,7 +38,7 @@ Release tags are per plugin package and use this format:
 
 For example, package `data-designer-my-plugin` version `0.2.0` releases from
 tag `data-designer-my-plugin/v0.2.0`. The tag format comes from
-`[tool.ddp.tap].release-ref-template`, which defaults to
+`[tool.ddp.catalog].release-ref-template`, which defaults to
 `{package}/v{version}`.
 
 The release target:
@@ -55,12 +55,12 @@ Push the tag printed by the release command:
 git push origin data-designer-my-plugin/v0.2.0
 ```
 
-## Tap discoverability
+## Catalog discoverability
 
-A released plugin becomes discoverable through a tap when the generated
-`catalog/plugins.json` on the tap's published site includes a package object
-for the package and its runtime entry points. For the NVIDIA tap, that means the
-GitHub Pages catalog at:
+A released plugin becomes discoverable through a catalog when the generated
+`catalog/plugins.json` on the published catalog site includes a package object
+for the package and its runtime entry points. For the NVIDIA catalog, that means
+the GitHub Pages catalog at:
 
 ```text
 https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
@@ -70,17 +70,17 @@ must include entry-point metadata, compatibility metadata, docs URL, and an
 `install` object. The checked-in raw JSON catalog is the source reviewed before
 deployment, but the Pages URL is the canonical installer surface because it is
 deployed with the docs and static package index. Data Designer can discover the
-package from the tap catalog before installation, install it from the package's
+package from the catalog before installation, install it from the package's
 `install.requirement`, and finally discover the runtime plugin from the
 installed package's `data_designer.plugins` entry point.
 
-Tap discovery is not runtime discovery. A catalog package makes plugins visible
+Catalog discovery is not runtime discovery. A catalog package makes plugins visible
 as installable metadata; it does not make them available in a Python
 environment until the package is installed.
 
 ## Install metadata
 
-The NVIDIA tap uses unpinned package-name requirements plus the static Simple API
+The NVIDIA catalog uses unpinned package-name requirements plus the static Simple API
 package index:
 
 ```json
@@ -141,7 +141,7 @@ Tag pushes trigger the publish workflow. It verifies that:
 - all declared `data_designer.plugins` entry points are represented in the
   catalog for the releasing package;
 - catalog package description, compatibility metadata, docs URL, install
-  metadata, and release ref match package metadata and tap config;
+  metadata, and release ref match package metadata and catalog config;
 - plugin tests pass in an isolated virtual environment;
 - the package builds successfully;
 - `twine check` accepts the wheel and source distribution;

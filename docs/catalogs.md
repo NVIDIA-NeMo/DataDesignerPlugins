@@ -1,7 +1,7 @@
-# Plugin Taps
+# Plugin Catalogs
 
-Plugin taps are JSON catalogs that let Data Designer find plugin packages
-before those packages are installed. The default NVIDIA tap catalog URL is:
+Plugin catalogs are JSON documents that let Data Designer find plugin packages
+before those packages are installed. The default NVIDIA catalog URL is:
 
 ```text
 https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
@@ -12,15 +12,15 @@ the documentation site and the static Python Simple API package index.
 
 ## Discovery Layers
 
-Tap discovery and runtime entry-point discovery are separate layers.
+Catalog discovery and runtime entry-point discovery are separate layers.
 
-Tap discovery reads configured catalog files or remote tap URLs. A consumer can
+Catalog discovery reads configured catalog files or remote catalog URLs. A consumer can
 validate `schema_version`, inspect compatibility metadata, show docs links, and
 derive install targets without importing plugin packages.
 
 Runtime entry-point discovery happens only after a plugin package is installed
 in a Python environment. Data Designer discovers installed plugins from the
-`data_designer.plugins` entry-point group. A tap package can describe those
+`data_designer.plugins` entry-point group. A catalog package can describe those
 entry points, but it does not make the plugins available at runtime by itself.
 
 ## Catalog Artifact
@@ -32,16 +32,16 @@ GitHub Pages:
 https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
-The generated package index for catalog packages released by this tap is served
-beside it:
+The generated package index for catalog packages released by this catalog
+repository is served beside it:
 
 ```text
 https://nvidia-nemo.github.io/DataDesignerPlugins/simple/
 ```
 
-External taps may use any unauthenticated raw JSON URL or a local filesystem
+External catalogs may use any unauthenticated raw JSON URL or a local filesystem
 path whose content matches the catalog schema. A local path is useful for
-authoring and offline checks; published taps should give users a raw JSON URL
+authoring and offline checks; published catalogs should give users a raw JSON URL
 and, when needed, an accompanying Python package index.
 
 ## Catalog Example
@@ -146,24 +146,25 @@ references when packages are hosted elsewhere.
 
 ## Trust Model
 
-DDPlugins is the NVIDIA-maintained curated first-party tap. New plugins belong
+DDPlugins is the NVIDIA-maintained curated first-party catalog. New plugins belong
 in this repository when they are NVIDIA-maintained, broadly useful to Data
 Designer users, and have an accountable CODEOWNER who can review changes,
 answer compatibility questions, and own releases.
 
 External, team-specific, experimental, or community-maintained plugins do not
-need to land in DDPlugins to be useful. Publish them from an external tap
+need to land in DDPlugins to be useful. Publish them from an external catalog
 instead.
 
-Adding a tap is a trust decision, not only a discovery preference. A tap points
-to Python packages. Installing from a tap runs package-manager resolution and
-imports code after installation. Data Designer install flows should show the tap
-URL, package name, requirement, index URL or direct reference, and exact install
-command before installing from a non-default tap.
+Adding a catalog is a trust decision, not only a discovery preference. A catalog
+points to Python packages. Installing from a catalog runs package-manager
+resolution and imports code after installation. Data Designer install flows
+should show the catalog URL, package name, requirement, index URL or direct
+reference, and exact install command before installing from a non-default
+catalog.
 
-## External Tap Repositories
+## External Catalog Repositories
 
-A copied or forked tap repository should configure `[tool.ddp.tap]` in the root
+A copied or forked catalog repository should configure `[tool.ddp.catalog]` in the root
 `pyproject.toml`, scaffold plugins with the repo tooling, and publish the
 generated raw JSON catalog.
 
@@ -175,11 +176,11 @@ uv run ddp new my-plugin --type column-generator
 make all
 ```
 
-Configure these tap-level fields for the fork or copied repository:
+Configure these catalog-level fields for the fork or copied repository:
 
 | Field | Purpose |
 | --- | --- |
-| `catalog-url` | Raw JSON URL users should add as the tap. |
+| `catalog-url` | Raw JSON URL users should add as the catalog. |
 | `repository-url` | Human-facing repository URL used in generated package metadata. |
 | `repository-git-url` | Optional human/release metadata for repositories that also use Git refs. |
 | `docs-base-url` | Base URL for generated human docs links. |
@@ -191,10 +192,10 @@ Configure these tap-level fields for the fork or copied repository:
 | `default-data-designer-requirement` | Data Designer dependency written by scaffolds and surfaced in compatibility metadata. |
 | `author-name` | Default author written into scaffolded packages. |
 
-After publishing the JSON catalog and package index, tell users the tap name
-and catalog URL. Once Data Designer tap configuration support is available,
-users should add that catalog URL through the `plugins taps add` flow before
-discovering or installing plugins from the non-default tap.
+After publishing the JSON catalog and package index, tell users the catalog name
+and catalog URL. Once Data Designer catalog configuration support is available,
+users should add that catalog URL through the `plugins catalogs add` flow before
+discovering or installing plugins from the non-default catalog.
 
 ## Maintainer Workflow
 
@@ -203,7 +204,7 @@ Regenerate generated files whenever the inputs change:
 | Input changed | Regenerate | Generated output |
 | --- | --- | --- |
 | Plugin docs or docs metadata | `make plugin-docs` | `docs/plugins/` and the generated plugin nav block in `zensical.toml`. |
-| Plugin package metadata, entry points, compatibility dependency, or tap config | `make catalog` | `catalog/plugins.json`. |
+| Plugin package metadata, entry points, compatibility dependency, or catalog config | `make catalog` | `catalog/plugins.json`. |
 | Package-list metadata or catalog deployment | `make package-index` | `site/simple/`, `site/pypi/`, `site/packages.json`, and `site/catalog/plugins.json`. |
 | Per-plugin `CODEOWNERS` | `make codeowners` | `.github/CODEOWNERS`. |
 | License headers | `make update-license-headers` | SPDX headers in source files. |

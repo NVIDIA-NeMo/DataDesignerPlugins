@@ -24,7 +24,7 @@ constraint-dependencies = [
     "idna>=3.12",
 ]
 
-[tool.ddp.tap]
+[tool.ddp.catalog]
 catalog-url = "https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json"
 repository-url = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"
 repository-git-url = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git"

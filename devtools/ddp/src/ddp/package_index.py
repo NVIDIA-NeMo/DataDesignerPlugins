@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Build and validate the static package index used by the plugin tap."""
+"""Build and validate the static package index used by the plugin catalog."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from packaging.version import InvalidVersion, Version
 
 from ddp import catalog
 from ddp._repo import find_repo_root, load_toml
-from ddp.tap_config import load_tap_config
+from ddp.catalog_config import load_catalog_config
 
 PACKAGE_LIST_FILENAME = "packages.json"
 PACKAGE_FILE_SUFFIXES = (".whl", ".tar.gz", ".zip")
@@ -82,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     Returns:
         Configured argument parser.
     """
-    tap_config = load_tap_config(find_repo_root())
+    catalog_config = load_catalog_config(find_repo_root())
     parser = argparse.ArgumentParser(
         prog="ddp package-index",
         description="Build and validate the static Python package index.",
@@ -90,12 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="package_index_command", required=True)
 
     p_build = sub.add_parser("build", help="Build package index files into a site directory")
-    add_package_list_args(p_build, tap_config.package_assets_url)
+    add_package_list_args(p_build, catalog_config.package_assets_url)
     p_build.add_argument("--site-dir", default="site", type=Path, help="Site output directory to update.")
     p_build.set_defaults(func=_run_build)
 
     p_check = sub.add_parser("check", help="Validate package rows and generated static index files")
-    add_package_list_args(p_check, tap_config.package_assets_url)
+    add_package_list_args(p_check, catalog_config.package_assets_url)
     p_check.set_defaults(func=_run_check)
 
     p_merge = sub.add_parser("merge", help="Merge built distribution files into a packages.json JSON-lines file")

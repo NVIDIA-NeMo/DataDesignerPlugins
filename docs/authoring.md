@@ -4,9 +4,9 @@ Create plugins through the repository tooling first. The scaffold is the source
 of truth for package shape, entry point registration, tests, and ownership
 files.
 
-## Contributing to the NVIDIA tap
+## Contributing to the NVIDIA catalog
 
-This repository is the NVIDIA-maintained curated first-party plugin tap for
+This repository is the NVIDIA-maintained curated first-party plugin catalog for
 Data Designer. Add a new plugin here when all of these are true:
 
 - NVIDIA will maintain the plugin and its releases.
@@ -17,17 +17,17 @@ Data Designer. Add a new plugin here when all of these are true:
 
 Plugins that are external, team-specific, experimental, or community-maintained
 can still be useful without landing in DDPlugins. Publish those from an
-external tap instead. External taps should expose a catalog from an
+external catalog instead. External catalogs should expose a catalog from an
 unauthenticated raw JSON URL, or from a local catalog file path for authoring
-and offline workflows. See [Plugin taps](taps.md) for the consumer and
+and offline workflows. See [Plugin catalogs](catalogs.md) for the consumer and
 maintainer workflow, and [Catalog schema](catalog-schema.md) for
 the JSON contract and install metadata.
 
-Adding a tap is a trust decision, not only a discovery preference. A tap is a
-pointer to Python packages. Installing from a tap runs package-manager
-resolution and imports code after installation. Review the tap URL, package
+Adding a catalog is a trust decision, not only a discovery preference. A catalog
+is a pointer to Python packages. Installing from a catalog runs package-manager
+resolution and imports code after installation. Review the catalog URL, package
 name, requirement, index URL or direct reference, and install command before
-confirming installs from non-default taps.
+confirming installs from non-default catalogs.
 
 ## Scaffold a plugin
 
@@ -98,8 +98,8 @@ from data_designer_my_plugin.config import MyPluginColumnConfig
 
 Do not use relative imports in this repository.
 
-Tap discovery and runtime entry-point discovery are related but separate. The
-tap catalog lets a consumer find package metadata and installation sources
+Catalog discovery and runtime entry-point discovery are related but separate.
+The catalog lets a consumer find package metadata and installation sources
 before a package is installed. Runtime discovery happens later, after
 installation, when Data Designer loads the `data_designer.plugins` entry-point
 group from the active Python environment.
@@ -108,7 +108,7 @@ group from the active Python environment.
 
 `make catalog` builds `catalog/plugins.json` from installed local entry points,
 package metadata, plugin docs metadata, compatibility dependencies, and the
-repository-level `[tool.ddp.tap]` table.
+repository-level `[tool.ddp.catalog]` table.
 
 | Input | Catalog fields |
 | --- | --- |
@@ -119,8 +119,8 @@ repository-level `[tool.ddp.tap]` table.
 | Direct `data-designer` dependency in `[project].dependencies` | `compatibility.data_designer.requirement`, `.specifier`, and `.marker`. |
 | `[project.entry-points."data_designer.plugins"]` | Runtime plugin `entry_point.group`, `entry_point.name`, and `entry_point.value`. |
 | Loaded plugin object | Runtime plugin `name` and `plugin_type` under the package's `plugins` array. |
-| Plugin docs under `plugins/<package>/docs/` plus `[tool.ddp.tap].docs-base-url` | `docs.url`. |
-| `[tool.ddp.tap].package-index-url` | `install.index_url` for packages released through this tap's static Simple index. |
+| Plugin docs under `plugins/<package>/docs/` plus `[tool.ddp.catalog].docs-base-url` | `docs.url`. |
+| `[tool.ddp.catalog].package-index-url` | `install.index_url` for packages released through this catalog's static Simple index. |
 
 Catalog entries describe installability, but they do not replace runtime entry
 points. A plugin becomes available to Data Designer only after the package is
@@ -191,7 +191,7 @@ for usage, configuration, and examples.
 
 ## Regenerate metadata
 
-When plugin docs, plugin metadata, compatibility dependencies, tap config, or
+When plugin docs, plugin metadata, compatibility dependencies, catalog config, or
 ownership changes, regenerate the derived files:
 
 ```bash
@@ -207,7 +207,7 @@ Generated files and their inputs:
 | --- | --- | --- |
 | `docs/plugins/` | `make plugin-docs` | Plugin package docs and package metadata. |
 | Generated plugin nav block in `zensical.toml` | `make plugin-docs` | Generated plugin docs tree. |
-| `catalog/plugins.json` | `make catalog` | Installed entry points, package metadata, install metadata, compatibility dependencies, plugin docs URLs, and `[tool.ddp.tap]`. |
+| `catalog/plugins.json` | `make catalog` | Installed entry points, package metadata, install metadata, compatibility dependencies, plugin docs URLs, and `[tool.ddp.catalog]`. |
 | `site/simple/`, `site/pypi/`, `site/packages.json`, and `site/catalog/plugins.json` | `make package-index` | Package-list JSON lines, package asset URL base, and generated catalog JSON. |
 | `.github/CODEOWNERS` | `make codeowners` | Per-plugin `CODEOWNERS` files. |
 
@@ -219,13 +219,13 @@ versioned `data-designer` dependency in `[project].dependencies`. The catalog
 also publishes the package's `requires-python` specifier and any
 `data-designer` dependency environment marker.
 
-## External tap authoring
+## External catalog authoring
 
-To author an external tap, copy or fork this repository structure and configure
-the root `[tool.ddp.tap]` table for your organization:
+To author an external catalog, copy or fork this repository structure and configure
+the root `[tool.ddp.catalog]` table for your organization:
 
 ```toml
-[tool.ddp.tap]
+[tool.ddp.catalog]
 catalog-url = "https://raw.githubusercontent.com/acme/DataDesignerPlugins/main/catalog/plugins.json"
 repository-url = "https://github.com/acme/DataDesignerPlugins"
 repository-git-url = "https://github.com/acme/DataDesignerPlugins.git"
@@ -249,6 +249,6 @@ make all
 
 Publish the generated `catalog/plugins.json` at the `catalog-url` as raw JSON
 and serve the static package index at `package-index-url`. Once Data Designer
-supports tap configuration, tell users to add that catalog URL through the
-`plugins taps add` flow before discovering or installing plugins from the
-external tap.
+supports catalog configuration, tell users to add that catalog URL through the
+`plugins catalogs add` flow before discovering or installing plugins from the
+external catalog.

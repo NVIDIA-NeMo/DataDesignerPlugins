@@ -90,12 +90,12 @@ class FakeEntryPoint:
         self.value = value
 
 
-def write_tap_pyproject(root: Path, overrides: dict[str, str | None] | None = None) -> None:
-    """Write root tap metadata for catalog tests.
+def write_catalog_pyproject(root: Path, overrides: dict[str, str | None] | None = None) -> None:
+    """Write root catalog metadata for catalog tests.
 
     Args:
         root: Temporary repository root.
-        overrides: Optional field values to override in ``[tool.ddp.tap]``.
+        overrides: Optional field values to override in ``[tool.ddp.catalog]``.
     """
     values = {
         "catalog-url": "https://docs.example.test/ddp/catalog/plugins.json",
@@ -115,7 +115,7 @@ def write_tap_pyproject(root: Path, overrides: dict[str, str | None] | None = No
         "[project]",
         'name = "test-workspace"',
         "",
-        "[tool.ddp.tap]",
+        "[tool.ddp.catalog]",
     ]
     lines.extend(f'{key} = "{value}"' for key, value in values.items() if value is not None)
     root.mkdir(parents=True, exist_ok=True)
@@ -130,7 +130,7 @@ def write_plugin_pyproject(
     entry_points: dict[str, str] | None,
     dependencies: list[str] | None = None,
     requires_python: str = ">=3.10",
-    tap_overrides: dict[str, str | None] | None = None,
+    catalog_overrides: dict[str, str | None] | None = None,
 ) -> None:
     """Write a minimal plugin pyproject for catalog tests.
 
@@ -142,9 +142,9 @@ def write_plugin_pyproject(
         entry_points: Entry points for ``data_designer.plugins``.
         dependencies: Requirement strings for ``[project].dependencies``.
         requires_python: Python compatibility specifier.
-        tap_overrides: Optional root tap metadata overrides.
+        catalog_overrides: Optional root catalog metadata overrides.
     """
-    write_tap_pyproject(plugins_dir.parent, tap_overrides)
+    write_catalog_pyproject(plugins_dir.parent, catalog_overrides)
     plugin_dir = plugins_dir / package_name
     plugin_dir.mkdir(parents=True)
     dependencies = dependencies or ["data-designer>=0.5.7"]
