@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test test-devtools test-plugins validate docs docs-server plugin-docs catalog package-index check-plugin-docs check-catalog check-package-index qa-package-index codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test test-devtools test-plugins validate docs docs-server plugin-docs catalog package-index check-plugin-docs check-catalog check-package-index qa-package-index codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -140,23 +140,7 @@ test-plugin:
 build-plugin: validate-release
 	uv build "$(PLUGIN_DIR)" --out-dir dist/
 
-check-owner:
-	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi
-	@USER_EMAIL=$$(git config user.email); \
-	OWNERS=$$(grep -v '^\s*#' "$(PLUGIN_DIR)/CODEOWNERS" | grep -v '^\s*$$' | awk '{for(i=2;i<=NF;i++) print $$i}'); \
-	MATCH=0; \
-	for owner in $$OWNERS; do \
-		case "$$owner" in *"$$USER_EMAIL"*) MATCH=1;; esac; \
-	done; \
-	if [ "$$MATCH" -eq 0 ]; then \
-		echo "WARNING: $$USER_EMAIL is not listed in $(PLUGIN_DIR)/CODEOWNERS"; \
-		echo "Listed owners: $$OWNERS"; \
-		echo ""; \
-		read -p "Continue anyway? (y/N) " confirm; \
-		[ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ] || exit 1; \
-	fi
-
-release: check-owner test-plugin build-plugin
+release: test-plugin build-plugin
 	@PLUGIN_VERSION=$$(uv run python -c "import tomllib; print(tomllib.load(open('$(PLUGIN_DIR)/pyproject.toml','rb'))['project']['version'])"); \
 	echo "Creating tag: $(PLUGIN)/v$$PLUGIN_VERSION"; \
 	git tag "$(PLUGIN)/v$$PLUGIN_VERSION"; \
