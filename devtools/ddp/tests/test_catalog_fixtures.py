@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for checked-in schema v2 catalog fixtures."""
+"""Tests for checked-in catalog fixtures."""
 
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ def load_catalog_fixture(name: str) -> dict[str, object]:
     return json.loads((CATALOG_FIXTURE_DIR / name).read_text(encoding="utf-8"))
 
 
-def test_schema_v2_valid_fixture_exercises_consumer_contract() -> None:
-    document = load_catalog_fixture("schema-v2-valid.json")
+def test_catalog_valid_fixture_exercises_consumer_contract() -> None:
+    document = load_catalog_fixture("catalog-valid.json")
 
     catalog.validate_catalog_document(document)
 
@@ -108,16 +108,16 @@ def test_schema_v2_valid_fixture_exercises_consumer_contract() -> None:
     ("fixture_name", "message_parts"),
     [
         (
-            "schema-v2-invalid-install.json",
+            "catalog-invalid-install.json",
             ("install.requirement", "expected a requirement"),
         ),
         (
-            "schema-v2-unsupported-version.json",
+            "catalog-unsupported-version.json",
             ("unsupported catalog schema_version", "999", "expected 2"),
         ),
     ],
 )
-def test_schema_v2_invalid_fixtures_fail_for_expected_reason(
+def test_catalog_invalid_fixtures_fail_for_expected_reason(
     fixture_name: str,
     message_parts: tuple[str, ...],
 ) -> None:
@@ -132,7 +132,7 @@ def test_schema_v2_invalid_fixtures_fail_for_expected_reason(
 
 
 def test_catalog_document_rejects_invalid_package_names() -> None:
-    document = load_catalog_fixture("schema-v2-valid.json")
+    document = load_catalog_fixture("catalog-valid.json")
     packages = document["packages"]
     assert isinstance(packages, list)
     package = packages[0]

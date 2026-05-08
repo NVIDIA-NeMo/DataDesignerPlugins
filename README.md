@@ -51,8 +51,8 @@ https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 `catalog/plugins.json` is the generated JSON tap artifact for Data Designer.
 The published Pages site serves that catalog together with the static Python
 package index at `https://nvidia-nemo.github.io/DataDesignerPlugins/simple/`.
-See [docs/taps.md](docs/taps.md) for tap discovery, schema v2 fields,
-`install` metadata, trust expectations, and external tap setup guidance.
+See [docs/taps.md](docs/taps.md) for tap discovery, catalog fields, `install`
+metadata, trust expectations, and external tap setup guidance.
 
 ## Development
 

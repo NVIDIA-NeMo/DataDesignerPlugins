@@ -17,10 +17,10 @@ Data Designer. Add a new plugin here when all of these are true:
 
 Plugins that are external, team-specific, experimental, or community-maintained
 can still be useful without landing in DDPlugins. Publish those from an
-external tap instead. External taps should expose a schema v2 catalog from an
+external tap instead. External taps should expose a catalog from an
 unauthenticated raw JSON URL, or from a local catalog file path for authoring
 and offline workflows. See [Plugin taps](taps.md) for the consumer and
-maintainer workflow, and [Tap catalog schema v2](tap-catalog-schema-v2.md) for
+maintainer workflow, and [Catalog schema](catalog-schema.md) for
 the JSON contract and install metadata.
 
 Adding a tap is a trust decision, not only a discovery preference. A tap is a

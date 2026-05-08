@@ -26,16 +26,13 @@ DataDesignerPlugins/
   entry point contract, implementation expectations, and test shape.
 - [Development workflow](workflow.md) covers local checks, generated metadata,
   documentation builds, and GitHub CI.
-- [Plugin taps](taps.md) covers tap discovery, the default raw NVIDIA tap URL,
-  schema v2 fields, install metadata, trust expectations, and external tap
+- [Plugin taps](taps.md) covers tap discovery, the default NVIDIA tap URL,
+  catalog fields, install metadata, trust expectations, and external tap
   publishing.
-- [Static package index](package-index.md) specifies how release CI stores
-  wheels in GitHub Release assets and serves a `dumb-pypi` Simple API index
-  from GitHub Pages.
-- [Tap catalog schema v2](tap-catalog-schema-v2.md) is the schema reference for
-  catalog validation details and fixtures.
+- [Catalog schema](catalog-schema.md) is the schema reference for catalog
+  validation details and fixtures.
 - [Releasing](releasing.md) covers version bumps, tags, ownership checks, and
-  PyPI publishing.
+  package publishing.
 - [Plugins](plugins/index.md) lists generated plugin pages assembled from each
   plugin package's own docs and metadata.
 
@@ -49,15 +46,15 @@ DataDesignerPlugins/
   changes.
 - Keep `catalog/plugins.json` current when plugin package metadata or entry
   points change.
-- Treat the default NVIDIA tap URL as the raw generated catalog at
+- Treat the default NVIDIA tap URL as the generated catalog at
   `https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json`,
   served from GitHub Pages beside the static package index.
 - Treat DDPlugins as the curated NVIDIA first-party tap. New plugins belong here
   when they are NVIDIA-maintained, broadly useful, and owned by an accountable
   CODEOWNER.
 - Publish unrelated external, team-specific, experimental, or
-  community-maintained plugins from external schema v2 taps rather than requiring
-  them to land in this repository.
+  community-maintained plugins from external taps rather than requiring them to
+  land in this repository.
 - Treat adding a tap as a trust decision, not only a discovery preference.
 - Treat tap catalog discovery and runtime entry-point discovery as separate
   layers.

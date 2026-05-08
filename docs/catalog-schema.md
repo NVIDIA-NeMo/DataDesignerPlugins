@@ -1,8 +1,9 @@
-# Tap Catalog Schema v2
+# Catalog Schema
 
-Schema v2 is the concrete JSON contract for Data Designer plugin tap catalogs.
-It is package-first: a catalog lists installable Python packages, and each
-package lists the Data Designer runtime plugins exposed after installation.
+The catalog schema is the concrete JSON contract for Data Designer plugin tap
+catalogs. It is package-first: a catalog lists installable Python packages, and
+each package lists the Data Designer runtime plugins exposed after
+installation.
 
 This package-first shape keeps the catalog generic. The JSON catalog can be
 hosted anywhere that serves raw JSON, and each package can be installed from
@@ -149,14 +150,14 @@ wheel URL:
 Small checked-in JSON fixtures live in
 `devtools/ddp/tests/fixtures/catalogs/`:
 
-- `schema-v2-valid.json` is a valid schema v2 catalog with compatible
+- `catalog-valid.json` is a valid catalog fixture with compatible
   index-backed, Git direct-reference, and HTTP direct-reference package
   installs, incompatible Python and Data Designer compatibility entries, docs
   URLs, and a multi-plugin package represented as one package with two runtime
   plugin entries.
-- `schema-v2-invalid-install.json` is a schema v2 catalog with malformed
+- `catalog-invalid-install.json` is a catalog fixture with malformed
   install metadata.
-- `schema-v2-unsupported-version.json` uses an unsupported `schema_version`.
+- `catalog-unsupported-version.json` uses an unsupported `schema_version`.
 
 These fixtures are intended for Data Designer CLI and downstream consumer
 contract tests. Consumers should load them as raw JSON from the repository path

@@ -139,7 +139,7 @@ Tag pushes trigger the publish workflow. It verifies that:
 - the package declares `requires-python` and a direct versioned
   `data-designer` dependency;
 - all declared `data_designer.plugins` entry points are represented in the
-  schema v2 catalog for the releasing package;
+  catalog for the releasing package;
 - catalog package version, description, compatibility metadata, docs URL,
   install metadata, and release ref match package metadata and tap config;
 - plugin tests pass in an isolated virtual environment;

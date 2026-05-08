@@ -1,8 +1,7 @@
 # Plugin Taps
 
-Plugin taps are schema v2 JSON catalogs that let Data Designer find plugin
-packages before those packages are installed. The default NVIDIA tap catalog URL
-is:
+Plugin taps are JSON catalogs that let Data Designer find plugin packages
+before those packages are installed. The default NVIDIA tap catalog URL is:
 
 ```text
 https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
@@ -41,13 +40,13 @@ https://nvidia-nemo.github.io/DataDesignerPlugins/simple/
 ```
 
 External taps may use any unauthenticated raw JSON URL or a local filesystem
-path whose content matches schema v2. A local path is useful for authoring and
-offline checks; published taps should give users a raw JSON URL and, when
-needed, an accompanying Python package index.
+path whose content matches the catalog schema. A local path is useful for
+authoring and offline checks; published taps should give users a raw JSON URL
+and, when needed, an accompanying Python package index.
 
-## Schema v2 Example
+## Catalog Example
 
-Schema v2 documents contain `schema_version` and `packages`. Each package entry
+Catalog documents contain `schema_version` and `packages`. Each package entry
 describes one installable Python package and the runtime plugins it exposes
 after installation.
 
@@ -128,7 +127,7 @@ Runtime plugin entry fields:
 | `entry_point.value` | Yes | Entry-point import target from package metadata. |
 
 For the full field contract, validation rules, and fixture descriptions, see
-[Tap catalog schema v2](tap-catalog-schema-v2.md).
+[Catalog schema](catalog-schema.md).
 
 ## Install Metadata
 
@@ -155,8 +154,8 @@ Designer users, and have an accountable CODEOWNER who can review changes,
 answer compatibility questions, and own releases.
 
 External, team-specific, experimental, or community-maintained plugins do not
-need to land in DDPlugins to be useful. Publish them from an external schema v2
-tap instead.
+need to land in DDPlugins to be useful. Publish them from an external tap
+instead.
 
 Adding a tap is a trust decision, not only a discovery preference. A tap points
 to Python packages. Installing from a tap runs package-manager resolution and

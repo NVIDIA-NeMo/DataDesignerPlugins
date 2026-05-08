@@ -116,7 +116,7 @@ Pull requests run the main CI workflow:
 - isolated plugin tests
 - plugin validation
 - generated metadata and license header checks, including `make check-catalog`
-  for checked-in catalog freshness and schema v2 shape, plus
+  for checked-in catalog freshness and catalog shape, plus
   `make check-package-index` for package-list and static index generation
 
 Documentation changes also run the documentation workflow. On pull requests the
