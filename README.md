@@ -3,6 +3,8 @@
 [![Documentation](https://img.shields.io/badge/docs-documentation-blue)](https://nvidia-nemo.github.io/DataDesignerPlugins/)
 
 First-class NVIDIA-provided plugins for [NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner).
+This repository is the NVIDIA-maintained curated first-party plugin catalog for
+Data Designer.
 
 ## Quick Start
 
@@ -18,7 +20,11 @@ Create a new plugin:
 uv run ddp new my-plugin
 ```
 
-This generates a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config, implementation, entry point, docs, tests, and CODEOWNERS. See [docs/authoring.md](docs/authoring.md) for the full authoring guide.
+This generates a column generator by default. Pass `--type seed-reader` or
+`--type processor` to scaffold those plugin types instead. Each scaffold creates
+a complete plugin skeleton under `plugins/data-designer-my-plugin/` with config,
+implementation, entry point, docs, tests, and CODEOWNERS. See
+[docs/authoring.md](docs/authoring.md) for the full authoring guide.
 
 ## Repository Structure
 
@@ -34,6 +40,21 @@ DataDesignerPlugins/
 
 Each plugin is an independent Python package with its own `pyproject.toml`, docs, tests, and CODEOWNERS. The root workspace auto-discovers plugins via `plugins/*`.
 
+## Plugin Catalog
+
+The default NVIDIA plugin catalog URL is:
+
+```text
+https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
+```
+
+`catalog/plugins.json` is the generated JSON catalog artifact for Data Designer.
+The published Pages site serves that catalog together with the static Python
+package index at `https://nvidia-nemo.github.io/DataDesignerPlugins/simple/`.
+See [docs/catalogs.md](docs/catalogs.md) for catalog discovery, catalog
+fields, `install` metadata, trust expectations, and external catalog setup
+guidance.
+
 ## Development
 
 Use the repo's `Makefile` targets for all development tasks:
@@ -47,6 +68,8 @@ make validate           # Run assert_valid_plugin on all entry points
 make check              # Verify generated plugin docs, catalog, CODEOWNERS, and license headers are up to date
 make plugin-docs        # Regenerate docs/plugins/ from per-plugin docs and metadata
 make catalog            # Regenerate catalog/plugins.json
+make package-index      # Add catalog JSON and the static package index to site/
+make qa-package-index   # Build/install a plugin through a scratch local package index
 make docs               # Build the Zensical documentation site
 make docs-server        # Serve docs locally at http://localhost:8000
 make all                # lint + test + validate + check + docs (full local CI)
@@ -77,6 +100,7 @@ The `ddp` command manages the monorepo. Run `uv run ddp --help` to see all subco
 | `ddp sync catalog` | Sync the static plugin catalog JSON |
 | `ddp validate` | Validate all installed plugins |
 | `ddp plugin-docs` | Generate plugin docs site inputs |
+| `ddp package-index` | Build, validate, merge, and QA the static package index |
 | `ddp codeowners` | Aggregate CODEOWNERS to stdout |
 | `ddp license-headers` | Add or check SPDX license headers |
 | `ddp bump <plugin> <part>` | Bump a plugin's semantic version |
@@ -89,7 +113,7 @@ make bump PLUGIN=data-designer-my-plugin PART=patch   # Bump version (major/mino
 git add plugins/data-designer-my-plugin/pyproject.toml
 git commit -m "chore(data-designer-my-plugin): bump version to 0.1.1"
 make release PLUGIN=data-designer-my-plugin            # Tag + build
-git push origin data-designer-my-plugin/v0.1.1         # Triggers CI publish
+git push origin data-designer-my-plugin/v0.1.1         # Triggers CI release
 ```
 
 See [docs/releasing.md](docs/releasing.md) for the full release guide.

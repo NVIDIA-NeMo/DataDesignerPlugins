@@ -12,7 +12,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,7 +65,8 @@ jobs:
           # as a PAT secret if team resolution fails.
           GH_TOKEN: ${{ secrets.MEMBERSHIP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          OWNERS=$(grep -v '^\s*#' "${PLUGIN_DIR}/CODEOWNERS" | grep -v '^\s*$' | awk '{for(i=2;i<=NF;i++) print $i}')
+          ALL_OWNERS=$(uv run python -m ddp.release_owners --all "${PLUGIN_DIR}/CODEOWNERS")
+          OWNERS=$(uv run python -m ddp.release_owners "${PLUGIN_DIR}/CODEOWNERS")
           MATCH=0
           for owner in $OWNERS; do
             case "$owner" in
@@ -78,7 +84,7 @@ jobs:
           done
           if [ "$MATCH" -eq 0 ]; then
             echo "ERROR: @${ACTOR} is not an authorized owner of ${PLUGIN_DIR}/CODEOWNERS"
-            echo "Listed owners: $OWNERS"
+            echo "Listed owners: $ALL_OWNERS"
             exit 1
           fi
 
@@ -96,7 +102,68 @@ jobs:
       - name: Build distribution
         run: uv build "${{ steps.tag.outputs.plugin_dir }}" --out-dir dist/
 
-      - name: Publish to PyPI
+      - name: Check distribution metadata
+        run: uv run twine check dist/*
+
+      - name: Ensure package asset release
         env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
-        run: uv publish dist/*
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET_TAG="ddp-package-assets"
+          if gh release view "${ASSET_TAG}" >/dev/null 2>&1; then
+            gh release edit "${ASSET_TAG}" --latest=false
+          else
+            gh release create "${ASSET_TAG}" \
+              --title "Data Designer plugin package assets" \
+              --notes "Package files and package-list metadata for the static Data Designer plugin index." \
+              --latest=false
+          fi
+
+      - name: Upload package files without clobbering changed bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET_TAG="ddp-package-assets"
+          mkdir -p release-assets-existing
+          for package_file in dist/*; do
+            asset_name="$(basename "${package_file}")"
+            rm -rf release-assets-existing/*
+            if gh release download "${ASSET_TAG}" --pattern "${asset_name}" --dir release-assets-existing >/dev/null 2>&1; then
+              existing_hash="$(sha256sum "release-assets-existing/${asset_name}" | awk '{print $1}')"
+              new_hash="$(sha256sum "${package_file}" | awk '{print $1}')"
+              if [ "${existing_hash}" != "${new_hash}" ]; then
+                echo "ERROR: ${asset_name} already exists with a different SHA256"
+                exit 1
+              fi
+              echo "${asset_name} already exists with matching SHA256"
+            else
+              gh release upload "${ASSET_TAG}" "${package_file}"
+            fi
+          done
+
+      - name: Update package-list metadata asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET_TAG="ddp-package-assets"
+          mkdir -p release-metadata
+          gh release download "${ASSET_TAG}" --pattern packages.json --dir release-metadata \
+            || : > release-metadata/packages.json
+          uv run ddp package-index merge \
+            --package-list release-metadata/packages.json \
+            --dist-dir dist \
+            --output release-metadata/packages.json
+          gh release delete-asset "${ASSET_TAG}" packages.json -y || true
+          gh release upload "${ASSET_TAG}" release-metadata/packages.json
+
+      - uses: actions/configure-pages@v5
+
+      - name: Build documentation and static package index
+        run: make docs PACKAGE_LIST=release-metadata/packages.json
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4
+        id: deployment

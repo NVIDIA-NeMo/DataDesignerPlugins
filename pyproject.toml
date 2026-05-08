@@ -24,6 +24,19 @@ constraint-dependencies = [
     "idna>=3.12",
 ]
 
+[tool.ddp.catalog]
+catalog-url = "https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json"
+repository-url = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"
+repository-git-url = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git"
+docs-base-url = "https://nvidia-nemo.github.io/DataDesignerPlugins/"
+package-prefix = "data-designer-"
+package-index-url = "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
+package-assets-url = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins/releases/download/ddp-package-assets/"
+package-assets-release-tag = "ddp-package-assets"
+release-ref-template = "{package}/v{version}"
+default-data-designer-requirement = "data-designer>=0.5.7"
+author-name = "NVIDIA Corporation"
+
 [tool.ruff]
 line-length = 120
 indent-width = 4
@@ -62,5 +75,7 @@ testpaths = ["plugins"]
 
 [dependency-groups]
 dev = [
+    "dumb-pypi>=1.15.0",
+    "twine>=6.0.0",
     "zensical>=0.0.40",
 ]

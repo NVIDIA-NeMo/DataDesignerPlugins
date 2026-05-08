@@ -10,7 +10,7 @@ custom documentation under `plugins/data-designer-retrieval-sdg/docs/` yet.
 ## Metadata
 
 - Version: `0.1.0`
-- Column types: `document-chunker`, `embedding-dedup`
+- Entry points: `document-chunker`, `embedding-dedup`
 
 ## Installation
 

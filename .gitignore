@@ -34,6 +34,9 @@ htmlcov/
 .mypy_cache/
 site/
 
+# Local docs
+.local-docs/
+
 # Distribution
 *.tar.gz
 

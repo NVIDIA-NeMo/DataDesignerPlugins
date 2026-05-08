@@ -62,7 +62,7 @@ def test_discover_plugin_docs_reads_metadata_and_source_docs(tmp_path: Path) -> 
 
     assert len(plugins) == 1
     assert plugins[0].package_name == "data-designer-alpha"
-    assert plugins[0].column_types == ("alpha",)
+    assert plugins[0].entry_points == ("alpha",)
     assert plugins[0].source_docs_dir == tmp_path / "plugins" / "data-designer-alpha" / "docs"
 
 
@@ -99,7 +99,7 @@ def test_sync_plugin_docs_generates_fallback_page_without_plugin_docs(tmp_path: 
     page = (tmp_path / "docs" / "plugins" / "data-designer-alpha" / "index.md").read_text(encoding="utf-8")
     assert "# data-designer-alpha" in page
     assert "custom documentation" in page
-    assert "Column types: `alpha`" in page
+    assert "Entry points: `alpha`" in page
 
 
 def test_sync_plugin_docs_maps_root_readme_to_index(tmp_path: Path) -> None:

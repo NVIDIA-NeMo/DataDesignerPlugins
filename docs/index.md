@@ -1,7 +1,8 @@
 # Data Designer Plugins
 
 This repository contains first-class NVIDIA-provided plugins for
-[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner). Use these
+[NeMo Data Designer](https://github.com/NVIDIA-NeMo/DataDesigner). It is the
+NVIDIA-maintained curated first-party plugin catalog for Data Designer. Use these
 docs when you need to create, review, validate, or release a plugin.
 
 ## What lives here
@@ -25,8 +26,13 @@ DataDesignerPlugins/
   entry point contract, implementation expectations, and test shape.
 - [Development workflow](workflow.md) covers local checks, generated metadata,
   documentation builds, and GitHub CI.
+- [Plugin catalogs](catalogs.md) covers catalog discovery, the default NVIDIA catalog URL,
+  catalog fields, install metadata, trust expectations, and external catalog
+  publishing.
+- [Catalog schema](catalog-schema.md) is the schema reference for catalog
+  validation details and fixtures.
 - [Releasing](releasing.md) covers version bumps, tags, ownership checks, and
-  PyPI publishing.
+  package publishing.
 - [Plugins](plugins/index.md) lists generated plugin pages assembled from each
   plugin package's own docs and metadata.
 
@@ -40,4 +46,16 @@ DataDesignerPlugins/
   changes.
 - Keep `catalog/plugins.json` current when plugin package metadata or entry
   points change.
+- Treat the default NVIDIA catalog URL as the generated catalog at
+  `https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json`,
+  served from GitHub Pages beside the static package index.
+- Treat DDPlugins as the curated NVIDIA first-party catalog. New plugins belong here
+  when they are NVIDIA-maintained, broadly useful, and owned by an accountable
+  CODEOWNER.
+- Publish unrelated external, team-specific, experimental, or
+  community-maintained plugins from external catalogs rather than requiring them to
+  land in this repository.
+- Treat adding a catalog as a trust decision, not only a discovery preference.
+- Treat catalog discovery and runtime entry-point discovery as separate
+  layers.
 - Run the Makefile targets locally before opening or updating a pull request.

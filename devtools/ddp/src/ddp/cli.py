@@ -9,6 +9,7 @@ Usage::
     ddp new my-plugin       # Scaffold a new plugin
     ddp plugin-docs         # Generate plugin documentation pages
     ddp sync catalog        # Sync generated catalog JSON
+    ddp package-index check # Validate package index metadata
     ddp validate            # Validate all installed plugins
     ddp bump <plugin> patch # Bump a plugin version
 """
@@ -32,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     # ddp new <name>
+    from ddp.scaffold import DEFAULT_PLUGIN_SCAFFOLD_TYPE, PLUGIN_SCAFFOLD_TYPES
+
     p_new = sub.add_parser(
         "new",
         help="Scaffold a new plugin",
@@ -42,6 +45,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_new.add_argument("name", help="Plugin name in kebab-case (e.g., my-cool-thing)")
+    p_new.add_argument(
+        "--type",
+        choices=PLUGIN_SCAFFOLD_TYPES,
+        default=DEFAULT_PLUGIN_SCAFFOLD_TYPE,
+        dest="plugin_type",
+        help="Plugin type to scaffold (default: column-generator).",
+    )
     p_new.set_defaults(func=_run_new)
 
     # ddp plugin-docs
@@ -76,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sync plugin catalog JSON",
         description=(
             "Sync catalog/plugins.json from installed local DataDesigner plugins and package metadata "
-            "(package, version, runtime plugin name, type, description, entry point, and compatibility)."
+            "(package, runtime plugin name, type, description, entry point, and compatibility)."
         ),
     )
     p_sync_catalog.add_argument(
@@ -85,6 +95,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check whether the catalog is current without updating catalog/plugins.json",
     )
     p_sync_catalog.set_defaults(func=_run_sync_catalog)
+
+    # ddp package-index <command>
+    p_package_index = sub.add_parser(
+        "package-index",
+        help="Build and validate the static package index",
+        description=(
+            "Build, validate, merge, and locally QA the dumb-pypi static package index "
+            "used by released Data Designer plugin packages."
+        ),
+    )
+    p_package_index.add_argument("package_index_args", nargs=argparse.REMAINDER)
+    p_package_index.set_defaults(func=_run_package_index)
 
     # ddp codeowners
     p_codeowners = sub.add_parser(
@@ -131,9 +153,9 @@ def build_parser() -> argparse.ArgumentParser:
         "check-release",
         help="Validate plugin metadata for release",
         description=(
-            "Validate that a plugin's pyproject.toml is release-ready: checks that "
-            "the file version matches the expected tag version and that all required "
-            "PyPI metadata fields (description, license, readme, authors) are present."
+            "Validate that a plugin package is release-ready: checks pyproject metadata, "
+            "the release ref contract, release-eligible CODEOWNERS, and checked-in "
+            "catalog entries for the package."
         ),
     )
     p_check_release.add_argument("plugin_name", help="Plugin name (e.g. data-designer-my-plugin)")
@@ -164,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _run_new(args: argparse.Namespace) -> int:
     from ddp.scaffold import main as scaffold_main
 
-    scaffold_main([args.name])
+    scaffold_main([args.name, "--type", args.plugin_type])
     return 0
 
 
@@ -193,6 +215,12 @@ def _run_sync_catalog(args: argparse.Namespace) -> int:
 
     print(f"Synced catalog: {output_path}")
     return 0
+
+
+def _run_package_index(args: argparse.Namespace) -> int:
+    from ddp.package_index import main as package_index_main
+
+    return package_index_main(args.package_index_args)
 
 
 def _run_codeowners(args: argparse.Namespace) -> int:
