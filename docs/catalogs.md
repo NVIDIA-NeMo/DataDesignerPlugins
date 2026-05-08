@@ -25,8 +25,8 @@ entry points, but it does not make the plugins available at runtime by itself.
 
 ## Catalog Artifact
 
-The NVIDIA catalog is the generated `catalog/plugins.json` file served through
-GitHub Pages:
+The NVIDIA catalog is the checked-in `catalog/plugins.json` registry served
+through GitHub Pages:
 
 ```text
 https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
@@ -165,14 +165,15 @@ catalog.
 ## External Catalog Repositories
 
 A copied or forked catalog repository should configure `[tool.ddp.catalog]` in the root
-`pyproject.toml`, scaffold plugins with the repo tooling, and publish the
-generated raw JSON catalog.
+`pyproject.toml`, scaffold plugins with the repo tooling, register packages as
+they become release-ready, and publish the raw JSON catalog.
 
 Minimal flow:
 
 ```bash
 make sync
 uv run ddp new my-plugin --type column-generator
+make catalog PLUGIN=data-designer-my-plugin
 make all
 ```
 
@@ -199,16 +200,16 @@ discovering or installing plugins from the non-default catalog.
 
 ## Maintainer Workflow
 
-Regenerate generated files whenever the inputs change:
+Use focused commands for each maintained surface:
 
-| Input changed | Regenerate | Generated output |
+| Input changed | Command | Output |
 | --- | --- | --- |
 | Plugin docs or docs metadata | `make plugin-docs` | `docs/plugins/` and the generated plugin nav block in `zensical.toml`. |
-| Plugin package metadata, entry points, compatibility dependency, or catalog config | `make catalog` | `catalog/plugins.json`. |
+| Package is ready for first release | `make catalog PLUGIN=<package>` | Add one package registration to `catalog/plugins.json`. |
 | Package-list metadata or catalog deployment | `make package-index` | `site/simple/`, `site/pypi/`, `site/packages.json`, and `site/catalog/plugins.json`. |
 | Per-plugin `CODEOWNERS` | `make codeowners` | `.github/CODEOWNERS`. |
 | License headers | `make update-license-headers` | SPDX headers in source files. |
 
-Validate with `make check-catalog` for catalog-only changes,
+Validate with `make check-catalog` for catalog JSON validity,
 `make check-package-index` for package-index metadata, `make check` for all
 generated metadata, and `make docs` for the strict documentation build.

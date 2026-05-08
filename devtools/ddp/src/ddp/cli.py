@@ -8,7 +8,7 @@ Usage::
     ddp --help              # List all subcommands
     ddp new my-plugin       # Scaffold a new plugin
     ddp plugin-docs         # Generate plugin documentation pages
-    ddp sync catalog        # Sync generated catalog JSON
+    ddp catalog register data-designer-my-plugin
     ddp package-index check # Validate package index metadata
     ddp validate            # Validate all installed plugins
     ddp bump <plugin> patch # Bump a plugin version
@@ -70,29 +70,64 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_plugin_docs.set_defaults(func=_run_plugin_docs)
 
+    # ddp catalog <command>
+    p_catalog = sub.add_parser(
+        "catalog",
+        help="Register and validate catalog entries",
+        description=(
+            "Manage catalog/plugins.json as a first-release package registry. "
+            "New packages are registered explicitly when they become release candidates."
+        ),
+    )
+    catalog_sub = p_catalog.add_subparsers(dest="catalog_command", required=True)
+
+    p_catalog_register = catalog_sub.add_parser(
+        "register",
+        help="Register one package in catalog/plugins.json",
+        description=(
+            "Add one plugin package to catalog/plugins.json. This is intended for the first release of a package; "
+            "subsequent version releases reuse the existing registration."
+        ),
+    )
+    p_catalog_register.add_argument("plugin", help="Plugin package name (e.g. data-designer-my-plugin)")
+    p_catalog_register.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace an existing registration when correcting catalog metadata",
+    )
+    p_catalog_register.set_defaults(func=_run_catalog_register)
+
+    p_catalog_check = catalog_sub.add_parser(
+        "check",
+        help="Validate catalog/plugins.json",
+        description="Validate the checked-in catalog JSON without syncing from local plugin packages.",
+    )
+    p_catalog_check.set_defaults(func=_run_catalog_check)
+
     # ddp sync <artifact>
     p_sync = sub.add_parser(
         "sync",
         help="Sync generated repository artifacts",
         description=(
             "Sync generated repository artifacts from the current workspace state. "
-            "Use subcommands such as `ddp sync catalog` for individual artifacts."
+            "`ddp sync catalog` is a full regeneration escape hatch; use "
+            "`ddp catalog register <plugin>` for first-release catalog registration."
         ),
     )
     sync_sub = p_sync.add_subparsers(dest="sync_target", required=True)
 
     p_sync_catalog = sync_sub.add_parser(
         "catalog",
-        help="Sync plugin catalog JSON",
+        help="Regenerate plugin catalog JSON from all local packages",
         description=(
-            "Sync catalog/plugins.json from installed local DataDesigner plugins and package metadata "
-            "(package, runtime plugin name, type, description, entry point, and compatibility)."
+            "Regenerate catalog/plugins.json from installed local DataDesigner plugins and package metadata. "
+            "This is not the normal first-release registration path."
         ),
     )
     p_sync_catalog.add_argument(
         "--check",
         action="store_true",
-        help="Check whether the catalog is current without updating catalog/plugins.json",
+        help="Check whether full local regeneration would change catalog/plugins.json",
     )
     p_sync_catalog.set_defaults(func=_run_sync_catalog)
 
@@ -197,6 +232,38 @@ def _run_plugin_docs(args: argparse.Namespace) -> int:
     return plugin_docs_main(argv)
 
 
+def _run_catalog_register(args: argparse.Namespace) -> int:
+    from ddp._repo import find_repo_root
+    from ddp.catalog import CatalogError, register_catalog_package
+
+    plugin_dir = find_repo_root() / "plugins" / args.plugin
+    try:
+        output_path = register_catalog_package(plugin_dir, replace=args.replace)
+    except CatalogError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Registered catalog package: {output_path}")
+    return 0
+
+
+def _run_catalog_check(args: argparse.Namespace) -> int:
+    from ddp.catalog import PLUGINS_CATALOG_PATH, CatalogError, catalog_entries_from_catalog_path
+
+    if not PLUGINS_CATALOG_PATH.is_file():
+        print(f"ERROR: {PLUGINS_CATALOG_PATH} is missing", file=sys.stderr)
+        return 1
+    try:
+        entries = catalog_entries_from_catalog_path(PLUGINS_CATALOG_PATH)
+    except CatalogError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    package_count = len({entry.plugin_package for entry in entries})
+    print(f"Catalog is valid: {package_count} package(s), {len(entries)} plugin entry point(s).")
+    return 0
+
+
 def _run_sync_catalog(args: argparse.Namespace) -> int:
     from ddp.catalog import CatalogError, check_catalog, sync_catalog
 
@@ -205,7 +272,11 @@ def _run_sync_catalog(args: argparse.Namespace) -> int:
             if check_catalog():
                 print("Catalog is up to date.")
                 return 0
-            print("ERROR: catalog is out of date; run `uv run ddp sync catalog`.", file=sys.stderr)
+            print(
+                "ERROR: catalog differs from full local regeneration; run `uv run ddp sync catalog` "
+                "only if you intend to rewrite the entire catalog.",
+                file=sys.stderr,
+            )
             return 1
 
         output_path = sync_catalog()

@@ -74,7 +74,8 @@ plugin-docs:
 	uv run ddp plugin-docs
 
 catalog:
-	uv run ddp sync catalog
+	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name> to register a first-release catalog entry"; exit 1; fi
+	uv run ddp catalog register "$(PLUGIN)"
 
 package-index:
 	uv run ddp package-index build --package-list "$(PACKAGE_LIST)" --packages-url "$(PACKAGES_URL)" --site-dir "$(PACKAGE_INDEX_SITE)"
@@ -89,7 +90,7 @@ check-plugin-docs:
 	uv run ddp plugin-docs --check
 
 check-catalog:
-	uv run ddp sync catalog --check
+	uv run ddp catalog check
 
 check-package-index:
 	uv run ddp package-index check --package-list "$(PACKAGE_LIST)" --packages-url "$(PACKAGES_URL)"

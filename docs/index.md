@@ -42,11 +42,11 @@ DataDesignerPlugins/
 - Keep plugins self-contained.
 - Target Python 3.10 and newer.
 - Write tests around public interfaces.
-- Regenerate generated metadata when plugin docs, plugin metadata, or ownership
-  changes.
-- Keep `catalog/plugins.json` current when plugin package metadata or entry
-  points change.
-- Treat the default NVIDIA catalog URL as the generated catalog at
+- Regenerate generated metadata when plugin docs or ownership changes.
+- Register a package in `catalog/plugins.json` only when preparing its first
+  release, and use targeted replacement only for intentional catalog metadata
+  corrections.
+- Treat the default NVIDIA catalog URL as the published catalog at
   `https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json`,
   served from GitHub Pages beside the static package index.
 - Treat DDPlugins as the curated NVIDIA first-party catalog. New plugins belong here

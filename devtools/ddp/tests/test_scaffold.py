@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 import textwrap
 from pathlib import Path
@@ -16,7 +17,7 @@ from data_designer.engine.resources.seed_reader import SeedReader
 from data_designer.engine.testing.utils import assert_valid_plugin
 from data_designer.plugins.plugin import PluginType
 
-from ddp import scaffold
+from ddp import catalog, scaffold
 
 EXPECTED_FILE_TREE = {
     "CODEOWNERS",
@@ -176,6 +177,29 @@ def test_scaffold_uses_external_catalog_config_in_generated_files(
     assert "github.com/NVIDIA-NeMo/DataDesignerPlugins" not in docs_index
 
     assert "from acme_dd_sample_plugin.plugin import plugin" in test_file
+
+
+def test_scaffold_does_not_register_catalog_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scaffold_sample_plugin(tmp_path, monkeypatch)
+
+    assert not (tmp_path / "catalog" / "plugins.json").exists()
+
+
+def test_scaffolded_package_can_be_registered_for_first_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plugin_dir = scaffold_sample_plugin(tmp_path, monkeypatch)
+    catalog_path = tmp_path / "catalog" / "plugins.json"
+
+    catalog.register_catalog_package(plugin_dir, catalog_path=catalog_path)
+
+    output = json.loads(catalog_path.read_text(encoding="utf-8"))
+    assert output["packages"][0]["name"] == "acme-dd-sample-plugin"
+    assert output["packages"][0]["plugins"][0]["name"] == "sample-plugin"
 
 
 def test_column_generator_scaffold_contents_are_default(

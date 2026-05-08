@@ -9,6 +9,7 @@ import importlib.metadata
 import json
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,7 @@ CATALOG_DATA_DESIGNER_COMPATIBILITY_KEYS = {"marker", "requirement", "specifier"
 CATALOG_DOCS_KEYS = {"url"}
 CATALOG_INSTALL_REQUIRED_KEYS = {"requirement"}
 CATALOG_INSTALL_OPTIONAL_KEYS = {"index_url"}
+PluginLoader = Callable[[str, str, str, Path], Any]
 
 
 class CatalogError(RuntimeError):
@@ -141,14 +143,65 @@ def sync_catalog() -> Path:
     return PLUGINS_CATALOG_PATH
 
 
-def check_catalog() -> bool:
-    """Check whether the repository plugin catalog JSON file is current.
+def register_catalog_package(
+    package_dir: Path,
+    catalog_path: Path | None = None,
+    plugin_loader: PluginLoader | None = None,
+    replace: bool = False,
+) -> Path:
+    """Register or replace one package in the repository catalog.
 
-    When the catalog is stale, a sibling ``.new`` file is written with the
+    Args:
+        package_dir: Plugin package directory containing ``pyproject.toml``.
+        catalog_path: Catalog JSON file to update.
+        plugin_loader: Optional plugin loader. Defaults to loading entry points
+            directly from the package source tree so first-release registration
+            does not require an editable install.
+        replace: Whether to replace an existing package registration.
+
+    Returns:
+        Path to the updated catalog file.
+
+    Raises:
+        CatalogError: If the package or existing catalog is invalid.
+    """
+    package_dir = package_dir.resolve()
+    catalog_path = catalog_path or PLUGINS_CATALOG_PATH
+    plugins_dir = package_dir.parent
+    catalog_config = catalog_config_for_plugins_dir(plugins_dir)
+    new_entries = catalog_entries_for_package_dir(
+        package_dir=package_dir,
+        catalog_config=catalog_config,
+        plugin_loader=plugin_loader or load_plugin_from_source_entry_point,
+    )
+    if not new_entries:
+        raise CatalogError(f"package at {package_dir.as_posix()!r} produced no catalog entries")
+
+    package_name = new_entries[0].plugin_package
+    all_existing_entries = catalog_entries_from_catalog_path(catalog_path)
+    existing_package_entries = [entry for entry in all_existing_entries if entry.plugin_package == package_name]
+    if existing_package_entries and not replace:
+        raise CatalogError(
+            f"package {package_name!r} is already registered in {catalog_path.as_posix()}; "
+            "use --replace only when correcting catalog registration metadata"
+        )
+
+    existing_entries = [entry for entry in all_existing_entries if entry.plugin_package != package_name]
+    output = render_catalog_json([*existing_entries, *new_entries])
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    catalog_path.write_text(output, encoding="utf-8")
+    return catalog_path
+
+
+def check_catalog() -> bool:
+    """Check whether full local regeneration matches the catalog JSON file.
+
+    When the catalog differs, a sibling ``.new`` file is written with the
     expected content so CI can upload it as a drift artifact.
 
     Returns:
-        ``True`` when the catalog is current, otherwise ``False``.
+        ``True`` when full local regeneration matches the catalog, otherwise
+        ``False``.
 
     Raises:
         CatalogError: If a catalog entry cannot be generated.
@@ -174,6 +227,46 @@ def validate_catalog_document(document: object) -> None:
     Raises:
         CatalogError: If the document does not match the catalog contract.
     """
+    entries = catalog_entries_for_catalog_document(document)
+    validate_catalog_entries(entries)
+
+
+def catalog_entries_from_catalog_path(catalog_path: Path) -> list[CatalogEntry]:
+    """Read and validate catalog entries from a catalog JSON file.
+
+    Missing files are treated as an empty catalog so registration can create the
+    initial catalog when the first package is registered.
+
+    Args:
+        catalog_path: Catalog JSON path.
+
+    Returns:
+        Catalog entries decoded from the file.
+
+    Raises:
+        CatalogError: If the file is malformed.
+    """
+    if not catalog_path.exists():
+        return []
+    try:
+        document = json.loads(catalog_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise CatalogError(f"{catalog_path.as_posix()} is not valid JSON: {exc}") from exc
+    return catalog_entries_for_catalog_document(document)
+
+
+def catalog_entries_for_catalog_document(document: object) -> list[CatalogEntry]:
+    """Return validated catalog entries from a decoded catalog document.
+
+    Args:
+        document: Decoded catalog JSON object.
+
+    Returns:
+        Catalog entries from all packages in the document.
+
+    Raises:
+        CatalogError: If the document is malformed.
+    """
     catalog_document = required_catalog_object("catalog document", document, CATALOG_DOCUMENT_KEYS)
     schema_version = catalog_document["schema_version"]
     if schema_version != CATALOG_SCHEMA_VERSION:
@@ -189,6 +282,7 @@ def validate_catalog_document(document: object) -> None:
         for entry in catalog_entries_for_catalog_package(raw_package, index)
     ]
     validate_catalog_entries(entries)
+    return entries
 
 
 def catalog_entries_for_catalog_package(raw_package: object, index: int) -> list[CatalogEntry]:
@@ -579,48 +673,96 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
     catalog_config = catalog_config_for_plugins_dir(plugins_dir)
     entries: list[CatalogEntry] = []
     for toml_path in sorted(plugins_dir.glob("*/pyproject.toml")):
-        data = load_toml(toml_path)
-        project = project_table_for_pyproject(data, toml_path)
-
-        name = required_project_string(toml_path.parent.name, project, "name")
-        version = project_version(toml_path.parent.name, project.get("version"))
-        description = optional_project_string(name, project, "description")
-        python_requires = python_requires_specifier(name, project.get("requires-python"))
-        data_designer_requirement = data_designer_requirement_for_dependencies(
-            package_name=name,
-            dependencies=project.get("dependencies", []),
-        )
-        data_designer = Requirement(data_designer_requirement)
-        data_designer_version_specifier = str(data_designer.specifier)
-        data_designer_marker = str(data_designer.marker) if data_designer.marker is not None else None
-
-        entry_points = data_designer_entry_points(name, project)
-        repository_path = toml_path.parent.relative_to(plugins_dir.parent).as_posix()
-        install = install_metadata_for_package(
-            catalog_config=catalog_config,
-            package_name=name,
-        )
-        docs_url = catalog_config.docs_url_for_package(name)
-        for entry_point_name, entry_point_value in sorted(entry_points.items()):
-            entries.append(
-                catalog_entry_for_entry_point(
-                    package_name=name,
-                    version=version,
-                    description=description,
-                    entry_point_name=entry_point_name,
-                    entry_point_value=entry_point_value,
-                    package_dir=toml_path.parent,
-                    repository_path=repository_path,
-                    python_requires=python_requires,
-                    data_designer_requirement=data_designer_requirement,
-                    data_designer_version_specifier=data_designer_version_specifier,
-                    data_designer_marker=data_designer_marker,
-                    install=install,
-                    docs_url=docs_url,
-                )
+        entries.extend(
+            catalog_entries_for_package_dir(
+                package_dir=toml_path.parent,
+                catalog_config=catalog_config,
+                plugin_loader=load_plugin_from_entry_point,
             )
+        )
 
     return sorted(entries, key=lambda entry: (entry.plugin_package, entry.name))
+
+
+def catalog_entries_for_package_dir(
+    package_dir: Path,
+    catalog_config: CatalogConfig,
+    plugin_loader: PluginLoader,
+) -> list[CatalogEntry]:
+    """Build catalog entries for one local plugin package directory.
+
+    Args:
+        package_dir: Plugin package directory containing ``pyproject.toml``.
+        catalog_config: Repository-level catalog metadata.
+        plugin_loader: Loader used to resolve each entry point to a
+            DataDesigner ``Plugin`` object.
+
+    Returns:
+        Catalog entries for the package.
+
+    Raises:
+        CatalogError: If package metadata or plugin runtime metadata is invalid.
+    """
+    toml_path = package_dir / "pyproject.toml"
+    if not toml_path.is_file():
+        raise CatalogError(f"package at {package_dir.as_posix()!r} is missing pyproject.toml")
+
+    data = load_toml(toml_path)
+    project = project_table_for_pyproject(data, toml_path)
+
+    name = required_project_string(package_dir.name, project, "name")
+    version = project_version(package_dir.name, project.get("version"))
+    description = optional_project_string(name, project, "description")
+    python_requires = python_requires_specifier(name, project.get("requires-python"))
+    data_designer_requirement = data_designer_requirement_for_dependencies(
+        package_name=name,
+        dependencies=project.get("dependencies", []),
+    )
+    data_designer = Requirement(data_designer_requirement)
+    data_designer_version_specifier = str(data_designer.specifier)
+    data_designer_marker = str(data_designer.marker) if data_designer.marker is not None else None
+
+    entry_points = data_designer_entry_points(name, project)
+    repository_path = package_repository_path(package_dir)
+    install = install_metadata_for_package(
+        catalog_config=catalog_config,
+        package_name=name,
+    )
+    docs_url = catalog_config.docs_url_for_package(name)
+    return [
+        catalog_entry_for_entry_point(
+            package_name=name,
+            version=version,
+            description=description,
+            entry_point_name=entry_point_name,
+            entry_point_value=entry_point_value,
+            package_dir=package_dir,
+            repository_path=repository_path,
+            python_requires=python_requires,
+            data_designer_requirement=data_designer_requirement,
+            data_designer_version_specifier=data_designer_version_specifier,
+            data_designer_marker=data_designer_marker,
+            install=install,
+            docs_url=docs_url,
+            plugin_loader=plugin_loader,
+        )
+        for entry_point_name, entry_point_value in sorted(entry_points.items())
+    ]
+
+
+def package_repository_path(package_dir: Path) -> str:
+    """Return a stable repository-relative path for a plugin package.
+
+    Args:
+        package_dir: Plugin package directory.
+
+    Returns:
+        Repository-relative path when the package lives under ``plugins/``;
+        otherwise the package directory path as provided.
+    """
+    if package_dir.parent.name == "plugins":
+        return package_dir.relative_to(package_dir.parent.parent).as_posix()
+    return package_dir.as_posix()
 
 
 def catalog_config_for_plugins_dir(plugins_dir: Path) -> CatalogConfig:
@@ -679,6 +821,7 @@ def catalog_entry_for_entry_point(
     data_designer_marker: str | None,
     install: dict[str, object],
     docs_url: str,
+    plugin_loader: PluginLoader | None = None,
 ) -> CatalogEntry:
     """Build a catalog entry from an installed DataDesigner plugin entry point.
 
@@ -701,6 +844,8 @@ def catalog_entry_for_entry_point(
             unconditionally active.
         install: Install requirement metadata for the package.
         docs_url: Absolute documentation URL for the package.
+        plugin_loader: Optional plugin loader. Defaults to loading an installed
+            entry point.
 
     Returns:
         Catalog entry with runtime plugin metadata.
@@ -708,7 +853,8 @@ def catalog_entry_for_entry_point(
     Raises:
         CatalogError: If plugin metadata cannot be loaded or read.
     """
-    plugin = load_plugin_from_entry_point(
+    loader = plugin_loader or load_plugin_from_entry_point
+    plugin = loader(
         package_name=package_name,
         entry_point_name=entry_point_name,
         entry_point_value=entry_point_value,
@@ -983,6 +1129,77 @@ def load_plugin_from_entry_point(
         plugin = entry_point.load()
     except Exception as exc:
         raise CatalogError(f"could not load package {package_name!r} entry point {entry_point_name!r}: {exc}") from exc
+
+    if not isinstance(plugin, Plugin):
+        raise CatalogError(
+            f"package {package_name!r} entry point {entry_point_name!r} loaded {type(plugin).__name__}, "
+            "expected data_designer.plugins.plugin.Plugin"
+        )
+    return plugin
+
+
+def load_plugin_from_source_entry_point(
+    package_name: str,
+    entry_point_name: str,
+    entry_point_value: str,
+    package_dir: Path,
+) -> Any:
+    """Load and validate a DataDesigner plugin entry point from source.
+
+    This loader is used by first-release registration, where the package may
+    not be installed in the current workspace yet.
+
+    Args:
+        package_name: Local plugin package name.
+        entry_point_name: Entry point name in the ``data_designer.plugins`` group.
+        entry_point_value: Import target from the local ``pyproject.toml``.
+        package_dir: Local plugin package directory.
+
+    Returns:
+        Loaded DataDesigner ``Plugin`` object.
+
+    Raises:
+        CatalogError: If the source entry point cannot be imported or does not
+            resolve to a DataDesigner ``Plugin`` object.
+    """
+    try:
+        from data_designer.plugins.plugin import Plugin
+    except Exception as exc:
+        raise CatalogError(
+            f"could not import DataDesigner Plugin while loading package {package_name!r} "
+            f"entry point {entry_point_name!r}: {exc}"
+        ) from exc
+
+    module_name, separator, attribute_path = entry_point_value.partition(":")
+    if not module_name or separator != ":" or not attribute_path:
+        raise CatalogError(
+            f"package {package_name!r} entry point {entry_point_name!r} has invalid value "
+            f"{entry_point_value!r}; expected 'module:attribute'"
+        )
+
+    source_dir = package_dir / "src"
+    if not source_dir.is_dir():
+        raise CatalogError(f"package {package_name!r} is missing source directory {source_dir.as_posix()!r}")
+
+    top_level_module = module_name.partition(".")[0]
+    for loaded_name in list(sys.modules):
+        if loaded_name == top_level_module or loaded_name.startswith(f"{top_level_module}."):
+            del sys.modules[loaded_name]
+
+    original_path = list(sys.path)
+    sys.path.insert(0, source_dir.as_posix())
+    try:
+        importlib.invalidate_caches()
+        module = importlib.import_module(module_name)
+        plugin: Any = module
+        for attribute in attribute_path.split("."):
+            plugin = getattr(plugin, attribute)
+    except Exception as exc:
+        raise CatalogError(
+            f"could not load package {package_name!r} source entry point {entry_point_name!r}: {exc}"
+        ) from exc
+    finally:
+        sys.path[:] = original_path
 
     if not isinstance(plugin, Plugin):
         raise CatalogError(

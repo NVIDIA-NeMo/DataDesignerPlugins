@@ -104,11 +104,21 @@ before a package is installed. Runtime discovery happens later, after
 installation, when Data Designer loads the `data_designer.plugins` entry-point
 group from the active Python environment.
 
-## How catalog entries are generated
+## Catalog registration
 
-`make catalog` builds `catalog/plugins.json` from installed local entry points,
-package metadata, plugin docs metadata, compatibility dependencies, and the
-repository-level `[tool.ddp.catalog]` table.
+`ddp new` does not add the package to `catalog/plugins.json`. Catalog
+registration is a first-release step: register a package only when it is ready
+to become installable through the published catalog.
+
+```bash
+make catalog PLUGIN=data-designer-my-plugin
+```
+
+This runs `ddp catalog register data-designer-my-plugin`, loads that package's
+entry points from source, and adds one package object to `catalog/plugins.json`.
+The command refuses to overwrite an existing package registration unless
+`ddp catalog register <plugin> --replace` is used for an intentional metadata
+correction.
 
 | Input | Catalog fields |
 | --- | --- |
@@ -191,14 +201,18 @@ for usage, configuration, and examples.
 
 ## Regenerate metadata
 
-When plugin docs, plugin metadata, compatibility dependencies, catalog config, or
-ownership changes, regenerate the derived files:
+When plugin docs or ownership changes, regenerate the derived files:
 
 ```bash
 make sync
 make plugin-docs
-make catalog
 make codeowners
+```
+
+When preparing a package's first release, register it in the catalog:
+
+```bash
+make catalog PLUGIN=data-designer-my-plugin
 ```
 
 Generated files and their inputs:
@@ -207,12 +221,12 @@ Generated files and their inputs:
 | --- | --- | --- |
 | `docs/plugins/` | `make plugin-docs` | Plugin package docs and package metadata. |
 | Generated plugin nav block in `zensical.toml` | `make plugin-docs` | Generated plugin docs tree. |
-| `catalog/plugins.json` | `make catalog` | Installed entry points, package metadata, install metadata, compatibility dependencies, plugin docs URLs, and `[tool.ddp.catalog]`. |
+| `catalog/plugins.json` | `make catalog PLUGIN=<package>` | First-release package registration, package metadata, install metadata, compatibility dependencies, plugin docs URLs, and `[tool.ddp.catalog]`. |
 | `site/simple/`, `site/pypi/`, `site/packages.json`, and `site/catalog/plugins.json` | `make package-index` | Package-list JSON lines, package asset URL base, and generated catalog JSON. |
 | `.github/CODEOWNERS` | `make codeowners` | Per-plugin `CODEOWNERS` files. |
 
-CI verifies that generated plugin docs, `catalog/plugins.json`, and
-`.github/CODEOWNERS` are current. The catalog's
+CI verifies that generated plugin docs and `.github/CODEOWNERS` are current, and
+that `catalog/plugins.json` is valid. The catalog's
 `compatibility.data_designer.requirement` and
 `compatibility.data_designer.specifier` fields come from each package's direct
 versioned `data-designer` dependency in `[project].dependencies`. The catalog
@@ -244,6 +258,7 @@ Then scaffold, validate, and publish the raw JSON catalog:
 ```bash
 make sync
 uv run ddp new my-plugin --type column-generator
+make catalog PLUGIN=data-designer-my-plugin
 make all
 ```
 

@@ -35,7 +35,7 @@ def main(args: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="validate-release",
-        description="Validate plugin metadata and generated catalog state before a package release.",
+        description="Validate plugin metadata and catalog registration before a package release.",
     )
     parser.add_argument("plugin_name", help="Plugin name (e.g. data-designer-my-plugin)")
     parser.add_argument("tag_version", help="Expected version from the git tag")
@@ -430,7 +430,10 @@ def validate_catalog_for_release(
 
     package_entries = entries_for_package(packages, project_name)
     if not package_entries:
-        errors.append(f"{CATALOG_PATH.as_posix()} has no catalog package for {project_name!r}")
+        errors.append(
+            f"{CATALOG_PATH.as_posix()} has no catalog package for {project_name!r}; "
+            f"run `make catalog PLUGIN={project_name}` before the first release"
+        )
         return errors
 
     seen_entry_points: dict[str, str] = {}
