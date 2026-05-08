@@ -21,6 +21,10 @@ nav = [
   {"Plugins" = [
     {"Overview" = "plugins/index.md"},
     # BEGIN GENERATED PLUGIN DOCS NAV
+    {"data-designer-github" = [
+      {"Overview" = "plugins/data-designer-github/index.md"},
+      {"Usage" = "plugins/data-designer-github/usage.md"},
+    ]},
     {"data-designer-retrieval-sdg" = [
       {"Overview" = "plugins/data-designer-retrieval-sdg/index.md"},
     ]},

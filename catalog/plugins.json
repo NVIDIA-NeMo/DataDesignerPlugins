@@ -2,6 +2,38 @@
   "schema_version": 2,
   "packages": [
     {
+      "name": "data-designer-github",
+      "description": "GitHub and local git repository seed reader for Data Designer",
+      "install": {
+        "requirement": "data-designer-github",
+        "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
+      },
+      "compatibility": {
+        "python": {
+          "specifier": ">=3.10"
+        },
+        "data_designer": {
+          "requirement": "data-designer>=0.5.7",
+          "specifier": ">=0.5.7",
+          "marker": null
+        }
+      },
+      "docs": {
+        "url": "https://nvidia-nemo.github.io/DataDesignerPlugins/plugins/data-designer-github/"
+      },
+      "plugins": [
+        {
+          "name": "github",
+          "plugin_type": "seed-reader",
+          "entry_point": {
+            "group": "data_designer.plugins",
+            "name": "github",
+            "value": "data_designer_github.plugin:plugin"
+          }
+        }
+      ]
+    },
+    {
       "name": "data-designer-retrieval-sdg",
       "description": "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion",
       "install": {
