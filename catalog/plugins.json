@@ -73,38 +73,6 @@
           }
         }
       ]
-    },
-    {
-      "name": "data-designer-template",
-      "description": "Template Data Designer plugin \u2014 text transform column generator",
-      "install": {
-        "requirement": "data-designer-template",
-        "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
-      },
-      "compatibility": {
-        "python": {
-          "specifier": ">=3.10"
-        },
-        "data_designer": {
-          "requirement": "data-designer>=0.5.7",
-          "specifier": ">=0.5.7",
-          "marker": null
-        }
-      },
-      "docs": {
-        "url": "https://nvidia-nemo.github.io/DataDesignerPlugins/plugins/data-designer-template/"
-      },
-      "plugins": [
-        {
-          "name": "text-transform",
-          "plugin_type": "column-generator",
-          "entry_point": {
-            "group": "data_designer.plugins",
-            "name": "text-transform",
-            "value": "data_designer_template.plugin:plugin"
-          }
-        }
-      ]
     }
   ]
 }

@@ -859,3 +859,9 @@ def test_checked_in_nvidia_catalog_uses_static_package_index() -> None:
     assert {
         package["install"]["index_url"] for package in output["packages"] if isinstance(package.get("install"), dict)
     } == {"https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"}
+
+
+def test_checked_in_nvidia_catalog_excludes_template_package() -> None:
+    output = json.loads(catalog.PLUGINS_CATALOG_PATH.read_text(encoding="utf-8"))
+
+    assert "data-designer-template" not in {package["name"] for package in output["packages"]}
