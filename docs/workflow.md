@@ -120,7 +120,8 @@ Pull requests run the main CI workflow:
   `make check-package-index` for package-list and static index generation
 
 Documentation changes also run the documentation workflow. On pull requests the
-workflow builds the site and uploads a preview artifact. On pushes to `main`, it
-builds the same site and deploys `site/` to GitHub Pages. Every Pages deploy
+workflow builds the site and uploads a preview artifact. On pushes to `main`, or
+when a package release dispatches the workflow after updating package metadata,
+it builds the same site and deploys `site/` to GitHub Pages. Every Pages deploy
 includes documentation, `catalog/plugins.json`, and the static package index so
 docs-only deploys do not remove installer-facing files.

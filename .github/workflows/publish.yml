@@ -12,12 +12,8 @@ jobs:
     if: startsWith(github.event.release.tag_name, 'data-designer-') && contains(github.event.release.tag_name, '/v')
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: write
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,14 +132,10 @@ jobs:
           gh release delete-asset "${ASSET_TAG}" packages.json -y || true
           gh release upload "${ASSET_TAG}" release-metadata/packages.json
 
-      - uses: actions/configure-pages@v5
-
-      - name: Build documentation and static package index
-        run: make docs PACKAGE_LIST=release-metadata/packages.json
-
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-
-      - uses: actions/deploy-pages@v4
-        id: deployment
+      - name: Trigger Pages deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          gh workflow run docs.yml --ref main --repo "${GITHUB_REPOSITORY}"
+          echo "Triggered Documentation workflow on main to rebuild and deploy Pages."
