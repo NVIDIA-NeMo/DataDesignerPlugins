@@ -192,7 +192,7 @@ make release PLUGIN=data-designer-my-plugin PUBLISH=1
 Release facts:
 
 - Tags are per-plugin: `data-designer-my-plugin/v0.1.0`.
-- Release CI expects the tagged commit to be reachable from `main`; `make release` requires a clean worktree and checks the commit against `origin/main`.
+- Release CI expects the tagged commit to be reachable from `main`; `make release` requires a clean worktree and requires `HEAD` to match `origin/main`.
 - Release validation requires the plugin `CODEOWNERS` file to include at least one GitHub `@user` or `@org/team` owner.
 - Pre-release versions (e.g. `0.2.0a1`) are not supported by `ddp bump`; edit `pyproject.toml` manually for those.
 

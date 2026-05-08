@@ -144,7 +144,7 @@ build-plugin: validate-release
 check-release-state:
 	@test -z "$$(git status --porcelain)" || { echo "ERROR: release worktree must be clean"; git status --short; exit 1; }
 	@git fetch origin main
-	@git merge-base --is-ancestor HEAD origin/main || { echo "ERROR: release commit must be reachable from origin/main"; exit 1; }
+	@[ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" ] || { echo "ERROR: release must run from the current origin/main tip"; exit 1; }
 
 release: check-release-state test-plugin build-plugin
 	@PLUGIN_VERSION=$$(uv run python -c "import tomllib; print(tomllib.load(open('$(PLUGIN_DIR)/pyproject.toml','rb'))['project']['version'])"); \
