@@ -50,8 +50,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          mkdir -p .cache/package-index
-          PACKAGE_LIST=.cache/package-index/packages.json
+          mkdir -p package-index-metadata
+          PACKAGE_LIST=package-index-metadata/packages.json
           if { [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; } \
               && [ "${{ github.ref }}" = "refs/heads/main" ]; then
             ASSET_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/ddp-package-assets" \
@@ -71,7 +71,7 @@ jobs:
           fi
           wc -c "${PACKAGE_LIST}"
 
-      - run: make docs PACKAGE_LIST=.cache/package-index/packages.json
+      - run: make docs PACKAGE_LIST=package-index-metadata/packages.json
 
       - uses: actions/upload-pages-artifact@v4
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
