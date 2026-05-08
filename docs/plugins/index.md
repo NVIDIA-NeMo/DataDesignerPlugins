@@ -12,7 +12,7 @@ Browse available Data Designer plugins by what they add to your data generation 
     </span>
     <span class="plugin-doc-card__description">GitHub and local git repository seed reader for Data Designer</span>
     <span class="plugin-doc-card__section">
-      <span class="plugin-doc-card__label">Column types</span>
+      <span class="plugin-doc-card__label">Entry points</span>
       <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">github</span></span>
     </span>
   </a>
