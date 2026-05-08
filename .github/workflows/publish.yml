@@ -7,6 +7,10 @@ on:
   release:
     types: [published]
 
+concurrency:
+  group: package-publish
+  cancel-in-progress: false
+
 jobs:
   publish:
     if: startsWith(github.event.release.tag_name, 'data-designer-') && contains(github.event.release.tag_name, '/v')
@@ -120,16 +124,26 @@ jobs:
       - name: Update package-list metadata asset
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           ASSET_TAG="ddp-package-assets"
           mkdir -p release-metadata
-          gh release download "${ASSET_TAG}" --pattern packages.json --dir release-metadata \
-            || : > release-metadata/packages.json
+          ASSET_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${ASSET_TAG}" \
+            --jq '.assets[] | select(.name == "packages.json") | .id')
+          if [ -n "${ASSET_ID}" ]; then
+            gh api \
+              -H "Accept: application/octet-stream" \
+              "repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}" > release-metadata/packages.json
+          else
+            : > release-metadata/packages.json
+          fi
           uv run ddp package-index merge \
             --package-list release-metadata/packages.json \
             --dist-dir dist \
             --output release-metadata/packages.json
-          gh release delete-asset "${ASSET_TAG}" packages.json -y || true
+          if [ -n "${ASSET_ID}" ]; then
+            gh release delete-asset "${ASSET_TAG}" packages.json -y
+          fi
           gh release upload "${ASSET_TAG}" release-metadata/packages.json
 
       - name: Trigger Pages deployment

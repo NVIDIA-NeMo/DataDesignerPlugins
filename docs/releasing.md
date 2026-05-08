@@ -50,8 +50,8 @@ tag `data-designer-my-plugin/v0.2.0`. The tag format comes from
 
 The release target:
 
-- verifies that the worktree is clean and the release commit is reachable from
-  `origin/main`;
+- verifies that the worktree is clean and `HEAD` matches the current
+  `origin/main` tip;
 - runs that plugin's isolated tests;
 - validates release metadata;
 - builds the wheel and source distribution;
@@ -174,3 +174,8 @@ Documentation workflow is the only workflow that deploys GitHub Pages: it
 downloads `ddp-package-assets/packages.json`, rebuilds the `dumb-pypi` Simple
 API index, and deploys the complete Pages site with docs, catalog JSON, and the
 package index in one pass.
+
+Package publication is serialized with a workflow concurrency group because each
+release updates the shared `ddp-package-assets/packages.json` asset. If multiple
+plugin releases are published close together, GitHub queues the publish jobs
+instead of letting them overwrite each other's package-list updates.
