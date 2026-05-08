@@ -112,14 +112,14 @@ repository-level `[tool.ddp.tap]` table.
 
 | Input | Catalog fields |
 | --- | --- |
-| `[project].name` | `package.name`, PyPI `source.package`, generated docs path. |
-| `[project].version` | `package.version`; consumers combine this with PyPI sources for exact installs. |
-| `[project].description` | Plugin entry `description`. |
+| `[project].name` | Package `name`, PyPI install target, and generated docs path. |
+| `[project].version` | Package `version`; consumers combine this with package `name` for exact PyPI installs. |
+| `[project].description` | Package `description`. |
 | `[project].requires-python` | `compatibility.python.specifier`. |
 | Direct `data-designer` dependency in `[project].dependencies` | `compatibility.data_designer.requirement`, `.specifier`, and `.marker`. |
-| `[project.entry-points."data_designer.plugins"]` | `entry_point.group`, `entry_point.name`, and `entry_point.value`. |
-| Loaded plugin object | Runtime `name` and `plugin_type`. |
-| Plugin package directory | `package.path`; also used as Git `source.subdirectory` or path `source.path` when configured. |
+| `[project.entry-points."data_designer.plugins"]` | Runtime plugin `entry_point.group`, `entry_point.name`, and `entry_point.value`. |
+| Loaded plugin object | Runtime plugin `name` and `plugin_type` under the package's `plugins` array. |
+| Plugin package directory | Used as Git `source.subdirectory` or path `source.path` when the repo is configured to generate those source types. |
 | Plugin docs under `plugins/<package>/docs/` plus `[tool.ddp.tap].docs-base-url` | `docs.url`. |
 | `[tool.ddp.tap].default-source`, `repository-git-url`, and `release-ref-template` | The generated `source` object. |
 

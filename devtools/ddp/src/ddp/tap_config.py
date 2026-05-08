@@ -129,7 +129,6 @@ class TapConfig:
         if self.default_source == "pypi":
             return {
                 "type": "pypi",
-                "package": package_name,
             }
         if self.default_source == "git":
             if self.repository_git_url is None:

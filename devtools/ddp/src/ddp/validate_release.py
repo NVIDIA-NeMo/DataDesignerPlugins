@@ -431,13 +431,13 @@ def validate_catalog_for_release(
     if data is None:
         return errors
 
-    plugins = catalog_plugins(data, catalog_path, errors)
-    if plugins is None:
+    packages = catalog_packages(data, catalog_path, errors)
+    if packages is None:
         return errors
 
-    package_entries = entries_for_package(plugins, project_name)
+    package_entries = entries_for_package(packages, project_name)
     if not package_entries:
-        errors.append(f"{CATALOG_PATH.as_posix()} has no schema v2 entries for package {project_name!r}")
+        errors.append(f"{CATALOG_PATH.as_posix()} has no schema v2 package for {project_name!r}")
         return errors
 
     matching_version_entries = [
@@ -452,7 +452,7 @@ def validate_catalog_for_release(
     expected_docs_url = tap_config.docs_url_for_package(project_name)
     for entry_index, entry in package_entries:
         errors.extend(
-            validate_catalog_entry_for_release(
+            validate_catalog_package_for_release(
                 entry=entry,
                 entry_index=entry_index,
                 project_name=project_name,
@@ -496,8 +496,8 @@ def load_catalog_json(catalog_path: Path, errors: list[str]) -> dict[str, Any] |
     return data
 
 
-def catalog_plugins(data: dict[str, Any], catalog_path: Path, errors: list[str]) -> list[object] | None:
-    """Return schema v2 catalog plugin entries.
+def catalog_packages(data: dict[str, Any], catalog_path: Path, errors: list[str]) -> list[object] | None:
+    """Return schema v2 catalog package entries.
 
     Args:
         data: Parsed catalog JSON.
@@ -505,7 +505,7 @@ def catalog_plugins(data: dict[str, Any], catalog_path: Path, errors: list[str])
         errors: Error accumulator.
 
     Returns:
-        Plugin entry list, or ``None`` when invalid.
+        Package entry list, or ``None`` when invalid.
     """
     schema_version = data.get("schema_version")
     if schema_version != catalog.CATALOG_SCHEMA_VERSION:
@@ -514,49 +514,45 @@ def catalog_plugins(data: dict[str, Any], catalog_path: Path, errors: list[str])
         )
         return None
 
-    plugins = data.get("plugins")
-    if not isinstance(plugins, list):
-        errors.append(f"{catalog_path} has invalid plugins field; expected an array")
+    packages = data.get("packages")
+    if not isinstance(packages, list):
+        errors.append(f"{catalog_path} has invalid packages field; expected an array")
         return None
-    return plugins
+    return packages
 
 
-def entries_for_package(plugins: list[object], project_name: str) -> list[tuple[int, dict[str, Any]]]:
-    """Return catalog entries for a package name.
+def entries_for_package(packages: list[object], project_name: str) -> list[tuple[int, dict[str, Any]]]:
+    """Return catalog package entries for a package name.
 
     Args:
-        plugins: Catalog plugin entries.
+        packages: Catalog package entries.
         project_name: Package name to select.
 
     Returns:
-        ``(index, entry)`` pairs whose ``package.name`` matches.
+        ``(index, entry)`` pairs whose package ``name`` matches.
     """
     entries: list[tuple[int, dict[str, Any]]] = []
-    for index, entry in enumerate(plugins):
+    for index, entry in enumerate(packages):
         if not isinstance(entry, dict):
             continue
-        package = entry.get("package")
-        if isinstance(package, dict) and package.get("name") == project_name:
+        if entry.get("name") == project_name:
             entries.append((index, entry))
     return entries
 
 
 def catalog_package_version(entry: dict[str, Any]) -> object:
-    """Return the package version from a catalog entry.
+    """Return the package version from a catalog package entry.
 
     Args:
-        entry: Catalog plugin entry.
+        entry: Catalog package entry.
 
     Returns:
-        ``package.version`` value, or ``None`` when absent.
+        ``version`` value, or ``None`` when absent.
     """
-    package = entry.get("package")
-    if not isinstance(package, dict):
-        return None
-    return package.get("version")
+    return entry.get("version")
 
 
-def validate_catalog_entry_for_release(
+def validate_catalog_package_for_release(
     entry: dict[str, Any],
     entry_index: int,
     project_name: str,
@@ -570,11 +566,11 @@ def validate_catalog_entry_for_release(
     expected_docs_url: str,
     seen_entry_points: dict[str, str],
 ) -> list[str]:
-    """Validate one checked-in catalog entry for a releasing package.
+    """Validate one checked-in catalog package for a releasing package.
 
     Args:
-        entry: Catalog plugin entry.
-        entry_index: Entry index within ``plugins``.
+        entry: Catalog package entry.
+        entry_index: Entry index within ``packages``.
         project_name: Plugin package name.
         project_version: Plugin package version.
         package_path: Expected repository-relative plugin package path.
@@ -590,30 +586,15 @@ def validate_catalog_entry_for_release(
         Validation error messages.
     """
     errors: list[str] = []
-    context = f"{CATALOG_PATH.as_posix()} plugins[{entry_index}]"
-    validate_catalog_runtime_fields(entry, context, description, errors)
-
-    package = required_catalog_object(entry, "package", context, errors)
-    package_path_value = package_path
-    if package is not None:
-        package_path_value = validate_catalog_package(
-            package=package,
-            context=context,
-            project_name=project_name,
-            project_version=project_version,
-            package_path=package_path,
-            errors=errors,
-        )
-
-    entry_point = required_catalog_object(entry, "entry_point", context, errors)
-    if entry_point is not None:
-        validate_catalog_entry_point(
-            entry_point=entry_point,
-            context=context,
-            entry_points=entry_points,
-            seen_entry_points=seen_entry_points,
-            errors=errors,
-        )
+    context = f"{CATALOG_PATH.as_posix()} packages[{entry_index}]"
+    validate_catalog_package_metadata(
+        entry=entry,
+        context=context,
+        project_name=project_name,
+        project_version=project_version,
+        description=description,
+        errors=errors,
+    )
 
     compatibility = required_catalog_object(entry, "compatibility", context, errors)
     if compatibility is not None:
@@ -634,7 +615,7 @@ def validate_catalog_entry_for_release(
             context=context,
             project_name=project_name,
             release_ref=release_ref,
-            package_path=package_path_value,
+            package_path=package_path,
             errors=errors,
         )
 
@@ -642,69 +623,75 @@ def validate_catalog_entry_for_release(
     if docs is not None:
         validate_catalog_docs(docs, context, expected_docs_url, errors)
 
+    plugins = entry.get("plugins")
+    if not isinstance(plugins, list) or not plugins:
+        errors.append(f"{context}.plugins must be a non-empty array")
+    else:
+        for plugin_index, plugin in enumerate(plugins):
+            if not isinstance(plugin, dict):
+                errors.append(f"{context}.plugins[{plugin_index}] must be an object")
+                continue
+            validate_catalog_runtime_fields(
+                entry=plugin,
+                context=f"{context}.plugins[{plugin_index}]",
+                errors=errors,
+            )
+            entry_point = required_catalog_object(plugin, "entry_point", f"{context}.plugins[{plugin_index}]", errors)
+            if entry_point is not None:
+                validate_catalog_entry_point(
+                    entry_point=entry_point,
+                    context=f"{context}.plugins[{plugin_index}]",
+                    entry_points=entry_points,
+                    seen_entry_points=seen_entry_points,
+                    errors=errors,
+                )
+
     return errors
+
+
+def validate_catalog_package_metadata(
+    entry: dict[str, Any],
+    context: str,
+    project_name: str,
+    project_version: str,
+    description: str,
+    errors: list[str],
+) -> None:
+    """Validate schema v2 package fields for release.
+
+    Args:
+        entry: Catalog package entry.
+        context: Error context.
+        project_name: Plugin package name.
+        project_version: Plugin package version.
+        description: Expected package description.
+        errors: Error accumulator.
+    """
+    package_name = required_catalog_string(entry, "name", context, errors)
+    version = required_catalog_string(entry, "version", context, errors)
+    catalog_description = required_catalog_string(entry, "description", context, errors)
+    if package_name is not None and package_name != project_name:
+        errors.append(f"{context}.name is {package_name!r}, expected {project_name!r}")
+    if version is not None and version != project_version:
+        errors.append(f"{context}.version is {version!r}, expected {project_version!r}")
+    if catalog_description is not None and catalog_description != description:
+        errors.append(f"{context} description is stale; expected {description!r}")
 
 
 def validate_catalog_runtime_fields(
     entry: dict[str, Any],
     context: str,
-    description: str,
     errors: list[str],
 ) -> None:
-    """Validate schema v2 runtime fields that are present in every entry.
+    """Validate schema v2 runtime plugin fields.
 
     Args:
         entry: Catalog plugin entry.
         context: Error context.
-        description: Expected package description.
         errors: Error accumulator.
     """
     required_catalog_string(entry, "name", context, errors)
     required_catalog_string(entry, "plugin_type", context, errors)
-    catalog_description = required_catalog_string(entry, "description", context, errors)
-    if catalog_description is not None and catalog_description != description:
-        errors.append(f"{context} description is stale; expected {description!r}")
-
-
-def validate_catalog_package(
-    package: dict[str, Any],
-    context: str,
-    project_name: str,
-    project_version: str,
-    package_path: str,
-    errors: list[str],
-) -> str:
-    """Validate a catalog package object.
-
-    Args:
-        package: Catalog ``package`` object.
-        context: Error context.
-        project_name: Plugin package name.
-        project_version: Plugin package version.
-        package_path: Expected repository-relative plugin package path.
-        errors: Error accumulator.
-
-    Returns:
-        Catalog package path value when valid enough to compare to source
-        metadata, otherwise the expected package path.
-    """
-    package_name = required_catalog_string(package, "name", f"{context}.package", errors)
-    version = required_catalog_string(package, "version", f"{context}.package", errors)
-    path = required_catalog_string(package, "path", f"{context}.package", errors)
-
-    if package_name is not None and package_name != project_name:
-        errors.append(f"{context}.package.name is {package_name!r}, expected {project_name!r}")
-    if version is not None and version != project_version:
-        errors.append(f"{context}.package.version is {version!r}, expected {project_version!r}")
-    if path is not None:
-        if path != package_path:
-            errors.append(f"{context}.package.path is {path!r}, expected {package_path!r}")
-        try:
-            catalog.validate_package_path(project_name, path, "package.path")
-        except catalog.CatalogError as exc:
-            errors.append(str(exc))
-        return path
-    return package_path
 
 
 def validate_catalog_entry_point(
@@ -877,7 +864,7 @@ def validate_release_source(
         context: Error context.
         project_name: Plugin package name.
         release_ref: Expected release ref.
-        package_path: Catalog package path.
+        package_path: Local repository path for this package.
         errors: Error accumulator.
     """
     try:
@@ -900,7 +887,9 @@ def validate_release_source(
         if ref != release_ref:
             errors.append(f"{context}.source.ref is {ref!r}, expected release ref {release_ref!r}")
         if subdirectory != package_path:
-            errors.append(f"{context}.source.subdirectory is {subdirectory!r}, expected package.path {package_path!r}")
+            errors.append(
+                f"{context}.source.subdirectory is {subdirectory!r}, expected local package path {package_path!r}"
+            )
 
 
 def validate_catalog_docs(

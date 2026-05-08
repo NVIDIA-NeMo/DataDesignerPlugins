@@ -123,7 +123,7 @@ def catalog_entry(
     source: dict[str, object] | None = None,
     docs_url: str | None = None,
 ) -> dict[str, object]:
-    """Return a schema v2 catalog entry for release validation tests.
+    """Return a schema v2 catalog package for release validation tests.
 
     Args:
         package_name: Plugin package name.
@@ -135,23 +135,14 @@ def catalog_entry(
         docs_url: Catalog docs URL.
 
     Returns:
-        Catalog entry object.
+        Catalog package object.
     """
     requirement = Requirement("data-designer>=0.5.7")
     return {
-        "name": runtime_name or entry_point_name,
-        "plugin_type": "column-generator",
+        "name": package_name,
+        "version": version,
         "description": PACKAGE_DESCRIPTION,
-        "package": {
-            "name": package_name,
-            "version": version,
-            "path": f"plugins/{package_name}",
-        },
-        "entry_point": {
-            "group": "data_designer.plugins",
-            "name": entry_point_name,
-            "value": entry_point_value,
-        },
+        "source": source or {"type": "pypi"},
         "compatibility": {
             "python": {
                 "specifier": ">=3.10",
@@ -162,10 +153,20 @@ def catalog_entry(
                 "marker": None,
             },
         },
-        "source": source or {"type": "pypi", "package": package_name},
         "docs": {
             "url": docs_url or f"{DOCS_BASE_URL.rstrip('/')}/plugins/{package_name}/",
         },
+        "plugins": [
+            {
+                "name": runtime_name or entry_point_name,
+                "plugin_type": "column-generator",
+                "entry_point": {
+                    "group": "data_designer.plugins",
+                    "name": entry_point_name,
+                    "value": entry_point_value,
+                },
+            }
+        ],
     }
 
 
@@ -174,12 +175,12 @@ def write_catalog(repo_root: Path, entries: list[dict[str, object]]) -> None:
 
     Args:
         repo_root: Temporary repository root.
-        entries: Catalog plugin entries.
+        entries: Catalog package entries.
     """
     catalog_dir = repo_root / "catalog"
     catalog_dir.mkdir(parents=True, exist_ok=True)
     (catalog_dir / "plugins.json").write_text(
-        f"{json.dumps({'schema_version': 2, 'plugins': entries}, indent=2)}\n",
+        f"{json.dumps({'schema_version': 2, 'packages': entries}, indent=2)}\n",
         encoding="utf-8",
     )
 
@@ -215,21 +216,28 @@ def test_valid_multi_entry_package_passes(tmp_path: Path) -> None:
         "first-entry": "example.plugin:first_plugin",
         "second-entry": "example.plugin:second_plugin",
     }
+    package = catalog_entry(
+        entry_point_name="first-entry",
+        entry_point_value="example.plugin:first_plugin",
+        runtime_name="first-runtime",
+    )
+    plugins = package["plugins"]
+    assert isinstance(plugins, list)
+    plugins.append(
+        {
+            "name": "second-runtime",
+            "plugin_type": "column-generator",
+            "entry_point": {
+                "group": "data_designer.plugins",
+                "name": "second-entry",
+                "value": "example.plugin:second_plugin",
+            },
+        }
+    )
     write_release_repo(
         tmp_path,
         entry_points=entry_points,
-        entries=[
-            catalog_entry(
-                entry_point_name="first-entry",
-                entry_point_value="example.plugin:first_plugin",
-                runtime_name="first-runtime",
-            ),
-            catalog_entry(
-                entry_point_name="second-entry",
-                entry_point_value="example.plugin:second_plugin",
-                runtime_name="second-runtime",
-            ),
-        ],
+        entries=[package],
     )
 
     assert validate_release(tmp_path, PACKAGE_NAME, PACKAGE_VERSION) == []
@@ -240,7 +248,7 @@ def test_stale_catalog_entry_fails(tmp_path: Path) -> None:
 
     errors = validate_release(tmp_path, PACKAGE_NAME, PACKAGE_VERSION)
 
-    assert any("package.version" in error and "0.0.9" in error for error in errors)
+    assert any(".version" in error and "0.0.9" in error for error in errors)
 
 
 @pytest.mark.parametrize("missing_field", ["docs", "source"])

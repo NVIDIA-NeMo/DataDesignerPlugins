@@ -21,8 +21,8 @@ derive install targets without importing plugin packages.
 
 Runtime entry-point discovery happens only after a plugin package is installed
 in a Python environment. Data Designer discovers installed plugins from the
-`data_designer.plugins` entry-point group. A tap entry can describe an entry
-point, but it does not make the plugin available at runtime by itself.
+`data_designer.plugins` entry-point group. A tap package can describe those
+entry points, but it does not make the plugins available at runtime by itself.
 
 ## Catalog Artifact
 
@@ -47,26 +47,20 @@ offline checks; published taps should give users a raw JSON URL.
 
 ## Schema v2 Example
 
-Schema v2 documents contain `schema_version` and `plugins`. Each plugin entry
-describes one runtime plugin and the package source needed to install it.
+Schema v2 documents contain `schema_version` and `packages`. Each package entry
+describes one installable Python package and the runtime plugins it exposes
+after installation.
 
 ```json
 {
   "schema_version": 2,
-  "plugins": [
+  "packages": [
     {
-      "name": "document-chunker",
-      "plugin_type": "seed-reader",
       "description": "Read local documents as chunked seed records",
-      "package": {
-        "name": "data-designer-retrieval-sdg",
-        "version": "0.1.0",
-        "path": "plugins/data-designer-retrieval-sdg"
-      },
-      "entry_point": {
-        "group": "data_designer.plugins",
-        "name": "document-chunker",
-        "value": "data_designer_retrieval_sdg.plugins:document_chunker_plugin"
+      "name": "data-designer-retrieval-sdg",
+      "version": "0.1.0",
+      "source": {
+        "type": "pypi"
       },
       "compatibility": {
         "python": {
@@ -78,13 +72,20 @@ describes one runtime plugin and the package source needed to install it.
           "marker": null
         }
       },
-      "source": {
-        "type": "pypi",
-        "package": "data-designer-retrieval-sdg"
-      },
       "docs": {
         "url": "https://nvidia-nemo.github.io/DataDesignerPlugins/plugins/data-designer-retrieval-sdg/"
-      }
+      },
+      "plugins": [
+        {
+          "name": "document-chunker",
+          "plugin_type": "seed-reader",
+          "entry_point": {
+            "group": "data_designer.plugins",
+            "name": "document-chunker",
+            "value": "data_designer_retrieval_sdg.plugins:document_chunker_plugin"
+          }
+        }
+      ]
     }
   ]
 }
@@ -97,40 +98,46 @@ Top-level fields:
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `schema_version` | Yes | Literal `2`. Consumers must reject unsupported schema versions. |
-| `plugins` | Yes | Array of plugin entries sorted deterministically by package name and runtime plugin name. |
+| `packages` | Yes | Array of package entries sorted deterministically by package name. |
 
-Plugin entry fields:
+Package entry fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `description` | Yes | Package description from `[project].description`. |
+| `name` | Yes | Python distribution package name from `[project].name`. |
+| `version` | Yes | Package version from `[project].version`. |
+| `source` | Yes | One install source object from the schema v2 source union. |
+| `compatibility.python.specifier` | Yes | Python requirement from `[project].requires-python`. |
+| `compatibility.data_designer.requirement` | Yes | Direct `data-designer` dependency string. |
+| `compatibility.data_designer.specifier` | Yes | Parsed version specifier from that dependency. |
+| `compatibility.data_designer.marker` | Yes | Environment marker from that dependency, or `null`. |
+| `docs.url` | Yes | Absolute HTTP(S) URL for human-readable plugin docs. |
+| `plugins` | Yes | Non-empty array of runtime plugin entries exposed by this package. |
+
+Runtime plugin entry fields:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `name` | Yes | Runtime plugin name. It must be unique within one catalog. |
 | `plugin_type` | Yes | One of `column-generator`, `seed-reader`, or `processor`. |
-| `description` | Yes | Package description from `[project].description`. |
-| `package.name` | Yes | Python distribution package name from `[project].name`. |
-| `package.version` | Yes | Package version from `[project].version`. |
-| `package.path` | Yes | Repository-relative package path, such as `plugins/data-designer-template`; this is metadata, not a remote install source. |
 | `entry_point.group` | Yes | Literal `data_designer.plugins`. |
 | `entry_point.name` | Yes | Entry-point key from `[project.entry-points."data_designer.plugins"]`. |
 | `entry_point.value` | Yes | Entry-point import target from package metadata. |
-| `compatibility.python.specifier` | Yes | Python requirement from `[project].requires-python`. |
-| `compatibility.data_designer.requirement` | Yes | Direct `data-designer` dependency string. |
-| `compatibility.data_designer.specifier` | Yes | Parsed version specifier from that dependency. |
-| `compatibility.data_designer.marker` | Yes | Environment marker from that dependency, or `null`. |
-| `source` | Yes | One install source object from the schema v2 source union. |
-| `docs.url` | Yes | Absolute HTTP(S) URL for human-readable plugin docs. |
 
 For the full field contract, validation rules, and fixture descriptions, see
 [Tap catalog schema v2](tap-catalog-schema-v2.md).
 
 ## Source Objects
 
-Each entry has exactly one `source` object. Consumers use it with
-`package.name` and `package.version` to derive an install target.
+Each package has exactly one `source` object. Consumers use it with package
+`name` and `version` to derive an install target.
 
 | Source type | Required fields | Install meaning |
 | --- | --- | --- |
-| `pypi` | `type`, `package` | Install the exact package version from PyPI, for example `data-designer-example==0.1.0`. |
-| `git` | `type`, `url`, `ref`, `subdirectory` | Install a package subdirectory from a Git ref using a PEP 508 direct reference. |
+| `pypi` | `type` | Install the exact package version from PyPI, for example `data-designer-example==0.1.0`. |
+| `git` | `type`, `url`, `ref` | Install from a Git ref using a PEP 508 direct reference. Optional `subdirectory` supports packages below the repository root. |
+| `url` | `type`, `url` | Install from a direct HTTP(S) wheel or source distribution URL. |
 | `path` | `type`, `path`, `editable` | Install a local package path, usually for tap authoring or offline testing. |
 
 The default NVIDIA raw catalog must use release-safe sources such as `pypi` or

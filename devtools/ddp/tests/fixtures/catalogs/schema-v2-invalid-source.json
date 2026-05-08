@@ -1,19 +1,13 @@
 {
   "schema_version": 2,
-  "plugins": [
+  "packages": [
     {
-      "name": "invalid-git-source",
-      "plugin_type": "seed-reader",
-      "description": "Malformed Git source fixture",
-      "package": {
-        "name": "data-designer-invalid-git-source",
-        "version": "0.1.0",
-        "path": "plugins/data-designer-invalid-git-source"
-      },
-      "entry_point": {
-        "group": "data_designer.plugins",
-        "name": "invalid-git-source",
-        "value": "data_designer_invalid_git_source.plugin:plugin"
+      "name": "data-designer-invalid-source",
+      "version": "0.1.0",
+      "description": "Invalid source fixture",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git"
       },
       "compatibility": {
         "python": {
@@ -25,13 +19,20 @@
           "marker": null
         }
       },
-      "source": {
-        "type": "git",
-        "url": "https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git"
-      },
       "docs": {
-        "url": "https://docs.example.test/plugins/data-designer-invalid-git-source/"
-      }
+        "url": "https://docs.example.test/plugins/data-designer-invalid-source/"
+      },
+      "plugins": [
+        {
+          "name": "invalid-source",
+          "plugin_type": "column-generator",
+          "entry_point": {
+            "group": "data_designer.plugins",
+            "name": "invalid-source",
+            "value": "data_designer_invalid_source.plugin:plugin"
+          }
+        }
+      ]
     }
   ]
 }

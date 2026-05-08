@@ -63,7 +63,6 @@ def test_load_tap_config_reads_root_metadata_and_accessors(tmp_path: Path) -> No
     assert config.docs_url_for_package("acme-dd-widget") == "https://docs.example.test/ddp/plugins/acme-dd-widget/"
     assert config.source_metadata_for_package("acme-dd-widget", "1.2.3", "plugins/acme-dd-widget") == {
         "type": "pypi",
-        "package": "acme-dd-widget",
     }
 
 
@@ -158,7 +157,6 @@ def test_non_git_sources_allow_omitting_git_only_fields(tmp_path: Path) -> None:
     assert config.release_ref_template is None
     assert config.source_metadata_for_package("acme-dd-widget", "1.2.3", "plugins/acme-dd-widget") == {
         "type": "pypi",
-        "package": "acme-dd-widget",
     }
 
 

@@ -32,35 +32,33 @@ def test_schema_v2_valid_fixture_exercises_consumer_contract() -> None:
 
     catalog.validate_catalog_document(document)
 
-    plugins = document["plugins"]
-    assert isinstance(plugins, list)
-    assert len(plugins) >= 5
-    plugins_by_name = {plugin["name"]: plugin for plugin in plugins}
+    packages = document["packages"]
+    assert isinstance(packages, list)
+    assert len(packages) >= 5
+    packages_by_name = {package["name"]: package for package in packages}
+    plugins_by_name = {plugin["name"]: (package, plugin) for package in packages for plugin in package["plugins"]}
 
-    compatible_column = plugins_by_name["compatible-column"]
+    compatible_package, compatible_column = plugins_by_name["compatible-column"]
     assert compatible_column["plugin_type"] == "column-generator"
-    assert compatible_column["source"] == {
-        "type": "pypi",
-        "package": "data-designer-compatible-column",
-    }
+    assert compatible_package["source"] == {"type": "pypi"}
     assert catalog.install_target_for_source_metadata(
-        package_name=compatible_column["package"]["name"],
-        version=compatible_column["package"]["version"],
-        source=compatible_column["source"],
+        package_name=compatible_package["name"],
+        version=compatible_package["version"],
+        source=compatible_package["source"],
     ) == catalog.InstallTarget(target="data-designer-compatible-column==0.1.0")
 
-    git_seed_reader = plugins_by_name["compatible-git-seed-reader"]
+    git_package, git_seed_reader = plugins_by_name["compatible-git-seed-reader"]
     assert git_seed_reader["plugin_type"] == "seed-reader"
-    assert git_seed_reader["source"] == {
+    assert git_package["source"] == {
         "type": "git",
         "url": "https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git",
         "ref": "data-designer-git-seed-reader/v0.2.0",
         "subdirectory": "plugins/data-designer-git-seed-reader",
     }
     assert catalog.install_target_for_source_metadata(
-        package_name=git_seed_reader["package"]["name"],
-        version=git_seed_reader["package"]["version"],
-        source=git_seed_reader["source"],
+        package_name=git_package["name"],
+        version=git_package["version"],
+        source=git_package["source"],
     ) == catalog.InstallTarget(
         target=(
             "data-designer-git-seed-reader @ "
@@ -69,17 +67,31 @@ def test_schema_v2_valid_fixture_exercises_consumer_contract() -> None:
         )
     )
 
-    assert plugins_by_name["python312-column"]["compatibility"]["python"]["specifier"] == ">=3.12"
-    assert plugins_by_name["future-dd-processor"]["compatibility"]["data_designer"]["specifier"] == ">=999.0"
-    assert all(plugin["docs"]["url"].startswith("https://docs.example.test/plugins/") for plugin in plugins)
+    url_package, url_processor = plugins_by_name["compatible-url-processor"]
+    assert url_processor["plugin_type"] == "processor"
+    assert catalog.install_target_for_source_metadata(
+        package_name=url_package["name"],
+        version=url_package["version"],
+        source=url_package["source"],
+    ) == catalog.InstallTarget(
+        target=(
+            "data-designer-url-processor @ "
+            "https://packages.example.test/data_designer_url_processor-0.2.1-py3-none-any.whl"
+        )
+    )
 
-    multi_plugins = [plugin for plugin in plugins if plugin["package"]["name"] == "data-designer-multi-plugin-package"]
-    assert len(multi_plugins) == 2
+    assert packages_by_name["data-designer-python312-column"]["compatibility"]["python"]["specifier"] == ">=3.12"
+    assert (
+        packages_by_name["data-designer-future-dd-processor"]["compatibility"]["data_designer"]["specifier"]
+        == ">=999.0"
+    )
+    assert all(package["docs"]["url"].startswith("https://docs.example.test/plugins/") for package in packages)
+
+    multi_package = packages_by_name["data-designer-multi-plugin-package"]
+    multi_plugins = multi_package["plugins"]
     assert {plugin["name"] for plugin in multi_plugins} == {"multi-seed-reader", "multi-processor"}
     assert {plugin["plugin_type"] for plugin in multi_plugins} == {"seed-reader", "processor"}
-    assert multi_plugins[0]["package"] == multi_plugins[1]["package"]
-    assert multi_plugins[0]["source"] == multi_plugins[1]["source"]
-    assert multi_plugins[0]["docs"] == multi_plugins[1]["docs"]
+    assert multi_package["source"] == {"type": "pypi"}
 
 
 @pytest.mark.parametrize(
@@ -87,7 +99,7 @@ def test_schema_v2_valid_fixture_exercises_consumer_contract() -> None:
     [
         (
             "schema-v2-invalid-source.json",
-            ("invalid 'git' source fields", "ref", "subdirectory"),
+            ("invalid 'git' source fields", "ref"),
         ),
         (
             "schema-v2-unsupported-version.json",
@@ -111,11 +123,9 @@ def test_schema_v2_invalid_fixtures_fail_for_expected_reason(
 
 def test_catalog_document_rejects_invalid_package_names() -> None:
     document = load_catalog_fixture("schema-v2-valid.json")
-    plugins = document["plugins"]
-    assert isinstance(plugins, list)
-    plugin = plugins[0]
-    assert isinstance(plugin, dict)
-    package = plugin["package"]
+    packages = document["packages"]
+    assert isinstance(packages, list)
+    package = packages[0]
     assert isinstance(package, dict)
     package["name"] = "not a valid package name"
 
@@ -123,5 +133,5 @@ def test_catalog_document_rejects_invalid_package_names() -> None:
         catalog.validate_catalog_document(document)
 
     message = str(exc_info.value)
-    assert "package.name" in message
+    assert ".name" in message
     assert "valid package name" in message
