@@ -22,6 +22,23 @@ git commit -m "chore(data-designer-my-plugin): bump version to 0.2.0"
 Pre-release versions such as `0.2.0a1` are not supported by `ddp bump`; edit the
 plugin `pyproject.toml` manually only when a pre-release is explicitly needed.
 
+## First-release catalog registration
+
+Register a package in `catalog/plugins.json` only when preparing that package's
+first release. Do not register scaffolded or experimental packages before they
+are ready to be installable from the published catalog.
+
+```bash
+make catalog PLUGIN=data-designer-my-plugin
+git add catalog/plugins.json
+git commit -m "feat(data-designer-my-plugin): register catalog entry"
+```
+
+Subsequent version releases reuse the existing registration. If package
+registration metadata must be corrected later, use
+`uv run ddp catalog register data-designer-my-plugin --replace` deliberately and
+commit the catalog change.
+
 ## Release from main
 
 After the version bump is merged to `main`, create the release tag:
@@ -76,7 +93,7 @@ gh release create data-designer-my-plugin/v0.2.0 \
 
 ## Catalog discoverability
 
-A released plugin becomes discoverable through a catalog when the generated
+A released plugin becomes discoverable through a catalog when the published
 `catalog/plugins.json` on the published catalog site includes a package object
 for the package and its runtime entry points. For the NVIDIA catalog, that means
 the GitHub Pages catalog at:
@@ -86,8 +103,8 @@ https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
 must include entry-point metadata, compatibility metadata, docs URL, and an
-`install` object. The checked-in raw JSON catalog is the source reviewed before
-deployment, but the Pages URL is the canonical installer surface because it is
+`install` object. The checked-in raw JSON catalog is the reviewed package
+registry, but the Pages URL is the canonical installer surface because it is
 deployed with the docs and static package index. Data Designer can discover the
 package from the catalog before installation, install it from the package's
 `install.requirement`, and finally discover the runtime plugin from the
@@ -132,7 +149,7 @@ data-designer-my-plugin @ git+https://github.com/acme/DataDesignerPlugins.git@da
 data-designer-my-plugin @ https://packages.example.test/data_designer_my_plugin-0.2.0-py3-none-any.whl
 ```
 
-The generated NVIDIA catalog should use unpinned package-name requirements
+The NVIDIA catalog should use unpinned package-name requirements
 pointing at the DataDesignerPlugins package index. Package versions stay in the
 package artifacts and the Simple API index, and package managers resolve the
 version to install.

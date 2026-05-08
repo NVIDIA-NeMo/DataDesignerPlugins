@@ -19,6 +19,7 @@ class TestBuildParser:
     EXPECTED_COMMANDS = (
         "new",
         "plugin-docs",
+        "catalog",
         "sync",
         "package-index",
         "codeowners",
@@ -104,6 +105,25 @@ class TestBuildParser:
         assert args.sync_target == "catalog"
         assert args.check is True
 
+    def test_catalog_register_parses_args(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "register", "data-designer-test"])
+        assert args.command == "catalog"
+        assert args.catalog_command == "register"
+        assert args.plugin == "data-designer-test"
+        assert args.replace is False
+
+    def test_catalog_register_replace_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "register", "data-designer-test", "--replace"])
+        assert args.replace is True
+
+    def test_catalog_check_parses_args(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "check"])
+        assert args.command == "catalog"
+        assert args.catalog_command == "check"
+
     def test_package_index_parses_remainder(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["package-index", "check", "--package-list", "packages.json"])
@@ -148,6 +168,22 @@ class TestDispatch:
         mock_run.return_value = 0
         parser = build_parser()
         args = parser.parse_args(["sync", "catalog"])
+        args.func(args)
+        mock_run.assert_called_once_with(args)
+
+    @patch("ddp.cli._run_catalog_register")
+    def test_catalog_register_dispatches(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = 0
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "register", "data-designer-test"])
+        args.func(args)
+        mock_run.assert_called_once_with(args)
+
+    @patch("ddp.cli._run_catalog_check")
+    def test_catalog_check_dispatches(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = 0
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "check"])
         args.func(args)
         mock_run.assert_called_once_with(args)
 

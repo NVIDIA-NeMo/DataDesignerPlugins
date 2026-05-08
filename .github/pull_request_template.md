@@ -10,7 +10,7 @@
 - [ ] Plugin installs standalone (`uv pip install -e plugins/<plugin-dir>`)
 - [ ] Plugin docs regenerated if plugin docs, list, or metadata changed (`make plugin-docs`)
 - [ ] Documentation builds if docs changed (`make docs`)
-- [ ] `catalog/plugins.json` regenerated if plugin list or metadata changed (`make catalog`)
+- [ ] `catalog/plugins.json` updated only if preparing a first release (`make catalog PLUGIN=<name>`)
 - [ ] `.github/CODEOWNERS` regenerated if ownership changed (`make codeowners`)
 - [ ] Per-plugin `CODEOWNERS` file included (auto-created by `ddp new`)
 - [ ] NVIDIA SPDX headers on all files (`make check-license-headers`)

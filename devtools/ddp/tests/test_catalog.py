@@ -538,6 +538,110 @@ def test_sync_and_check_catalog_use_default_repo_path(monkeypatch, tmp_path: Pat
     assert (tmp_path / "catalog" / "plugins.json.new").is_file()
 
 
+def test_register_catalog_package_adds_one_package_without_syncing_all(tmp_path: Path) -> None:
+    plugins_dir = tmp_path / "plugins"
+    catalog_path = tmp_path / "catalog" / "plugins.json"
+    write_plugin_pyproject(
+        plugins_dir=plugins_dir,
+        package_name="data-designer-new",
+        version="0.1.0",
+        description="New package",
+        entry_points={"new-entry": "example.plugin:new_plugin"},
+    )
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text(
+        catalog.render_catalog_json(
+            [
+                fake_catalog_entry(
+                    plugin_name="existing-runtime",
+                    package_name="data-designer-existing",
+                    entry_point_name="existing-entry",
+                )
+            ]
+        ),
+        encoding="utf-8",
+    )
+    loader = FakePluginLoader({"new-entry": FakePlugin(name="new-runtime", plugin_type="processor")})
+
+    output_path = catalog.register_catalog_package(
+        plugins_dir / "data-designer-new",
+        catalog_path=catalog_path,
+        plugin_loader=loader,
+    )
+
+    assert output_path == catalog_path
+    assert loader.calls == [
+        ("data-designer-new", "new-entry", "example.plugin:new_plugin", plugins_dir / "data-designer-new")
+    ]
+    output = json.loads(catalog_path.read_text(encoding="utf-8"))
+    assert [package["name"] for package in output["packages"]] == [
+        "data-designer-existing",
+        "data-designer-new",
+    ]
+    assert output["packages"][1]["plugins"][0]["name"] == "new-runtime"
+
+
+def test_register_catalog_package_rejects_existing_registration(
+    tmp_path: Path,
+) -> None:
+    plugins_dir = tmp_path / "plugins"
+    catalog_path = tmp_path / "catalog" / "plugins.json"
+    write_plugin_pyproject(
+        plugins_dir=plugins_dir,
+        package_name="data-designer-new",
+        version="0.1.0",
+        description="New package",
+        entry_points={"new-entry": "example.plugin:new_plugin"},
+    )
+    loader = FakePluginLoader({"new-entry": FakePlugin(name="new-runtime", plugin_type="processor")})
+    catalog.register_catalog_package(
+        plugins_dir / "data-designer-new",
+        catalog_path=catalog_path,
+        plugin_loader=loader,
+    )
+
+    with pytest.raises(catalog.CatalogError) as exc_info:
+        catalog.register_catalog_package(
+            plugins_dir / "data-designer-new",
+            catalog_path=catalog_path,
+            plugin_loader=loader,
+        )
+
+    assert "already registered" in str(exc_info.value)
+
+
+def test_register_catalog_package_can_replace_existing_registration(
+    tmp_path: Path,
+) -> None:
+    plugins_dir = tmp_path / "plugins"
+    catalog_path = tmp_path / "catalog" / "plugins.json"
+    write_plugin_pyproject(
+        plugins_dir=plugins_dir,
+        package_name="data-designer-new",
+        version="0.1.0",
+        description="New package",
+        entry_points={"new-entry": "example.plugin:new_plugin"},
+    )
+    first_loader = FakePluginLoader({"new-entry": FakePlugin(name="new-runtime", plugin_type="processor")})
+    catalog.register_catalog_package(
+        plugins_dir / "data-designer-new",
+        catalog_path=catalog_path,
+        plugin_loader=first_loader,
+    )
+    second_loader = FakePluginLoader({"new-entry": FakePlugin(name="replacement-runtime", plugin_type="processor")})
+
+    catalog.register_catalog_package(
+        plugins_dir / "data-designer-new",
+        catalog_path=catalog_path,
+        plugin_loader=second_loader,
+        replace=True,
+    )
+
+    output = json.loads(catalog_path.read_text(encoding="utf-8"))
+    assert [package["name"] for package in output["packages"]] == ["data-designer-new"]
+    assert output["packages"][0]["plugins"][0]["name"] == "replacement-runtime"
+
+
 def test_missing_installed_entry_point_error_names_package_and_entry_point() -> None:
     with pytest.raises(catalog.CatalogError) as exc_info:
         catalog.find_installed_entry_point(

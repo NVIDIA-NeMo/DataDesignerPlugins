@@ -254,6 +254,14 @@ def test_stale_catalog_entry_fails(tmp_path: Path) -> None:
     assert any(".docs.url" in error and "stale" in error for error in errors)
 
 
+def test_missing_catalog_registration_points_to_first_release_command(tmp_path: Path) -> None:
+    write_release_repo(tmp_path, entries=[catalog_entry(package_name="data-designer-other")])
+
+    errors = validate_release(tmp_path, PACKAGE_NAME, PACKAGE_VERSION)
+
+    assert any(f"make catalog PLUGIN={PACKAGE_NAME}" in error for error in errors)
+
+
 @pytest.mark.parametrize("missing_field", ["docs", "install"])
 def test_missing_docs_or_install_fails(tmp_path: Path, missing_field: str) -> None:
     entry = catalog_entry()

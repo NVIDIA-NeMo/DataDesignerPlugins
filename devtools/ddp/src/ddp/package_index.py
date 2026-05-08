@@ -221,7 +221,7 @@ def sync_package_index_site(package_list_path: Path, packages_url: str, site_dir
 
 
 def sync_catalog_to_site(site_dir: Path) -> None:
-    """Copy the generated catalog into the site artifact.
+    """Copy the registered catalog into the site artifact.
 
     Args:
         site_dir: Documentation site output directory.

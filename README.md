@@ -48,7 +48,8 @@ The default NVIDIA plugin catalog URL is:
 https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
-`catalog/plugins.json` is the generated JSON catalog artifact for Data Designer.
+`catalog/plugins.json` is the checked-in JSON catalog registry for released Data
+Designer plugin packages.
 The published Pages site serves that catalog together with the static Python
 package index at `https://nvidia-nemo.github.io/DataDesignerPlugins/simple/`.
 See [docs/catalogs.md](docs/catalogs.md) for catalog discovery, catalog
@@ -65,9 +66,9 @@ make lint               # Lint and format check (ruff)
 make format             # Auto-fix lint issues and reformat
 make test               # Test each plugin in an isolated venv
 make validate           # Run assert_valid_plugin on all entry points
-make check              # Verify generated plugin docs, catalog, CODEOWNERS, and license headers are up to date
+make check              # Verify generated plugin docs, catalog validity, CODEOWNERS, and license headers
 make plugin-docs        # Regenerate docs/plugins/ from per-plugin docs and metadata
-make catalog            # Regenerate catalog/plugins.json
+make catalog PLUGIN=data-designer-my-plugin  # Register a package for its first release
 make package-index      # Add catalog JSON and the static package index to site/
 make qa-package-index   # Build/install a plugin through a scratch local package index
 make docs               # Build the Zensical documentation site
@@ -81,13 +82,19 @@ To test a single plugin in isolation:
 make test-plugin PLUGIN=data-designer-my-plugin
 ```
 
-If you change plugin docs, plugin metadata, or ownership, regenerate derived files:
+If you change plugin docs or ownership, regenerate derived files:
 
 ```bash
 make plugin-docs              # Regenerate plugin documentation site inputs
-make catalog                  # Regenerate catalog/plugins.json
 make codeowners               # Regenerate CODEOWNERS
 make update-license-headers   # Fix SPDX headers
+```
+
+Register a package in the catalog only when preparing that package's first
+release:
+
+```bash
+make catalog PLUGIN=data-designer-my-plugin
 ```
 
 ## The `ddp` CLI
@@ -97,7 +104,8 @@ The `ddp` command manages the monorepo. Run `uv run ddp --help` to see all subco
 | Command | Description |
 |---------|-------------|
 | `ddp new <name>` | Scaffold a new plugin |
-| `ddp sync catalog` | Sync the static plugin catalog JSON |
+| `ddp catalog register <plugin>` | Register one package for first release catalog discoverability |
+| `ddp catalog check` | Validate the checked-in catalog JSON |
 | `ddp validate` | Validate all installed plugins |
 | `ddp plugin-docs` | Generate plugin docs site inputs |
 | `ddp package-index` | Build, validate, merge, and QA the static package index |
@@ -114,6 +122,9 @@ git add plugins/data-designer-my-plugin/pyproject.toml
 git commit -m "chore(data-designer-my-plugin): bump version to 0.1.1"
 make release PLUGIN=data-designer-my-plugin PUBLISH=1  # Build, tag, push, and publish the GitHub Release
 ```
+
+Before a package's first release, register it once with
+`make catalog PLUGIN=data-designer-my-plugin` and commit `catalog/plugins.json`.
 
 See [docs/releasing.md](docs/releasing.md) for the full release guide.
 

@@ -27,7 +27,7 @@ The target runs:
 | `make lint` | Ruff linting and formatting. |
 | `make test` | Each plugin's tests in an isolated virtual environment. |
 | `make validate` | Installed `data_designer.plugins` entry points with `assert_valid_plugin`. |
-| `make check` | Generated plugin docs, generated catalog, package-index metadata, generated CODEOWNERS, and SPDX license headers. |
+| `make check` | Generated plugin docs, catalog JSON validity, package-index metadata, generated CODEOWNERS, and SPDX license headers. |
 | `make docs` | Zensical builds the documentation site in strict mode and adds catalog/package-index files to `site/`. |
 | `make docs-server` | Zensical serves the documentation site locally while you edit. |
 
@@ -62,12 +62,12 @@ make docs-server DOCS_DEV_ADDR=localhost:8080
 
 ## Generated files
 
-Generated site inputs and catalog metadata come from repository metadata, plugin
-docs, package metadata, installed entry points, catalog config, and ownership files:
+Generated site inputs and maintained registry metadata come from repository
+metadata, plugin docs, package metadata, catalog config, and ownership files:
 
 ```bash
 make plugin-docs
-make catalog
+make catalog PLUGIN=data-designer-my-plugin
 make package-index
 make codeowners
 ```
@@ -76,10 +76,17 @@ make codeowners
 plugin package metadata and `plugins/*/docs/`. Do not edit generated plugin site
 pages directly.
 
-`catalog/plugins.json` is the generated machine-readable catalog artifact. It is
-generated from installed local plugin entry points, package metadata,
-`[tool.ddp.catalog]`, docs URL configuration, and direct `data-designer` dependency
-specifiers for compatibility checks by Data Designer and external tools.
+`catalog/plugins.json` is the checked-in machine-readable catalog registry.
+Packages are added to it explicitly when preparing their first release:
+
+```bash
+make catalog PLUGIN=data-designer-my-plugin
+```
+
+That targeted command reads one package's entry points, package metadata,
+`[tool.ddp.catalog]`, docs URL configuration, and direct `data-designer`
+dependency specifiers. Subsequent version releases reuse the existing catalog
+registration unless registration metadata needs an intentional correction.
 
 `catalog/plugins.json` is also checked in as the machine-readable NVIDIA
 catalog. The default catalog URL is the GitHub Pages catalog URL:
@@ -103,7 +110,7 @@ changed:
 | Change | Regenerate | Validate |
 | --- | --- | --- |
 | Plugin docs or docs metadata | `make plugin-docs` | `make check-plugin-docs` or `make check` |
-| Package metadata, entry points, compatibility dependency, or `[tool.ddp.catalog]` | `make catalog` | `make check-catalog` or `make check` |
+| Package is ready for first release | `make catalog PLUGIN=<package>` | `make check-catalog` or `make check` |
 | Package-list metadata or site package-index wiring | `make package-index` | `make check-package-index` or `make check` |
 | Per-plugin ownership | `make codeowners` | `make check-codeowners` or `make check` |
 | SPDX headers | `make update-license-headers` | `make check-license-headers` or `make check` |
@@ -116,7 +123,7 @@ Pull requests run the main CI workflow:
 - isolated plugin tests
 - plugin validation
 - generated metadata and license header checks, including `make check-catalog`
-  for checked-in catalog freshness and catalog shape, plus
+  for checked-in catalog shape, plus
   `make check-package-index` for package-list and static index generation
 
 Documentation changes also run the documentation workflow. On pull requests the
