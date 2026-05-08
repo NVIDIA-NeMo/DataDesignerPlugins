@@ -30,6 +30,13 @@ After the version bump is merged to `main`, create the release tag:
 make release PLUGIN=data-designer-my-plugin
 ```
 
+For the lowest-touch path, let the target push the tag and publish the GitHub
+Release after local checks pass:
+
+```bash
+make release PLUGIN=data-designer-my-plugin PUBLISH=1
+```
+
 Release tags are per plugin package and use this format:
 
 ```text
@@ -43,13 +50,14 @@ tag `data-designer-my-plugin/v0.2.0`. The tag format comes from
 
 The release target:
 
-- warns if your git email is not listed in the plugin `CODEOWNERS`;
+- verifies that the worktree is clean and the release commit is reachable from
+  `origin/main`;
 - runs that plugin's isolated tests;
 - validates release metadata;
 - builds the wheel and source distribution;
 - creates a tag named `data-designer-my-plugin/v<version>`.
 
-Push the tag printed by the release command:
+When run without `PUBLISH=1`, push the tag printed by the release command:
 
 ```bash
 git push origin data-designer-my-plugin/v0.2.0
@@ -62,7 +70,8 @@ explicit maintainer action that starts package publication:
 gh release create data-designer-my-plugin/v0.2.0 \
   --title "data-designer-my-plugin v0.2.0" \
   --notes "Release data-designer-my-plugin v0.2.0" \
-  --latest=false
+  --latest=false \
+  --verify-tag
 ```
 
 ## Catalog discoverability

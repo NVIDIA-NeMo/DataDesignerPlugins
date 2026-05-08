@@ -112,9 +112,7 @@ The `ddp` command manages the monorepo. Run `uv run ddp --help` to see all subco
 make bump PLUGIN=data-designer-my-plugin PART=patch   # Bump version (major/minor/patch)
 git add plugins/data-designer-my-plugin/pyproject.toml
 git commit -m "chore(data-designer-my-plugin): bump version to 0.1.1"
-make release PLUGIN=data-designer-my-plugin            # Build and tag for GitHub Release publishing
-git push origin data-designer-my-plugin/v0.1.1
-gh release create data-designer-my-plugin/v0.1.1       # Triggers CI publish
+make release PLUGIN=data-designer-my-plugin PUBLISH=1  # Build, tag, push, and publish the GitHub Release
 ```
 
 See [docs/releasing.md](docs/releasing.md) for the full release guide.
