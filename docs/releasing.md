@@ -160,5 +160,8 @@ publish workflow. It verifies that:
 
 If all checks pass, CI uploads the wheel and source distribution to the
 `ddp-package-assets` GitHub Release, updates the mutable `packages.json`
-metadata asset, rebuilds the `dumb-pypi` Simple API index, and deploys the
-complete GitHub Pages site.
+metadata asset, and dispatches the Documentation workflow on `main`. The
+Documentation workflow is the only workflow that deploys GitHub Pages: it
+downloads `ddp-package-assets/packages.json`, rebuilds the `dumb-pypi` Simple
+API index, and deploys the complete Pages site with docs, catalog JSON, and the
+package index in one pass.
