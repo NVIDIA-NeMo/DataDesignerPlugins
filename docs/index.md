@@ -29,6 +29,9 @@ DataDesignerPlugins/
 - [Plugin taps](taps.md) covers tap discovery, the default raw NVIDIA tap URL,
   schema v2 fields, source objects, trust expectations, and external tap
   publishing.
+- [Static package index](package-index.md) specifies how release CI stores
+  wheels in GitHub Release assets and serves a `dumb-pypi` Simple API index
+  from GitHub Pages.
 - [Tap catalog schema v2](tap-catalog-schema-v2.md) is the schema reference for
   catalog validation details and fixtures.
 - [Releasing](releasing.md) covers version bumps, tags, ownership checks, and
