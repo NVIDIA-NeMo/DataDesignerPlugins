@@ -5,11 +5,11 @@ packages before those packages are installed. The default NVIDIA tap catalog URL
 is:
 
 ```text
-https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
+https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
-That URL must return the raw JSON catalog body. It is not a GitHub repository
-browser page, a GitHub Pages documentation page, or a docs-only artifact.
+That URL returns the JSON catalog body from GitHub Pages. It is deployed with
+the documentation site and the static Python Simple API package index.
 
 ## Discovery Layers
 
@@ -26,24 +26,24 @@ entry points, but it does not make the plugins available at runtime by itself.
 
 ## Catalog Artifact
 
-The NVIDIA catalog is the checked-in `catalog/plugins.json` file served through
-raw GitHub:
+The NVIDIA catalog is the generated `catalog/plugins.json` file served through
+GitHub Pages:
 
 ```text
-https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
+https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
-The `/main/catalog/plugins.json` URL tracks the accepted `main` branch and is
-therefore mutable. Use a tag or commit SHA in the raw URL when users need an
-immutable snapshot:
+The generated package index for catalog packages released by this tap is served
+beside it:
 
 ```text
-https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/<tag-or-sha>/catalog/plugins.json
+https://nvidia-nemo.github.io/DataDesignerPlugins/simple/
 ```
 
 External taps may use any unauthenticated raw JSON URL or a local filesystem
 path whose content matches schema v2. A local path is useful for authoring and
-offline checks; published taps should give users a raw JSON URL.
+offline checks; published taps should give users a raw JSON URL and, when
+needed, an accompanying Python package index.
 
 ## Schema v2 Example
 
@@ -59,8 +59,9 @@ after installation.
       "description": "Read local documents as chunked seed records",
       "name": "data-designer-retrieval-sdg",
       "version": "0.1.0",
-      "source": {
-        "type": "pypi"
+      "install": {
+        "requirement": "data-designer-retrieval-sdg==0.1.0",
+        "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
       },
       "compatibility": {
         "python": {
@@ -107,7 +108,8 @@ Package entry fields:
 | `description` | Yes | Package description from `[project].description`. |
 | `name` | Yes | Python distribution package name from `[project].name`. |
 | `version` | Yes | Package version from `[project].version`. |
-| `source` | Yes | One install source object from the schema v2 source union. |
+| `install.requirement` | Yes | PEP 508 package requirement to install. |
+| `install.index_url` | No | Python Simple API index URL for index-backed packages. |
 | `compatibility.python.specifier` | Yes | Python requirement from `[project].requires-python`. |
 | `compatibility.data_designer.requirement` | Yes | Direct `data-designer` dependency string. |
 | `compatibility.data_designer.specifier` | Yes | Parsed version specifier from that dependency. |
@@ -128,20 +130,22 @@ Runtime plugin entry fields:
 For the full field contract, validation rules, and fixture descriptions, see
 [Tap catalog schema v2](tap-catalog-schema-v2.md).
 
-## Source Objects
+## Install Metadata
 
-Each package has exactly one `source` object. Consumers use it with package
-`name` and `version` to derive an install target.
+Each package has exactly one `install` object. Consumers pass
+`install.requirement` to `pip`, `uv`, or another standard Python installer. If
+`install.index_url` is present, consumers include it as an additional package
+index.
 
-| Source type | Required fields | Install meaning |
+| Shape | Required fields | Install meaning |
 | --- | --- | --- |
-| `pypi` | `type` | Install the exact package version from PyPI, for example `data-designer-example==0.1.0`. |
-| `git` | `type`, `url`, `ref` | Install from a Git ref using a PEP 508 direct reference. Optional `subdirectory` supports packages below the repository root. |
-| `url` | `type`, `url` | Install from a direct HTTP(S) wheel or source distribution URL. |
-| `path` | `type`, `path`, `editable` | Install a local package path, usually for tap authoring or offline testing. |
+| Static index | `requirement`, `index_url` | Install an exact package version from a Simple API index, for example `data-designer-example==0.1.0`. |
+| Default installer index | `requirement` | Install an exact package version from the installer's configured default index. |
+| Direct reference | `requirement` | Install from a PEP 508 direct reference such as Git or an HTTP(S) wheel URL. |
 
-The default NVIDIA raw catalog must use release-safe sources such as `pypi` or
-tagged `git` refs. It must not publish `path` sources.
+The default NVIDIA catalog uses exact package requirements plus the
+DataDesignerPlugins Simple API index. External catalogs may use direct
+references when packages are hosted elsewhere.
 
 ## Trust Model
 
@@ -157,8 +161,8 @@ tap instead.
 Adding a tap is a trust decision, not only a discovery preference. A tap points
 to Python packages. Installing from a tap runs package-manager resolution and
 imports code after installation. Data Designer install flows should show the tap
-URL, package name, package version, source URL/ref/path, and exact install
-command before installing from a non-default tap.
+URL, package name, package version, requirement, index URL or direct reference,
+and exact install command before installing from a non-default tap.
 
 ## External Tap Repositories
 
@@ -180,18 +184,20 @@ Configure these tap-level fields for the fork or copied repository:
 | --- | --- |
 | `catalog-url` | Raw JSON URL users should add as the tap. |
 | `repository-url` | Human-facing repository URL used in generated package metadata. |
-| `repository-git-url` | Git clone/install URL used when `default-source = "git"`. |
+| `repository-git-url` | Optional human/release metadata for repositories that also use Git refs. |
 | `docs-base-url` | Base URL for generated human docs links. |
 | `package-prefix` | Prefix used by `ddp new` when creating package names. |
-| `default-source` | Catalog source type generated for packages: `pypi`, `git`, or `path`. |
+| `package-index-url` | Simple API index URL written to generated `install.index_url` values. |
+| `package-assets-url` | Base URL where package files named by `packages.json` are served. |
+| `package-assets-release-tag` | GitHub Release tag used as the package asset bucket. |
 | `release-ref-template` | Template for release refs, commonly `{package}/v{version}`. |
 | `default-data-designer-requirement` | Data Designer dependency written by scaffolds and surfaced in compatibility metadata. |
 | `author-name` | Default author written into scaffolded packages. |
 
-After publishing the raw JSON catalog, tell users the tap name and raw URL. Once
-Data Designer tap configuration support is available, users should add that raw
-catalog URL through the `plugins taps add` flow before discovering or installing
-plugins from the non-default tap.
+After publishing the JSON catalog and package index, tell users the tap name
+and catalog URL. Once Data Designer tap configuration support is available,
+users should add that catalog URL through the `plugins taps add` flow before
+discovering or installing plugins from the non-default tap.
 
 ## Maintainer Workflow
 
@@ -201,8 +207,10 @@ Regenerate generated files whenever the inputs change:
 | --- | --- | --- |
 | Plugin docs or docs metadata | `make plugin-docs` | `docs/plugins/` and the generated plugin nav block in `zensical.toml`. |
 | Plugin package metadata, entry points, compatibility dependency, or tap config | `make catalog` | `catalog/plugins.json`. |
+| Package-list metadata or catalog deployment | `make package-index` | `site/simple/`, `site/pypi/`, `site/packages.json`, and `site/catalog/plugins.json`. |
 | Per-plugin `CODEOWNERS` | `make codeowners` | `.github/CODEOWNERS`. |
 | License headers | `make update-license-headers` | SPDX headers in source files. |
 
-Validate with `make check-catalog` for catalog-only changes, `make check` for
-all generated metadata, and `make docs` for the strict documentation build.
+Validate with `make check-catalog` for catalog-only changes,
+`make check-package-index` for package-index metadata, `make check` for all
+generated metadata, and `make docs` for the strict documentation build.

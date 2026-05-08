@@ -58,79 +58,65 @@ git push origin data-designer-my-plugin/v0.2.0
 ## Tap discoverability
 
 A released plugin becomes discoverable through a tap when the generated
-`catalog/plugins.json` on the tap's published branch includes a package object
-for the package version and runtime entry points. For the NVIDIA tap, that means the
-checked-in raw JSON catalog at:
+`catalog/plugins.json` on the tap's published site includes a package object
+for the package version and runtime entry points. For the NVIDIA tap, that means
+the GitHub Pages catalog at:
 
 ```text
-https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
+https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
 must include the released package version, entry-point metadata, compatibility
-metadata, docs URL, and install `source` object. Data Designer can discover the
-package from the tap catalog before installation, install it from the package's
-`source`, and finally discover the runtime plugin from the installed package's
-`data_designer.plugins` entry point.
+metadata, docs URL, and `install` object. The checked-in raw JSON catalog is the
+source reviewed before deployment, but the Pages URL is the canonical installer
+surface because it is deployed with the docs and static package index. Data
+Designer can discover the package from the tap catalog before installation,
+install it from the package's `install.requirement`, and finally discover the
+runtime plugin from the installed package's `data_designer.plugins` entry
+point.
 
 Tap discovery is not runtime discovery. A catalog package makes plugins visible
 as installable metadata; it does not make them available in a Python
 environment until the package is installed.
 
-## Install sources
+## Install metadata
 
-The current NVIDIA tap uses PyPI source metadata for released packages:
+The NVIDIA tap uses exact package requirements plus the static Simple API
+package index:
 
 ```json
 {
   "name": "data-designer-my-plugin",
   "version": "0.2.0",
-  "source": {
-    "type": "pypi"
+  "install": {
+    "requirement": "data-designer-my-plugin==0.2.0",
+    "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
   }
 }
 ```
 
-Consumers derive the exact PyPI install target from package `name` and
-`version`, for example `data-designer-my-plugin==0.2.0`.
+Consumers pass `install.requirement` to their installer and add
+`install.index_url` as an extra package index. For `uv`:
 
-External taps can use Git source metadata. When `[tool.ddp.tap].default-source`
-is `git`, catalog generation uses `repository-git-url` as `source.url`, the
-release ref generated from `release-ref-template` as `source.ref`, and
-the local package directory as `source.subdirectory`:
-
-```json
-{
-  "source": {
-    "type": "git",
-    "url": "https://github.com/acme/DataDesignerPlugins.git",
-    "ref": "data-designer-my-plugin/v0.2.0",
-    "subdirectory": "plugins/data-designer-my-plugin"
-  }
-}
+```bash
+uv pip install \
+  --default-index https://pypi.org/simple/ \
+  --index https://nvidia-nemo.github.io/DataDesignerPlugins/simple/ \
+  data-designer-my-plugin==0.2.0
 ```
 
-Consumers derive a PEP 508 direct reference from those fields, for example:
+External catalogs can use direct references when packages are hosted elsewhere:
 
 ```text
 data-designer-my-plugin @ git+https://github.com/acme/DataDesignerPlugins.git@data-designer-my-plugin/v0.2.0#subdirectory=plugins/data-designer-my-plugin
 ```
 
-`path` sources are for local authoring catalogs and offline checks. They are not
-release-safe catalog sources.
-
-External catalogs may also use direct URL source metadata for HTTP(S) wheels or
-source distributions:
-
-```json
-{
-  "name": "data-designer-my-plugin",
-  "version": "0.2.0",
-  "source": {
-    "type": "url",
-    "url": "https://packages.example.test/data_designer_my_plugin-0.2.0-py3-none-any.whl"
-  }
-}
+```text
+data-designer-my-plugin @ https://packages.example.test/data_designer_my_plugin-0.2.0-py3-none-any.whl
 ```
+
+The generated NVIDIA catalog should use exact `name==version` requirements
+pointing at the DataDesignerPlugins package index.
 
 ## Multi-plugin packages
 
@@ -155,10 +141,14 @@ Tag pushes trigger the publish workflow. It verifies that:
 - all declared `data_designer.plugins` entry points are represented in the
   schema v2 catalog for the releasing package;
 - catalog package version, description, compatibility metadata, docs URL,
-  source metadata, and release ref match package metadata and tap config;
-- release catalogs do not use `path` sources;
+  install metadata, and release ref match package metadata and tap config;
 - plugin tests pass in an isolated virtual environment;
-- the package builds successfully.
+- the package builds successfully;
+- `twine check` accepts the wheel and source distribution;
+- existing GitHub Release assets are not overwritten with different bytes;
+- the static package index can be regenerated from `packages.json`.
 
-If all checks pass, CI publishes the package to PyPI using the repository
-`PYPI_TOKEN` secret.
+If all checks pass, CI uploads the wheel and source distribution to the
+`ddp-package-assets` GitHub Release, updates the mutable `packages.json`
+metadata asset, rebuilds the `dumb-pypi` Simple API index, and deploys the
+complete GitHub Pages site.

@@ -27,7 +27,7 @@ DataDesignerPlugins/
 - [Development workflow](workflow.md) covers local checks, generated metadata,
   documentation builds, and GitHub CI.
 - [Plugin taps](taps.md) covers tap discovery, the default raw NVIDIA tap URL,
-  schema v2 fields, source objects, trust expectations, and external tap
+  schema v2 fields, install metadata, trust expectations, and external tap
   publishing.
 - [Static package index](package-index.md) specifies how release CI stores
   wheels in GitHub Release assets and serves a `dumb-pypi` Simple API index
@@ -50,8 +50,8 @@ DataDesignerPlugins/
 - Keep `catalog/plugins.json` current when plugin package metadata or entry
   points change.
 - Treat the default NVIDIA tap URL as the raw generated catalog at
-  `https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json`;
-  it is not served from GitHub Pages.
+  `https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json`,
+  served from GitHub Pages beside the static package index.
 - Treat DDPlugins as the curated NVIDIA first-party tap. New plugins belong here
   when they are NVIDIA-maintained, broadly useful, and owned by an accountable
   CODEOWNER.

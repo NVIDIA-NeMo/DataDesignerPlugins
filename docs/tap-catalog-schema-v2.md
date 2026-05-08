@@ -6,11 +6,11 @@ package lists the Data Designer runtime plugins exposed after installation.
 
 This package-first shape keeps the catalog generic. The JSON catalog can be
 hosted anywhere that serves raw JSON, and each package can be installed from
-PyPI, Git, a direct URL, or a local path without assuming the package lives in
-the same repository as the catalog.
+any Python package index or PEP 508 direct reference without assuming the
+package lives in the same repository as the catalog.
 
-For tap discovery workflow, the default NVIDIA raw catalog URL, mutability,
-external tap setup, and trust guidance, see [Plugin taps](taps.md).
+For tap discovery workflow, the default NVIDIA catalog URL, external tap setup,
+and trust guidance, see [Plugin taps](taps.md).
 
 ## Document Shape
 
@@ -24,8 +24,9 @@ The top-level document must contain `schema_version` and `packages`:
       "name": "data-designer-retrieval-sdg",
       "version": "0.1.0",
       "description": "Retriever SDG toolkit",
-      "source": {
-        "type": "pypi"
+      "install": {
+        "requirement": "data-designer-retrieval-sdg==0.1.0",
+        "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
       },
       "compatibility": {
         "python": {
@@ -72,7 +73,8 @@ Every item in `packages` must contain these fields:
 | `name` | string | Yes | PEP 503-compatible Python distribution package name. |
 | `version` | string | Yes | PEP 440 package version. |
 | `description` | string | Yes | Package-level description. |
-| `source` | object | Yes | Exactly one install source object from the source union. |
+| `install.requirement` | string | Yes | PEP 508 requirement used to install the package. |
+| `install.index_url` | string | No | Absolute HTTP(S) Python Simple API index URL for index-backed packages. |
 | `compatibility.python.specifier` | string | Yes | Python version specifier. |
 | `compatibility.data_designer.requirement` | string | Yes | Exact direct dependency string for `data-designer`. |
 | `compatibility.data_designer.specifier` | string | Yes | Parsed version specifier from the direct `data-designer` dependency. |
@@ -92,132 +94,74 @@ Every item in a package's `plugins` array must contain these fields:
 | `entry_point.name` | string | Yes | Installed entry-point key from `[project.entry-points."data_designer.plugins"]`. |
 | `entry_point.value` | string | Yes | Import target from `[project.entry-points."data_designer.plugins"]`. |
 
-## Source Objects
+## Install Metadata
 
-Each package must include exactly one `source` object. Consumers combine the
-package `name`, package `version`, and `source` object to derive an install
-target.
+Each package must include exactly one `install` object. Consumers use
+`install.requirement` as the installer requirement. `install.index_url` is
+optional and points at the Python Simple API index that should be added for
+index-backed packages.
 
-### PyPI
+### Static Index Package
 
-Use `pypi` for released packages whose package name is installable from PyPI:
-
-```json
-{
-  "type": "pypi"
-}
-```
-
-Required fields:
-
-| Field | Type | Contract |
-| --- | --- | --- |
-| `type` | string | Literal `pypi`. |
-
-Consumers should derive the default exact install target from package `name`
-and `version`, for example `data-designer-example==0.1.0`, unless the user
-explicitly requests a resolver-driven or latest-version workflow.
-
-### Git
-
-Use `git` for direct Git installs. `subdirectory` is optional so packages can
-live either at the Git repository root or below it.
+Use an exact package requirement plus an index URL for packages released through
+this repository's static package index:
 
 ```json
 {
-  "type": "git",
-  "url": "https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git",
-  "ref": "data-designer-example/v0.1.0",
-  "subdirectory": "plugins/data-designer-example"
+  "requirement": "data-designer-example==0.1.0",
+  "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
 }
 ```
 
-Required fields:
+For packages hosted in this tap's static index, `requirement` must use the
+package `name` with an exact `==version` specifier.
 
-| Field | Type | Contract |
-| --- | --- | --- |
-| `type` | string | Literal `git`. |
-| `url` | string | HTTP(S) Git repository URL. |
-| `ref` | string | Git branch, tag, or commit to install. |
+### Default Installer Index
 
-Optional fields:
-
-| Field | Type | Contract |
-| --- | --- | --- |
-| `subdirectory` | string | Repository-relative Python package directory. Omit for packages at the Git repository root. |
-
-Consumers should derive a PEP 508 direct reference from the package name and the
-source fields:
-
-```text
-data-designer-example @ git+https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git@data-designer-example/v0.1.0#subdirectory=plugins/data-designer-example
-```
-
-For repository-root packages, omit the `#subdirectory=...` fragment.
-
-### Direct URL
-
-Use `url` for direct wheel or source distribution URLs:
+Catalogs may omit `index_url` for packages available from the installer's
+configured default package index:
 
 ```json
 {
-  "type": "url",
-  "url": "https://packages.example.test/data_designer_example-0.1.0-py3-none-any.whl"
+  "requirement": "data-designer-example==0.1.0"
 }
 ```
 
-Required fields:
+### Direct Reference
 
-| Field | Type | Contract |
-| --- | --- | --- |
-| `type` | string | Literal `url`. |
-| `url` | string | Absolute HTTP(S) wheel or source distribution URL. |
-
-Consumers should derive a PEP 508 direct reference:
-
-```text
-data-designer-example @ https://packages.example.test/data_designer_example-0.1.0-py3-none-any.whl
-```
-
-### Path
-
-Use `path` only for local catalog-file authoring workflows:
+Catalogs may use any valid PEP 508 direct reference, such as Git or an HTTP(S)
+wheel URL:
 
 ```json
 {
-  "type": "path",
-  "path": "/tmp/data-designer-example",
-  "editable": true
+  "requirement": "data-designer-example @ git+https://github.com/acme/plugin.git@v1.0.0"
 }
 ```
 
-Required fields:
-
-| Field | Type | Contract |
-| --- | --- | --- |
-| `type` | string | Literal `path`. |
-| `path` | string | Local filesystem path to the package directory. |
-| `editable` | boolean | Whether consumers should install the package in editable mode. |
-
-The default NVIDIA raw catalog must not use `path` sources.
+```json
+{
+  "requirement": "data-designer-example @ https://packages.example.test/data_designer_example-0.1.0-py3-none-any.whl"
+}
+```
 
 ## Contract Fixtures
 
 Small checked-in JSON fixtures live in
 `devtools/ddp/tests/fixtures/catalogs/`:
 
-- `schema-v2-valid.json` is a valid schema v2 catalog with compatible PyPI,
-  Git, and direct URL package sources, incompatible Python and Data Designer
-  compatibility entries, docs URLs, and a multi-plugin package represented as
-  one package with two runtime plugin entries.
-- `schema-v2-invalid-source.json` is a schema v2 catalog with a malformed Git
-  source object.
+- `schema-v2-valid.json` is a valid schema v2 catalog with compatible
+  index-backed, Git direct-reference, and HTTP direct-reference package
+  installs, incompatible Python and Data Designer compatibility entries, docs
+  URLs, and a multi-plugin package represented as one package with two runtime
+  plugin entries.
+- `schema-v2-invalid-install.json` is a schema v2 catalog with malformed
+  install metadata.
 - `schema-v2-unsupported-version.json` uses an unsupported `schema_version`.
 
 These fixtures are intended for Data Designer CLI and downstream consumer
 contract tests. Consumers should load them as raw JSON from the repository path
 or raw file content and validate their own catalog parsing, compatibility
-filtering, source handling, docs URL handling, and multi-plugin package logic.
+filtering, install handling, docs URL handling, and multi-plugin package logic.
 Do not import DDPlugins devtool modules, plugin packages, or runtime entry
 points when using the fixtures; the fixture contract is JSON-only.
 
@@ -229,5 +173,5 @@ points when using the fixtures; the fixture contract is JSON-only.
 - A multi-plugin package is represented as one package object with multiple
   runtime plugin entries in `plugins`.
 - Invalid PEP 440 versions, invalid specifiers, missing direct `data-designer`
-  dependencies, stale installed entry points, and malformed source objects must
+  dependencies, stale installed entry points, and malformed install objects must
   fail catalog generation or schema validation.

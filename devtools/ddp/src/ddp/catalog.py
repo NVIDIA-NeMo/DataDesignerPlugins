@@ -20,7 +20,7 @@ from packaging.utils import InvalidName, canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from ddp._repo import find_repo_root, load_toml
-from ddp.tap_config import TapConfig, TapConfigError, load_tap_config, validate_repository_package_path
+from ddp.tap_config import TapConfig, TapConfigError, load_tap_config
 
 CATALOG_SCHEMA_VERSION = 2
 REPO_ROOT = find_repo_root()
@@ -36,9 +36,9 @@ CATALOG_PACKAGE_KEYS = {
     "compatibility",
     "description",
     "docs",
+    "install",
     "name",
     "plugins",
-    "source",
     "version",
 }
 CATALOG_PLUGIN_KEYS = {
@@ -51,7 +51,8 @@ CATALOG_COMPATIBILITY_KEYS = {"data_designer", "python"}
 CATALOG_PYTHON_COMPATIBILITY_KEYS = {"specifier"}
 CATALOG_DATA_DESIGNER_COMPATIBILITY_KEYS = {"marker", "requirement", "specifier"}
 CATALOG_DOCS_KEYS = {"url"}
-SOURCE_TYPES = {"git", "path", "pypi", "url"}
+CATALOG_INSTALL_REQUIRED_KEYS = {"requirement"}
+CATALOG_INSTALL_OPTIONAL_KEYS = {"index_url"}
 
 
 class CatalogError(RuntimeError):
@@ -80,7 +81,7 @@ class CatalogEntry:
         data_designer_marker: Environment marker from the package's direct
             ``data-designer`` dependency, or ``None`` when the requirement is
             unconditionally active.
-        source: Install source metadata for the package.
+        install: Install requirement metadata for the package.
         docs_url: Absolute documentation URL for the package.
     """
 
@@ -96,21 +97,21 @@ class CatalogEntry:
     data_designer_requirement: str
     data_designer_version_specifier: str
     data_designer_marker: str | None
-    source: dict[str, object]
+    install: dict[str, object]
     docs_url: str
 
 
 @dataclass(frozen=True)
 class InstallTarget:
-    """Concrete package install target derived from catalog source metadata.
+    """Concrete package install target derived from catalog install metadata.
 
     Attributes:
         target: Requirement string or local path to pass to the installer.
-        editable: Whether local path installation should be editable.
+        index_url: Optional Python package index URL required for resolution.
     """
 
     target: str
-    editable: bool = False
+    index_url: str | None = None
 
 
 def main() -> None:
@@ -221,7 +222,7 @@ def catalog_entries_for_catalog_package(raw_package: object, index: int) -> list
         compatibility["data_designer"],
         CATALOG_DATA_DESIGNER_COMPATIBILITY_KEYS,
     )
-    source = required_catalog_object(f"{context}.source", package["source"])
+    install = required_catalog_object(f"{context}.install", package["install"])
     docs = required_catalog_object(f"{context}.docs", package["docs"], CATALOG_DOCS_KEYS)
 
     package_name = catalog_package_name(f"{context}.name", package["name"])
@@ -238,7 +239,7 @@ def catalog_entries_for_catalog_package(raw_package: object, index: int) -> list
         value=python_compatibility["specifier"],
     )
     docs_url = catalog_http_url(f"{context}.docs.url", docs["url"])
-    validate_source_metadata(package_name, source)
+    validate_install_metadata(package_name, version, install)
 
     plugins = package["plugins"]
     if not isinstance(plugins, list) or not plugins:
@@ -255,7 +256,7 @@ def catalog_entries_for_catalog_package(raw_package: object, index: int) -> list
             data_designer_requirement=data_designer_requirement,
             data_designer_version_specifier=data_designer_specifier,
             data_designer_marker=data_designer_marker,
-            source=source,
+            install=install,
             docs_url=docs_url,
         )
         for plugin_index, raw_plugin in enumerate(plugins)
@@ -272,7 +273,7 @@ def catalog_entry_for_catalog_plugin(
     data_designer_requirement: str,
     data_designer_version_specifier: str,
     data_designer_marker: str | None,
-    source: dict[str, object],
+    install: dict[str, object],
     docs_url: str,
 ) -> CatalogEntry:
     """Return a validated catalog entry from one decoded JSON plugin object.
@@ -288,7 +289,7 @@ def catalog_entry_for_catalog_plugin(
         data_designer_version_specifier: Parent package Data Designer version
             specifier.
         data_designer_marker: Parent package Data Designer environment marker.
-        source: Parent package install source metadata.
+        install: Parent package install requirement metadata.
         docs_url: Parent package documentation URL.
 
     Returns:
@@ -316,7 +317,7 @@ def catalog_entry_for_catalog_plugin(
         data_designer_requirement=data_designer_requirement,
         data_designer_version_specifier=data_designer_version_specifier,
         data_designer_marker=data_designer_marker,
-        source=source,
+        install=install,
         docs_url=docs_url,
     )
 
@@ -600,11 +601,10 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
 
         entry_points = data_designer_entry_points(name, project)
         repository_path = toml_path.parent.relative_to(plugins_dir.parent).as_posix()
-        source = source_metadata_for_package(
+        install = install_metadata_for_package(
             tap_config=tap_config,
             package_name=name,
             version=version,
-            repository_path=repository_path,
         )
         docs_url = tap_config.docs_url_for_package(name)
         for entry_point_name, entry_point_value in sorted(entry_points.items()):
@@ -621,7 +621,7 @@ def discover_catalog_entries(plugins_dir: Path) -> list[CatalogEntry]:
                     data_designer_requirement=data_designer_requirement,
                     data_designer_version_specifier=data_designer_version_specifier,
                     data_designer_marker=data_designer_marker,
-                    source=source,
+                    install=install,
                     docs_url=docs_url,
                 )
             )
@@ -647,33 +647,30 @@ def catalog_tap_config_for_plugins_dir(plugins_dir: Path) -> TapConfig:
         raise CatalogError(f"could not load tap metadata for catalog generation: {exc}") from exc
 
 
-def source_metadata_for_package(
+def install_metadata_for_package(
     tap_config: TapConfig,
     package_name: str,
     version: str,
-    repository_path: str,
 ) -> dict[str, object]:
-    """Return validated catalog source metadata for a package.
+    """Return validated catalog install metadata for a package.
 
     Args:
         tap_config: Repository-level tap metadata.
         package_name: Plugin package distribution name.
         version: Plugin package version.
-        repository_path: Repository-relative plugin package path.
 
     Returns:
-        Validated source metadata.
+        Validated install metadata.
 
     Raises:
-        CatalogError: If the generated source object is malformed.
+        CatalogError: If the generated install object is malformed.
     """
-    validate_package_path(package_name, repository_path, "local package path")
     try:
-        source = tap_config.source_metadata_for_package(package_name, version, repository_path)
+        install = tap_config.install_metadata_for_package(package_name, version)
     except TapConfigError as exc:
-        raise CatalogError(f"could not generate source metadata for package {package_name!r}: {exc}") from exc
-    validate_source_metadata(package_name, source)
-    return source
+        raise CatalogError(f"could not generate install metadata for package {package_name!r}: {exc}") from exc
+    validate_install_metadata(package_name, version, install)
+    return install
 
 
 def catalog_entry_for_entry_point(
@@ -688,7 +685,7 @@ def catalog_entry_for_entry_point(
     data_designer_requirement: str,
     data_designer_version_specifier: str,
     data_designer_marker: str | None,
-    source: dict[str, object],
+    install: dict[str, object],
     docs_url: str,
 ) -> CatalogEntry:
     """Build a catalog entry from an installed DataDesigner plugin entry point.
@@ -710,7 +707,7 @@ def catalog_entry_for_entry_point(
         data_designer_marker: Environment marker from the package's direct
             ``data-designer`` dependency, or ``None`` when the requirement is
             unconditionally active.
-        source: Install source metadata for the package.
+        install: Install requirement metadata for the package.
         docs_url: Absolute documentation URL for the package.
 
     Returns:
@@ -756,7 +753,7 @@ def catalog_entry_for_entry_point(
         data_designer_requirement=data_designer_requirement,
         data_designer_version_specifier=data_designer_version_specifier,
         data_designer_marker=data_designer_marker,
-        source=source,
+        install=install,
         docs_url=docs_url,
     )
 
@@ -1143,140 +1140,101 @@ def normalize_distribution_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def validate_source_metadata(package_name: str, source: object) -> None:
-    """Validate one schema v2 catalog source object.
-
-    Args:
-        package_name: Plugin package distribution name.
-        source: Source metadata object to validate.
-
-    Raises:
-        CatalogError: If the source metadata does not match a supported source
-            object shape.
-    """
-    if not isinstance(source, dict):
-        raise CatalogError(f"package {package_name!r} has invalid source; expected an object")
-
-    source_type = source.get("type")
-    if source_type == "pypi":
-        validate_pypi_source_metadata(package_name, source)
-        return
-    if source_type == "git":
-        validate_git_source_metadata(package_name, source)
-        return
-    if source_type == "path":
-        validate_path_source_metadata(package_name, source)
-        return
-    if source_type == "url":
-        validate_url_source_metadata(package_name, source)
-        return
-    raise CatalogError(
-        f"package {package_name!r} has invalid source.type {source_type!r}; "
-        f"expected one of {format_catalog_choices(SOURCE_TYPES)}"
-    )
-
-
-def install_target_for_source_metadata(package_name: str, version: str, source: object) -> InstallTarget:
-    """Derive the default DataDesigner package install target for a source.
+def validate_install_metadata(package_name: str, version: str, install: object) -> None:
+    """Validate one schema v2 catalog install object.
 
     Args:
         package_name: Plugin package distribution name.
         version: Plugin package version.
-        source: Source metadata object to derive from.
+        install: Install metadata object to validate.
+
+    Raises:
+        CatalogError: If install metadata is malformed or inconsistent with
+            package metadata.
+    """
+    if not isinstance(install, dict):
+        raise CatalogError(f"package {package_name!r} has invalid install; expected an object")
+    validate_install_keys(package_name, install)
+
+    requirement_text = required_install_string(package_name, install, "requirement")
+    try:
+        requirement = Requirement(requirement_text)
+    except InvalidRequirement as exc:
+        raise CatalogError(
+            f"package {package_name!r} has invalid install.requirement {requirement_text!r}: {exc}"
+        ) from exc
+
+    if canonicalize_name(requirement.name) != canonicalize_name(package_name):
+        raise CatalogError(
+            f"package {package_name!r} has invalid install.requirement {requirement_text!r}; "
+            f"expected a requirement for {package_name!r}"
+        )
+
+    if requirement.url is None:
+        expected = f"=={project_version(package_name, version)}"
+        if str(requirement.specifier) != expected:
+            raise CatalogError(
+                f"package {package_name!r} has invalid install.requirement {requirement_text!r}; "
+                f"expected exact specifier {expected!r}"
+            )
+
+    index_url = optional_install_string(package_name, install, "index_url")
+    if index_url is not None:
+        catalog_http_url(f"package {package_name!r} install.index_url", index_url)
+
+
+def install_target_for_install_metadata(package_name: str, version: str, install: object) -> InstallTarget:
+    """Derive the default package install target from catalog install metadata.
+
+    Args:
+        package_name: Plugin package distribution name.
+        version: Plugin package version.
+        install: Install metadata object to derive from.
 
     Returns:
-        Concrete install target and editable flag.
+        Concrete install target and optional index URL.
 
     Raises:
-        CatalogError: If the source metadata or package version is malformed.
+        CatalogError: If install metadata or package version is malformed.
     """
-    version = project_version(package_name, version)
-    validate_source_metadata(package_name, source)
-    if not isinstance(source, dict):
-        raise CatalogError(f"package {package_name!r} has invalid source; expected an object")
-
-    source_type = source["type"]
-    if source_type == "pypi":
-        return InstallTarget(target=f"{package_name}=={version}")
-    if source_type == "git":
-        url = required_source_string(package_name, source, "git", "url")
-        ref = required_source_string(package_name, source, "git", "ref")
-        subdirectory = optional_source_string(package_name, source, "git", "subdirectory")
-        fragment = f"#subdirectory={subdirectory}" if subdirectory is not None else ""
-        return InstallTarget(
-            target=f"{package_name} @ git+{url}@{ref}{fragment}",
-        )
-    if source_type == "url":
-        url = required_source_string(package_name, source, "url", "url")
-        return InstallTarget(target=f"{package_name} @ {url}")
-
-    path = required_source_string(package_name, source, "path", "path")
-    editable = source["editable"]
-    if not isinstance(editable, bool):
-        raise CatalogError(f"package {package_name!r} has invalid path source field 'editable'; expected a boolean")
-    return InstallTarget(target=path, editable=editable)
+    validate_install_metadata(package_name, version, install)
+    if not isinstance(install, dict):
+        raise CatalogError(f"package {package_name!r} has invalid install; expected an object")
+    return InstallTarget(
+        target=required_install_string(package_name, install, "requirement"),
+        index_url=optional_install_string(package_name, install, "index_url"),
+    )
 
 
-def validate_package_path(package_name: str, value: str, context: str) -> None:
-    """Validate a repository-relative package path for a catalog entry.
+def validate_install_keys(package_name: str, install: dict[str, object]) -> None:
+    """Validate fields in a catalog install object.
 
     Args:
         package_name: Plugin package distribution name.
-        value: Repository-relative package path.
-        context: Human-readable field name used in error messages.
+        install: Install metadata object to validate.
 
     Raises:
-        CatalogError: If the path is malformed.
+        CatalogError: If required fields are missing or unknown fields exist.
     """
-    try:
-        validate_repository_package_path(value, context)
-    except TapConfigError as exc:
-        raise CatalogError(f"package {package_name!r} has {exc}") from exc
-
-
-def validate_source_keys(
-    package_name: str,
-    source: dict[str, object],
-    source_type: str,
-    expected_keys: set[str],
-    optional_keys: set[str] | None = None,
-) -> None:
-    """Validate that a source object has exactly the expected fields.
-
-    Args:
-        package_name: Plugin package distribution name.
-        source: Source metadata object to validate.
-        source_type: Expected source type.
-        expected_keys: Required field names.
-        optional_keys: Optional field names allowed for the source object.
-
-    Raises:
-        CatalogError: If the source object has missing or extra fields.
-    """
-    optional_keys = optional_keys or set()
-    source_keys = set(source)
-    allowed_keys = expected_keys | optional_keys
-    missing_keys = expected_keys - source_keys
-    extra_keys = source_keys - allowed_keys
+    keys = set(install)
+    missing_keys = CATALOG_INSTALL_REQUIRED_KEYS - keys
+    extra_keys = keys - CATALOG_INSTALL_REQUIRED_KEYS - CATALOG_INSTALL_OPTIONAL_KEYS
     if missing_keys or extra_keys:
-        expected = ", ".join(sorted(expected_keys))
-        if optional_keys:
-            expected = f"{expected}; optional {{{', '.join(sorted(optional_keys))}}}"
-        actual = ", ".join(sorted(source_keys))
+        expected = ", ".join(sorted(CATALOG_INSTALL_REQUIRED_KEYS))
+        expected = f"{expected}; optional {{{', '.join(sorted(CATALOG_INSTALL_OPTIONAL_KEYS))}}}"
+        actual = ", ".join(sorted(keys))
         raise CatalogError(
-            f"package {package_name!r} has invalid {source_type!r} source fields; "
-            f"expected {{{expected}}}, got {{{actual}}}"
+            f"package {package_name!r} has invalid install fields; expected {{{expected}}}, got {{{actual}}}"
         )
 
 
-def required_source_string(package_name: str, source: dict[str, object], source_type: str, key: str) -> str:
-    """Return a required non-empty string from a source object.
+def required_install_string(package_name: str, install: dict[str, object], key: str) -> str:
+    """Return a required non-empty string from an install object.
 
     Args:
         package_name: Plugin package distribution name.
-        source: Source metadata object to read.
-        source_type: Source object type used in error messages.
-        key: Source field to read.
+        install: Install metadata object to read.
+        key: Install field to read.
 
     Returns:
         Non-empty string value.
@@ -1284,27 +1242,19 @@ def required_source_string(package_name: str, source: dict[str, object], source_
     Raises:
         CatalogError: If the field is missing or not a non-empty string.
     """
-    value = source.get(key)
+    value = install.get(key)
     if not isinstance(value, str) or not value:
-        raise CatalogError(
-            f"package {package_name!r} has invalid {source_type!r} source field {key!r}; expected a non-empty string"
-        )
+        raise CatalogError(f"package {package_name!r} has invalid install field {key!r}; expected a non-empty string")
     return value
 
 
-def optional_source_string(
-    package_name: str,
-    source: dict[str, object],
-    source_type: str,
-    key: str,
-) -> str | None:
-    """Return an optional non-empty string from a source object.
+def optional_install_string(package_name: str, install: dict[str, object], key: str) -> str | None:
+    """Return an optional non-empty string from an install object.
 
     Args:
         package_name: Plugin package distribution name.
-        source: Source metadata object to read.
-        source_type: Source object type used in error messages.
-        key: Source field to read.
+        install: Install metadata object to read.
+        key: Install field to read.
 
     Returns:
         Non-empty string value, or ``None`` when omitted.
@@ -1312,100 +1262,9 @@ def optional_source_string(
     Raises:
         CatalogError: If the field is present but not a non-empty string.
     """
-    if key not in source:
+    if key not in install:
         return None
-    return required_source_string(package_name, source, source_type, key)
-
-
-def validate_pypi_source_metadata(package_name: str, source: dict[str, object]) -> None:
-    """Validate a PyPI source object.
-
-    Args:
-        package_name: Plugin package distribution name.
-        source: Source metadata object to validate.
-
-    Raises:
-        CatalogError: If the PyPI source object is malformed.
-    """
-    validate_source_keys(package_name, source, "pypi", {"type"})
-
-
-def validate_git_source_metadata(package_name: str, source: dict[str, object]) -> None:
-    """Validate a Git source object.
-
-    Args:
-        package_name: Plugin package distribution name.
-        source: Source metadata object to validate.
-
-    Raises:
-        CatalogError: If the Git source object is malformed.
-    """
-    validate_source_keys(package_name, source, "git", {"type", "url", "ref"}, optional_keys={"subdirectory"})
-    url = required_source_string(package_name, source, "git", "url")
-    required_source_string(package_name, source, "git", "ref")
-    subdirectory = optional_source_string(package_name, source, "git", "subdirectory")
-    if subdirectory is not None:
-        validate_git_subdirectory(package_name, subdirectory)
-
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise CatalogError(
-            f"package {package_name!r} has invalid git source url {url!r}; expected an absolute HTTP(S) URL"
-        )
-
-
-def validate_path_source_metadata(package_name: str, source: dict[str, object]) -> None:
-    """Validate a path source object.
-
-    Args:
-        package_name: Plugin package distribution name.
-        source: Source metadata object to validate.
-
-    Raises:
-        CatalogError: If the path source object is malformed.
-    """
-    validate_source_keys(package_name, source, "path", {"type", "path", "editable"})
-    required_source_string(package_name, source, "path", "path")
-    editable = source.get("editable")
-    if not isinstance(editable, bool):
-        raise CatalogError(f"package {package_name!r} has invalid path source field 'editable'; expected a boolean")
-
-
-def validate_url_source_metadata(package_name: str, source: dict[str, object]) -> None:
-    """Validate a direct URL source object.
-
-    Args:
-        package_name: Plugin package distribution name.
-        source: Source metadata object to validate.
-
-    Raises:
-        CatalogError: If the direct URL source object is malformed.
-    """
-    validate_source_keys(package_name, source, "url", {"type", "url"})
-    url = required_source_string(package_name, source, "url", "url")
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise CatalogError(
-            f"package {package_name!r} has invalid url source url {url!r}; expected an absolute HTTP(S) URL"
-        )
-
-
-def validate_git_subdirectory(package_name: str, value: str) -> None:
-    """Validate an optional Git source subdirectory.
-
-    Args:
-        package_name: Plugin package distribution name.
-        value: Git repository-relative package path.
-
-    Raises:
-        CatalogError: If the path is absolute, traverses upward, or is empty.
-    """
-    parts = value.split("/")
-    if "\\" in value or value.startswith("/") or any(part in {"", ".", ".."} for part in parts):
-        raise CatalogError(
-            f"package {package_name!r} has invalid git source field 'subdirectory' {value!r}; "
-            "expected a normalized relative path inside the Git repository"
-        )
+    return required_install_string(package_name, install, key)
 
 
 def validate_unique_runtime_plugin_names(entries: list[CatalogEntry]) -> None:
@@ -1441,7 +1300,7 @@ def validate_catalog_entries(entries: list[CatalogEntry]) -> None:
     validate_unique_runtime_plugin_names(entries)
     validate_catalog_package_consistency(entries)
     for entry in entries:
-        validate_source_metadata(entry.plugin_package, entry.source)
+        validate_install_metadata(entry.plugin_package, entry.version, entry.install)
 
 
 def validate_catalog_package_consistency(entries: list[CatalogEntry]) -> None:
@@ -1471,7 +1330,7 @@ def validate_catalog_package_consistency(entries: list[CatalogEntry]) -> None:
                 entry.data_designer_version_specifier,
             ),
             "data_designer_marker": (previous.data_designer_marker, entry.data_designer_marker),
-            "source": (previous.source, entry.source),
+            "install": (previous.install, entry.install),
             "docs_url": (previous.docs_url, entry.docs_url),
         }
         for field, (previous_value, current_value) in fields.items():
@@ -1511,7 +1370,7 @@ def render_catalog_package(entries: list[CatalogEntry]) -> dict[str, object]:
         "name": entry.plugin_package,
         "version": entry.version,
         "description": entry.description,
-        "source": entry.source,
+        "install": entry.install,
         "compatibility": {
             "python": {
                 "specifier": entry.python_requires,

@@ -21,12 +21,12 @@ external tap instead. External taps should expose a schema v2 catalog from an
 unauthenticated raw JSON URL, or from a local catalog file path for authoring
 and offline workflows. See [Plugin taps](taps.md) for the consumer and
 maintainer workflow, and [Tap catalog schema v2](tap-catalog-schema-v2.md) for
-the JSON contract and install source metadata.
+the JSON contract and install metadata.
 
 Adding a tap is a trust decision, not only a discovery preference. A tap is a
 pointer to Python packages. Installing from a tap runs package-manager
 resolution and imports code after installation. Review the tap URL, package
-name, version, source/ref, and install command before confirming installs from
+name, version, requirement, index URL or direct reference, and install command before confirming installs from
 non-default taps.
 
 ## Scaffold a plugin
@@ -112,16 +112,15 @@ repository-level `[tool.ddp.tap]` table.
 
 | Input | Catalog fields |
 | --- | --- |
-| `[project].name` | Package `name`, PyPI install target, and generated docs path. |
-| `[project].version` | Package `version`; consumers combine this with package `name` for exact PyPI installs. |
+| `[project].name` | Package `name`, generated install requirement, and generated docs path. |
+| `[project].version` | Package `version` and exact generated `install.requirement`. |
 | `[project].description` | Package `description`. |
 | `[project].requires-python` | `compatibility.python.specifier`. |
 | Direct `data-designer` dependency in `[project].dependencies` | `compatibility.data_designer.requirement`, `.specifier`, and `.marker`. |
 | `[project.entry-points."data_designer.plugins"]` | Runtime plugin `entry_point.group`, `entry_point.name`, and `entry_point.value`. |
 | Loaded plugin object | Runtime plugin `name` and `plugin_type` under the package's `plugins` array. |
-| Plugin package directory | Used as Git `source.subdirectory` or path `source.path` when the repo is configured to generate those source types. |
 | Plugin docs under `plugins/<package>/docs/` plus `[tool.ddp.tap].docs-base-url` | `docs.url`. |
-| `[tool.ddp.tap].default-source`, `repository-git-url`, and `release-ref-template` | The generated `source` object. |
+| `[tool.ddp.tap].package-index-url` | `install.index_url` for packages released through this tap's static Simple index. |
 
 Catalog entries describe installability, but they do not replace runtime entry
 points. A plugin becomes available to Data Designer only after the package is
@@ -208,7 +207,8 @@ Generated files and their inputs:
 | --- | --- | --- |
 | `docs/plugins/` | `make plugin-docs` | Plugin package docs and package metadata. |
 | Generated plugin nav block in `zensical.toml` | `make plugin-docs` | Generated plugin docs tree. |
-| `catalog/plugins.json` | `make catalog` | Installed entry points, package metadata, compatibility dependencies, plugin docs URLs, and `[tool.ddp.tap]`. |
+| `catalog/plugins.json` | `make catalog` | Installed entry points, package metadata, install metadata, compatibility dependencies, plugin docs URLs, and `[tool.ddp.tap]`. |
+| `site/simple/`, `site/pypi/`, `site/packages.json`, and `site/catalog/plugins.json` | `make package-index` | Package-list JSON lines, package asset URL base, and generated catalog JSON. |
 | `.github/CODEOWNERS` | `make codeowners` | Per-plugin `CODEOWNERS` files. |
 
 CI verifies that generated plugin docs, `catalog/plugins.json`, and
@@ -231,7 +231,9 @@ repository-url = "https://github.com/acme/DataDesignerPlugins"
 repository-git-url = "https://github.com/acme/DataDesignerPlugins.git"
 docs-base-url = "https://acme.github.io/DataDesignerPlugins/"
 package-prefix = "data-designer-acme-"
-default-source = "pypi"
+package-index-url = "https://acme.github.io/DataDesignerPlugins/simple/"
+package-assets-url = "https://github.com/acme/DataDesignerPlugins/releases/download/ddp-package-assets/"
+package-assets-release-tag = "ddp-package-assets"
 release-ref-template = "{package}/v{version}"
 default-data-designer-requirement = "data-designer>=0.5.7"
 author-name = "ACME"
@@ -245,8 +247,8 @@ uv run ddp new my-plugin --type column-generator
 make all
 ```
 
-Publish the generated `catalog/plugins.json` at the `catalog-url` as raw JSON.
-Do not point users at an HTML repository page or documentation site as the
-machine catalog. Once Data Designer supports tap configuration, tell users to
-add that raw catalog URL through the `plugins taps add` flow before discovering
-or installing plugins from the external tap.
+Publish the generated `catalog/plugins.json` at the `catalog-url` as raw JSON
+and serve the static package index at `package-index-url`. Once Data Designer
+supports tap configuration, tell users to add that catalog URL through the
+`plugins taps add` flow before discovering or installing plugins from the
+external tap.

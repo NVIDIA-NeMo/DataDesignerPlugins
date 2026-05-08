@@ -266,6 +266,7 @@ Add repo tooling around the package index:
 ```bash
 make package-index
 make check-package-index
+make qa-package-index
 ```
 
 Expected behavior:
@@ -273,8 +274,10 @@ Expected behavior:
 - `make package-index` builds a local package index from a supplied or
   downloaded `packages.json` package list.
 - `make check-package-index` verifies that package-list rows are valid, hashes
-  are well formed, package filenames parse, and generated Simple index files
-  can be consumed by `uv`.
+  are well formed, package filenames parse, and static Simple index files can
+  be generated deterministically.
+- `make qa-package-index` performs an end-to-end local `uv` installation from a
+  scratch Simple API index backed by locally built package files.
 - The root `make all` should run package-index validation, but it should not
   require GitHub credentials or network access to GitHub Release assets.
 

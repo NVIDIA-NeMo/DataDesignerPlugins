@@ -5,8 +5,9 @@
       "name": "data-designer-retrieval-sdg",
       "version": "0.1.0",
       "description": "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion",
-      "source": {
-        "type": "pypi"
+      "install": {
+        "requirement": "data-designer-retrieval-sdg==0.1.0",
+        "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
       },
       "compatibility": {
         "python": {
@@ -46,8 +47,9 @@
       "name": "data-designer-template",
       "version": "0.1.0",
       "description": "Template Data Designer plugin \u2014 text transform column generator",
-      "source": {
-        "type": "pypi"
+      "install": {
+        "requirement": "data-designer-template==0.1.0",
+        "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
       },
       "compatibility": {
         "python": {

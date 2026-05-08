@@ -9,6 +9,7 @@ Usage::
     ddp new my-plugin       # Scaffold a new plugin
     ddp plugin-docs         # Generate plugin documentation pages
     ddp sync catalog        # Sync generated catalog JSON
+    ddp package-index check # Validate package index metadata
     ddp validate            # Validate all installed plugins
     ddp bump <plugin> patch # Bump a plugin version
 """
@@ -94,6 +95,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check whether the catalog is current without updating catalog/plugins.json",
     )
     p_sync_catalog.set_defaults(func=_run_sync_catalog)
+
+    # ddp package-index <command>
+    p_package_index = sub.add_parser(
+        "package-index",
+        help="Build and validate the static package index",
+        description=(
+            "Build, validate, merge, and locally QA the dumb-pypi static package index "
+            "used by released Data Designer plugin packages."
+        ),
+    )
+    p_package_index.add_argument("package_index_args", nargs=argparse.REMAINDER)
+    p_package_index.set_defaults(func=_run_package_index)
 
     # ddp codeowners
     p_codeowners = sub.add_parser(
@@ -202,6 +215,12 @@ def _run_sync_catalog(args: argparse.Namespace) -> int:
 
     print(f"Synced catalog: {output_path}")
     return 0
+
+
+def _run_package_index(args: argparse.Namespace) -> int:
+    from ddp.package_index import main as package_index_main
+
+    return package_index_main(args.package_index_args)
 
 
 def _run_codeowners(args: argparse.Namespace) -> int:

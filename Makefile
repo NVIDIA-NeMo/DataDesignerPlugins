@@ -1,12 +1,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test test-devtools test-plugins validate docs docs-server plugin-docs catalog check-plugin-docs check-catalog codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
+.PHONY: sync lint format test test-devtools test-plugins validate docs docs-server plugin-docs catalog package-index check-plugin-docs check-catalog check-package-index qa-package-index codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-owner
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
 sync:
 	uv sync --all-packages
+
+PACKAGE_LIST ?= .cache/package-index/packages.json
+PACKAGES_URL ?= https://github.com/NVIDIA-NeMo/DataDesignerPlugins/releases/download/ddp-package-assets/
+PACKAGE_INDEX_SITE ?= site
+PACKAGE_INDEX_QA_DIR ?= /tmp/ddp-package-index-qa
 
 # ── Lint ─────────────────────────────────────────────────────────────────
 
@@ -56,6 +61,7 @@ validate:
 
 docs: plugin-docs
 	uv run zensical build --clean --strict
+	$(MAKE) package-index
 
 DOCS_DEV_ADDR ?= localhost:8000
 
@@ -70,6 +76,12 @@ plugin-docs:
 catalog:
 	uv run ddp sync catalog
 
+package-index:
+	uv run ddp package-index build --package-list "$(PACKAGE_LIST)" --packages-url "$(PACKAGES_URL)" --site-dir "$(PACKAGE_INDEX_SITE)"
+
+qa-package-index:
+	uv run ddp package-index qa --scratch-dir "$(PACKAGE_INDEX_QA_DIR)" --force
+
 codeowners:
 	uv run ddp codeowners > .github/CODEOWNERS
 
@@ -78,6 +90,9 @@ check-plugin-docs:
 
 check-catalog:
 	uv run ddp sync catalog --check
+
+check-package-index:
+	uv run ddp package-index check --package-list "$(PACKAGE_LIST)" --packages-url "$(PACKAGES_URL)"
 
 check-codeowners:
 	uv run ddp codeowners > .github/CODEOWNERS.new
@@ -92,7 +107,7 @@ update-license-headers:
 
 # ── Aggregate targets ────────────────────────────────────────────────────
 
-check: check-plugin-docs check-catalog check-codeowners check-license-headers
+check: check-plugin-docs check-catalog check-package-index check-codeowners check-license-headers
 
 all: lint test validate check docs
 

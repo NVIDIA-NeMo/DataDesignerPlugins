@@ -27,8 +27,8 @@ The target runs:
 | `make lint` | Ruff linting and formatting. |
 | `make test` | Each plugin's tests in an isolated virtual environment. |
 | `make validate` | Installed `data_designer.plugins` entry points with `assert_valid_plugin`. |
-| `make check` | Generated plugin docs, generated catalog, generated CODEOWNERS, and SPDX license headers. |
-| `make docs` | Zensical builds the documentation site in strict mode. |
+| `make check` | Generated plugin docs, generated catalog, package-index metadata, generated CODEOWNERS, and SPDX license headers. |
+| `make docs` | Zensical builds the documentation site in strict mode and adds catalog/package-index files to `site/`. |
 | `make docs-server` | Zensical serves the documentation site locally while you edit. |
 
 ## Documentation
@@ -43,7 +43,9 @@ make docs
 
 The build writes static output to `site/`, which is ignored by git. Zensical
 validates internal links during the build, and this repository runs the build
-with `--strict` so documentation warnings fail CI.
+with `--strict` so documentation warnings fail CI. The docs target also runs
+`make package-index` so the deployable site contains `catalog/plugins.json`,
+`packages.json`, `simple/`, and `pypi/`.
 
 To preview documentation while editing:
 
@@ -66,6 +68,7 @@ docs, package metadata, installed entry points, tap config, and ownership files:
 ```bash
 make plugin-docs
 make catalog
+make package-index
 make codeowners
 ```
 
@@ -79,22 +82,19 @@ generated from installed local plugin entry points, package metadata,
 specifiers for compatibility checks by Data Designer and external tools.
 
 `catalog/plugins.json` is also checked in as the machine-readable NVIDIA tap
-catalog. The default tap URL is the unauthenticated raw GitHub URL:
+catalog. The default tap URL is the GitHub Pages catalog URL:
 
 ```text
-https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
+https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
-This URL tracks accepted `main` and is mutable. Tag or commit SHA raw URLs are
-immutable snapshots, for example
-`https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/<tag-or-sha>/catalog/plugins.json`.
-Release assets can be added later only if a distribution workflow needs them.
+This URL is deployed with the documentation site and the static package index
+at `https://nvidia-nemo.github.io/DataDesignerPlugins/simple/`.
 External taps may use any unauthenticated raw JSON endpoint or a local catalog
-file path.
+file path, and may serve packages from any Python package index or direct
+reference.
 
-Human documentation can link to the raw JSON catalog, but the documentation site
-does not deliver the machine catalog. Consumers should fetch the configured raw
-JSON URL or local file path, not a GitHub Pages page, Zensical page, or GitHub
+Consumers should fetch the configured JSON URL or local file path, not a GitHub
 HTML file browser view.
 
 Use focused regeneration and validation targets when only one generated surface
@@ -104,6 +104,7 @@ changed:
 | --- | --- | --- |
 | Plugin docs or docs metadata | `make plugin-docs` | `make check-plugin-docs` or `make check` |
 | Package metadata, entry points, compatibility dependency, or `[tool.ddp.tap]` | `make catalog` | `make check-catalog` or `make check` |
+| Package-list metadata or site package-index wiring | `make package-index` | `make check-package-index` or `make check` |
 | Per-plugin ownership | `make codeowners` | `make check-codeowners` or `make check` |
 | SPDX headers | `make update-license-headers` | `make check-license-headers` or `make check` |
 
@@ -115,10 +116,11 @@ Pull requests run the main CI workflow:
 - isolated plugin tests
 - plugin validation
 - generated metadata and license header checks, including `make check-catalog`
-  for checked-in catalog freshness and schema v2 shape
+  for checked-in catalog freshness and schema v2 shape, plus
+  `make check-package-index` for package-list and static index generation
 
 Documentation changes also run the documentation workflow. On pull requests the
 workflow builds the site and uploads a preview artifact. On pushes to `main`, it
-builds the same site and deploys `site/` to GitHub Pages. GitHub Pages is only
-for human-readable documentation; the machine-readable catalog is exposed from
-the raw `catalog/plugins.json` URL above.
+builds the same site and deploys `site/` to GitHub Pages. Every Pages deploy
+includes documentation, `catalog/plugins.json`, and the static package index so
+docs-only deploys do not remove installer-facing files.

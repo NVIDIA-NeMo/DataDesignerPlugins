@@ -20,6 +20,7 @@ class TestBuildParser:
         "new",
         "plugin-docs",
         "sync",
+        "package-index",
         "codeowners",
         "license-headers",
         "validate",
@@ -103,6 +104,12 @@ class TestBuildParser:
         assert args.sync_target == "catalog"
         assert args.check is True
 
+    def test_package_index_parses_remainder(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["package-index", "check", "--package-list", "packages.json"])
+        assert args.command == "package-index"
+        assert args.package_index_args == ["check", "--package-list", "packages.json"]
+
     def test_no_command_prints_help(self) -> None:
         parser = build_parser()
         args = parser.parse_args([])
@@ -141,6 +148,14 @@ class TestDispatch:
         mock_run.return_value = 0
         parser = build_parser()
         args = parser.parse_args(["sync", "catalog"])
+        args.func(args)
+        mock_run.assert_called_once_with(args)
+
+    @patch("ddp.cli._run_package_index")
+    def test_package_index_dispatches(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = 0
+        parser = build_parser()
+        args = parser.parse_args(["package-index", "check"])
         args.func(args)
         mock_run.assert_called_once_with(args)
 

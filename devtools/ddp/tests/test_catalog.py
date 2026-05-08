@@ -98,12 +98,14 @@ def write_tap_pyproject(root: Path, overrides: dict[str, str | None] | None = No
         overrides: Optional field values to override in ``[tool.ddp.tap]``.
     """
     values = {
-        "catalog-url": "https://catalog.example.test/plugins.json",
+        "catalog-url": "https://docs.example.test/ddp/catalog/plugins.json",
         "repository-url": "https://git.example.test/acme/dd-plugins",
         "repository-git-url": "https://git.example.test/acme/dd-plugins.git",
         "docs-base-url": "https://docs.example.test/ddp/",
         "package-prefix": "data-designer-",
-        "default-source": "pypi",
+        "package-index-url": "https://docs.example.test/ddp/simple/",
+        "package-assets-url": "https://git.example.test/acme/dd-plugins/releases/download/ddp-package-assets/",
+        "package-assets-release-tag": "ddp-package-assets",
         "release-ref-template": "{package}/v{version}",
         "default-data-designer-requirement": "data-designer>=0.5.7",
         "author-name": "ACME Labs",
@@ -175,7 +177,7 @@ def fake_catalog_entry(
     plugin_name: str,
     package_name: str = "data-designer-example",
     entry_point_name: str = "runtime-entry",
-    source: dict[str, object] | None = None,
+    install: dict[str, object] | None = None,
 ) -> catalog.CatalogEntry:
     """Create a catalog entry for render-time validation tests.
 
@@ -183,7 +185,7 @@ def fake_catalog_entry(
         plugin_name: Runtime plugin name.
         package_name: Plugin package distribution name.
         entry_point_name: Entry point name.
-        source: Optional source metadata override.
+        install: Optional install metadata override.
 
     Returns:
         Catalog entry with valid default metadata.
@@ -201,7 +203,11 @@ def fake_catalog_entry(
         data_designer_requirement="data-designer>=0.5.7",
         data_designer_version_specifier=">=0.5.7",
         data_designer_marker=None,
-        source=source or {"type": "pypi"},
+        install=install
+        or {
+            "requirement": f"{package_name}==0.2.0",
+            "index_url": "https://docs.example.test/ddp/simple/",
+        },
         docs_url=f"https://docs.example.test/ddp/plugins/{package_name}/",
     )
 
@@ -255,7 +261,10 @@ def test_discover_catalog_entries_uses_entry_point_runtime_metadata(monkeypatch,
             data_designer_requirement="data-designer>=0.5.7",
             data_designer_version_specifier=">=0.5.7",
             data_designer_marker=None,
-            source={"type": "pypi"},
+            install={
+                "requirement": "data-designer-multi==1.2.3",
+                "index_url": "https://docs.example.test/ddp/simple/",
+            },
             docs_url="https://docs.example.test/ddp/plugins/data-designer-multi/",
         ),
         catalog.CatalogEntry(
@@ -271,7 +280,10 @@ def test_discover_catalog_entries_uses_entry_point_runtime_metadata(monkeypatch,
             data_designer_requirement="data-designer>=0.5.7",
             data_designer_version_specifier=">=0.5.7",
             data_designer_marker=None,
-            source={"type": "pypi"},
+            install={
+                "requirement": "data-designer-multi==1.2.3",
+                "index_url": "https://docs.example.test/ddp/simple/",
+            },
             docs_url="https://docs.example.test/ddp/plugins/data-designer-multi/",
         ),
     ]
@@ -293,7 +305,10 @@ def test_render_catalog_json_outputs_plugin_compatibility_contract() -> None:
                 data_designer_requirement='data-designer>=0.5.7,<0.6; python_version >= "3.10"',
                 data_designer_version_specifier=">=0.5.7,<0.6",
                 data_designer_marker='python_version >= "3.10"',
-                source={"type": "pypi"},
+                install={
+                    "requirement": "data-designer-example==0.2.0",
+                    "index_url": "https://docs.example.test/ddp/simple/",
+                },
                 docs_url="https://docs.example.test/ddp/plugins/data-designer-example/",
             )
         ]
@@ -307,8 +322,9 @@ def test_render_catalog_json_outputs_plugin_compatibility_contract() -> None:
                 "description": "Package description",
                 "name": "data-designer-example",
                 "version": "0.2.0",
-                "source": {
-                    "type": "pypi",
+                "install": {
+                    "requirement": "data-designer-example==0.2.0",
+                    "index_url": "https://docs.example.test/ddp/simple/",
                 },
                 "compatibility": {
                     "python": {
@@ -339,7 +355,7 @@ def test_render_catalog_json_outputs_plugin_compatibility_contract() -> None:
     }
 
 
-def test_render_catalog_json_keeps_multi_entry_package_source_and_docs_metadata(
+def test_render_catalog_json_keeps_multi_entry_package_install_and_docs_metadata(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -367,14 +383,17 @@ def test_render_catalog_json_keeps_multi_entry_package_source_and_docs_metadata(
     [package] = output["packages"]
     assert package["name"] == "data-designer-multi"
     assert package["version"] == "1.2.3"
-    assert package["source"] == {"type": "pypi"}
+    assert package["install"] == {
+        "requirement": "data-designer-multi==1.2.3",
+        "index_url": "https://docs.example.test/ddp/simple/",
+    }
     assert package["docs"] == {
         "url": "https://docs.example.test/ddp/plugins/data-designer-multi/",
     }
     assert [plugin["name"] for plugin in package["plugins"]] == ["first-runtime-name", "second-runtime-name"]
 
 
-def test_discover_catalog_entries_reuses_one_source_object_for_multi_plugin_package(
+def test_discover_catalog_entries_reuses_one_install_object_for_multi_plugin_package(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -399,132 +418,60 @@ def test_discover_catalog_entries_reuses_one_source_object_for_multi_plugin_pack
 
     entries = catalog.discover_catalog_entries(plugins_dir)
 
-    assert entries[0].source is entries[1].source
+    assert entries[0].install is entries[1].install
 
 
-def test_discover_catalog_entries_generates_git_source_from_tap_config(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    plugins_dir = tmp_path / "plugins"
-    write_plugin_pyproject(
-        plugins_dir=plugins_dir,
+def test_install_target_for_install_metadata_uses_requirement_and_index_url() -> None:
+    assert catalog.install_target_for_install_metadata(
         package_name="data-designer-example",
         version="0.2.0",
-        description="Package-level description",
-        entry_points={"runtime-entry": "example.plugin:plugin"},
-        tap_overrides={"default-source": "git"},
-    )
-    monkeypatch.setattr(
-        catalog,
-        "load_plugin_from_entry_point",
-        FakePluginLoader({"runtime-entry": FakePlugin(name="runtime-name", plugin_type="seed-reader")}),
-    )
-
-    [entry] = catalog.discover_catalog_entries(plugins_dir)
-
-    assert entry.source == {
-        "type": "git",
-        "url": "https://git.example.test/acme/dd-plugins.git",
-        "ref": "data-designer-example/v0.2.0",
-        "subdirectory": "plugins/data-designer-example",
-    }
-
-
-def test_discover_catalog_entries_generates_path_source_from_tap_config(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    plugins_dir = tmp_path / "plugins"
-    write_plugin_pyproject(
-        plugins_dir=plugins_dir,
-        package_name="data-designer-example",
-        version="0.2.0",
-        description="Package-level description",
-        entry_points={"runtime-entry": "example.plugin:plugin"},
-        tap_overrides={"default-source": "path"},
-    )
-    monkeypatch.setattr(
-        catalog,
-        "load_plugin_from_entry_point",
-        FakePluginLoader({"runtime-entry": FakePlugin(name="runtime-name", plugin_type="seed-reader")}),
-    )
-
-    [entry] = catalog.discover_catalog_entries(plugins_dir)
-
-    assert entry.source == {
-        "type": "path",
-        "path": "plugins/data-designer-example",
-        "editable": True,
-    }
-
-
-def test_install_target_for_pypi_source_uses_exact_default_version() -> None:
-    assert catalog.install_target_for_source_metadata(
-        package_name="data-designer-example",
-        version="0.2.0",
-        source={
-            "type": "pypi",
-        },
-    ) == catalog.InstallTarget(target="data-designer-example==0.2.0")
-
-
-def test_install_target_for_git_source_uses_pep_508_direct_ref() -> None:
-    assert catalog.install_target_for_source_metadata(
-        package_name="data-designer-example",
-        version="0.2.0",
-        source={
-            "type": "git",
-            "url": "https://git.example.test/acme/dd-plugins.git",
-            "ref": "data-designer-example/v0.2.0",
-            "subdirectory": "plugins/data-designer-example",
+        install={
+            "requirement": "data-designer-example==0.2.0",
+            "index_url": "https://docs.example.test/ddp/simple/",
         },
     ) == catalog.InstallTarget(
-        target=(
-            "data-designer-example @ "
-            "git+https://git.example.test/acme/dd-plugins.git@data-designer-example/v0.2.0"
-            "#subdirectory=plugins/data-designer-example"
-        ),
+        target="data-designer-example==0.2.0",
+        index_url="https://docs.example.test/ddp/simple/",
     )
 
 
-def test_install_target_for_git_source_allows_repository_root_package() -> None:
-    assert catalog.install_target_for_source_metadata(
+def test_install_target_allows_direct_reference_without_index_url() -> None:
+    assert catalog.install_target_for_install_metadata(
         package_name="data-designer-example",
         version="0.2.0",
-        source={
-            "type": "git",
-            "url": "https://git.example.test/acme/dd-plugin.git",
-            "ref": "v0.2.0",
+        install={
+            "requirement": (
+                "data-designer-example @ https://packages.example.test/data_designer_example-0.2.0-py3-none-any.whl"
+            ),
         },
     ) == catalog.InstallTarget(
-        target="data-designer-example @ git+https://git.example.test/acme/dd-plugin.git@v0.2.0",
+        target="data-designer-example @ https://packages.example.test/data_designer_example-0.2.0-py3-none-any.whl",
     )
 
 
-def test_install_target_for_url_source_uses_pep_508_direct_ref() -> None:
-    assert catalog.install_target_for_source_metadata(
-        package_name="data-designer-example",
-        version="0.2.0",
-        source={
-            "type": "url",
-            "url": "https://packages.example.test/data_designer_example-0.2.0-py3-none-any.whl",
-        },
-    ) == catalog.InstallTarget(
-        target=("data-designer-example @ https://packages.example.test/data_designer_example-0.2.0-py3-none-any.whl"),
-    )
+def test_install_metadata_rejects_mismatched_requirement_name() -> None:
+    with pytest.raises(catalog.CatalogError) as exc_info:
+        catalog.validate_install_metadata(
+            package_name="data-designer-example",
+            version="0.2.0",
+            install={"requirement": "data-designer-other==0.2.0"},
+        )
+
+    assert "expected a requirement for 'data-designer-example'" in str(exc_info.value)
 
 
-def test_install_target_for_path_source_preserves_local_editable_plan() -> None:
-    assert catalog.install_target_for_source_metadata(
-        package_name="data-designer-example",
-        version="0.2.0",
-        source={
-            "type": "path",
-            "path": "plugins/data-designer-example",
-            "editable": True,
-        },
-    ) == catalog.InstallTarget(target="plugins/data-designer-example", editable=True)
+def test_install_metadata_rejects_non_exact_index_requirement() -> None:
+    with pytest.raises(catalog.CatalogError) as exc_info:
+        catalog.validate_install_metadata(
+            package_name="data-designer-example",
+            version="0.2.0",
+            install={
+                "requirement": "data-designer-example>=0.2.0",
+                "index_url": "https://docs.example.test/ddp/simple/",
+            },
+        )
+
+    assert "expected exact specifier '==0.2.0'" in str(exc_info.value)
 
 
 def test_render_catalog_json_errors_on_duplicate_runtime_plugin_names() -> None:
@@ -547,35 +494,6 @@ def test_render_catalog_json_errors_on_duplicate_runtime_plugin_names() -> None:
     assert "second-entry" in message
 
 
-def test_validate_git_source_metadata_rejects_malformed_package_path() -> None:
-    with pytest.raises(catalog.CatalogError) as exc_info:
-        catalog.validate_source_metadata(
-            package_name="data-designer-example",
-            source={
-                "type": "git",
-                "url": "https://git.example.test/acme/dd-plugins.git",
-                "ref": "data-designer-example/v0.2.0",
-                "subdirectory": "../data-designer-example",
-            },
-        )
-
-    message = str(exc_info.value)
-    assert "data-designer-example" in message
-    assert "subdirectory" in message
-    assert "relative path" in message
-
-
-def test_validate_path_source_metadata_allows_external_paths() -> None:
-    catalog.validate_source_metadata(
-        package_name="data-designer-example",
-        source={
-            "type": "path",
-            "path": "/tmp/data-designer-example",
-            "editable": True,
-        },
-    )
-
-
 def test_render_catalog_json_rejects_inconsistent_package_metadata() -> None:
     entry = fake_catalog_entry(plugin_name="runtime-name")
     inconsistent_entry = catalog.CatalogEntry(
@@ -591,7 +509,10 @@ def test_render_catalog_json_rejects_inconsistent_package_metadata() -> None:
         data_designer_requirement=entry.data_designer_requirement,
         data_designer_version_specifier=entry.data_designer_version_specifier,
         data_designer_marker=entry.data_designer_marker,
-        source=entry.source,
+        install={
+            "requirement": "data-designer-example==0.3.0",
+            "index_url": "https://docs.example.test/ddp/simple/",
+        },
         docs_url=entry.docs_url,
     )
 
@@ -810,8 +731,9 @@ def test_main_includes_template_plugin() -> None:
         "description": "Template Data Designer plugin — text transform column generator",
         "name": "data-designer-template",
         "version": "0.1.0",
-        "source": {
-            "type": "pypi",
+        "install": {
+            "requirement": "data-designer-template==0.1.0",
+            "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/",
         },
         "compatibility": {
             "python": {
@@ -840,7 +762,9 @@ def test_main_includes_template_plugin() -> None:
     } in output["packages"]
 
 
-def test_checked_in_nvidia_catalog_remains_pypi_only() -> None:
+def test_checked_in_nvidia_catalog_uses_static_package_index() -> None:
     output = json.loads(catalog.PLUGINS_CATALOG_PATH.read_text(encoding="utf-8"))
 
-    assert {package["source"]["type"] for package in output["packages"]} == {"pypi"}
+    assert {
+        package["install"]["index_url"] for package in output["packages"] if isinstance(package.get("install"), dict)
+    } == {"https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"}

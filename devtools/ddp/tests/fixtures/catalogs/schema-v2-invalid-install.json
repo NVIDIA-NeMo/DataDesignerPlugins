@@ -2,12 +2,11 @@
   "schema_version": 2,
   "packages": [
     {
-      "name": "data-designer-invalid-source",
+      "name": "data-designer-invalid-install",
       "version": "0.1.0",
-      "description": "Invalid source fixture",
-      "source": {
-        "type": "git",
-        "url": "https://github.com/NVIDIA-NeMo/DataDesignerPlugins.git"
+      "description": "Invalid install fixture",
+      "install": {
+        "requirement": "other-package==0.1.0"
       },
       "compatibility": {
         "python": {
@@ -20,16 +19,16 @@
         }
       },
       "docs": {
-        "url": "https://docs.example.test/plugins/data-designer-invalid-source/"
+        "url": "https://docs.example.test/plugins/data-designer-invalid-install/"
       },
       "plugins": [
         {
-          "name": "invalid-source",
+          "name": "invalid-install",
           "plugin_type": "column-generator",
           "entry_point": {
             "group": "data_designer.plugins",
-            "name": "invalid-source",
-            "value": "data_designer_invalid_source.plugin:plugin"
+            "name": "invalid-install",
+            "value": "data_designer_invalid_install.plugin:plugin"
           }
         }
       ]

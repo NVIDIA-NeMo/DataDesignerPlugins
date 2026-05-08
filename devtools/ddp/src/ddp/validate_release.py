@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Validate plugin metadata and catalog state before a PyPI release."""
+"""Validate plugin metadata and catalog state before a package release."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def main(args: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="validate-release",
-        description="Validate plugin metadata and generated catalog state before a PyPI release.",
+        description="Validate plugin metadata and generated catalog state before a package release.",
     )
     parser.add_argument("plugin_name", help="Plugin name (e.g. data-designer-my-plugin)")
     parser.add_argument("tag_version", help="Expected version from the git tag")
@@ -118,12 +118,10 @@ def validate_release(repo_root: Path, plugin_name: str, tag_version: str) -> lis
             repo_root=repo_root,
             project_name=project_name,
             project_version=project_version,
-            package_path=f"plugins/{plugin_name}",
             entry_points=entry_points,
             description=description,
             python_requires=python_requires,
             data_designer_requirement=data_designer_requirement,
-            release_ref=release_ref,
             tap_config=tap_config,
         )
     )
@@ -400,12 +398,10 @@ def validate_catalog_for_release(
     repo_root: Path,
     project_name: str,
     project_version: str,
-    package_path: str,
     entry_points: dict[str, str],
     description: str,
     python_requires: str,
     data_designer_requirement: str,
-    release_ref: str,
     tap_config: TapConfig,
 ) -> list[str]:
     """Validate checked-in schema v2 catalog entries for a release.
@@ -414,12 +410,10 @@ def validate_catalog_for_release(
         repo_root: Repository root.
         project_name: Plugin package name.
         project_version: Plugin package version.
-        package_path: Expected repository-relative plugin package path.
         entry_points: Entry points declared by the package.
         description: Package description.
         python_requires: Normalized package Python specifier.
         data_designer_requirement: Direct Data Designer dependency string.
-        release_ref: Expected release ref.
         tap_config: Repository tap configuration.
 
     Returns:
@@ -457,12 +451,11 @@ def validate_catalog_for_release(
                 entry_index=entry_index,
                 project_name=project_name,
                 project_version=project_version,
-                package_path=package_path,
                 entry_points=entry_points,
                 description=description,
                 python_requires=python_requires,
                 data_designer_requirement=data_designer_requirement,
-                release_ref=release_ref,
+                expected_install=tap_config.install_metadata_for_package(project_name, project_version),
                 expected_docs_url=expected_docs_url,
                 seen_entry_points=seen_entry_points,
             )
@@ -557,12 +550,11 @@ def validate_catalog_package_for_release(
     entry_index: int,
     project_name: str,
     project_version: str,
-    package_path: str,
     entry_points: dict[str, str],
     description: str,
     python_requires: str,
     data_designer_requirement: str,
-    release_ref: str,
+    expected_install: dict[str, object],
     expected_docs_url: str,
     seen_entry_points: dict[str, str],
 ) -> list[str]:
@@ -573,12 +565,11 @@ def validate_catalog_package_for_release(
         entry_index: Entry index within ``packages``.
         project_name: Plugin package name.
         project_version: Plugin package version.
-        package_path: Expected repository-relative plugin package path.
         entry_points: Entry points declared by the package.
         description: Package description.
         python_requires: Normalized package Python specifier.
         data_designer_requirement: Direct Data Designer dependency string.
-        release_ref: Expected release ref.
+        expected_install: Expected package install metadata.
         expected_docs_url: Expected docs URL.
         seen_entry_points: Mutable mapping of seen entry point names to values.
 
@@ -606,16 +597,16 @@ def validate_catalog_package_for_release(
             errors=errors,
         )
 
-    source = entry.get("source")
-    if "source" not in entry:
-        errors.append(f"{context} is missing source")
+    install = entry.get("install")
+    if "install" not in entry:
+        errors.append(f"{context} is missing install")
     else:
-        validate_release_source(
-            source=source,
+        validate_release_install(
+            install=install,
             context=context,
             project_name=project_name,
-            release_ref=release_ref,
-            package_path=package_path,
+            project_version=project_version,
+            expected_install=expected_install,
             errors=errors,
         )
 
@@ -849,47 +840,38 @@ def validate_catalog_data_designer_compatibility(
         errors.append(f"{context}.compatibility.data_designer.marker is {marker!r}, expected {expected_marker!r}")
 
 
-def validate_release_source(
-    source: object,
+def validate_release_install(
+    install: object,
     context: str,
     project_name: str,
-    release_ref: str,
-    package_path: str,
+    project_version: str,
+    expected_install: dict[str, object],
     errors: list[str],
 ) -> None:
-    """Validate release-safe catalog source metadata.
+    """Validate release-safe catalog install metadata.
 
     Args:
-        source: Catalog ``source`` object.
+        install: Catalog ``install`` object.
         context: Error context.
         project_name: Plugin package name.
-        release_ref: Expected release ref.
-        package_path: Local repository path for this package.
+        project_version: Plugin package version.
+        expected_install: Expected install object from tap configuration.
         errors: Error accumulator.
     """
     try:
-        catalog.validate_source_metadata(project_name, source)
+        catalog.validate_install_metadata(project_name, project_version, install)
     except catalog.CatalogError as exc:
         errors.append(str(exc))
         return
 
-    if not isinstance(source, dict):
-        errors.append(f"{context}.source must be an object")
+    if not isinstance(install, dict):
+        errors.append(f"{context}.install must be an object")
         return
 
-    source_type = source.get("type")
-    if source_type == "path":
-        errors.append(f"{context}.source.type 'path' cannot be used for release validation")
-        return
-    if source_type == "git":
-        ref = source.get("ref")
-        subdirectory = source.get("subdirectory")
-        if ref != release_ref:
-            errors.append(f"{context}.source.ref is {ref!r}, expected release ref {release_ref!r}")
-        if subdirectory != package_path:
-            errors.append(
-                f"{context}.source.subdirectory is {subdirectory!r}, expected local package path {package_path!r}"
-            )
+    for key, expected_value in expected_install.items():
+        value = install.get(key)
+        if value != expected_value:
+            errors.append(f"{context}.install.{key} is {value!r}, expected {expected_value!r}")
 
 
 def validate_catalog_docs(

@@ -11,6 +11,8 @@ on:
       - ".github/workflows/docs.yml"
       - "Makefile"
       - "devtools/ddp/src/ddp/plugin_docs.py"
+      - "devtools/ddp/src/ddp/package_index.py"
+      - "catalog/plugins.json"
       - "docs/**"
       - "plugins/**/docs/**"
       - "pyproject.toml"
@@ -42,7 +44,20 @@ jobs:
           enable-cache: true
 
       - run: make sync
-      - run: make docs
+
+      - name: Prepare package list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .cache/package-index
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            gh release download ddp-package-assets --pattern packages.json --dir .cache/package-index \
+              || : > .cache/package-index/packages.json
+          else
+            : > .cache/package-index/packages.json
+          fi
+
+      - run: make docs PACKAGE_LIST=.cache/package-index/packages.json
 
       - uses: actions/upload-pages-artifact@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

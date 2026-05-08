@@ -46,7 +46,9 @@ def write_tap_pyproject(
             repository-git-url = "https://git.example.test/acme/dd-plugins.git"
             docs-base-url = "{docs_base_url}"
             package-prefix = "data-designer-"
-            default-source = "pypi"
+            package-index-url = "https://docs.example.test/ddp/simple/"
+            package-assets-url = "https://git.example.test/acme/dd-plugins/releases/download/ddp-package-assets/"
+            package-assets-release-tag = "ddp-package-assets"
             release-ref-template = "{release_ref_template}"
             default-data-designer-requirement = "data-designer>=0.5.7"
             author-name = "ACME Labs"
@@ -120,7 +122,7 @@ def catalog_entry(
     entry_point_name: str = "runtime-entry",
     entry_point_value: str = "example.plugin:plugin",
     runtime_name: str | None = None,
-    source: dict[str, object] | None = None,
+    install: dict[str, object] | None = None,
     docs_url: str | None = None,
 ) -> dict[str, object]:
     """Return a schema v2 catalog package for release validation tests.
@@ -131,7 +133,7 @@ def catalog_entry(
         entry_point_name: Data Designer entry point name.
         entry_point_value: Data Designer entry point target.
         runtime_name: Runtime plugin name.
-        source: Catalog source metadata.
+        install: Catalog install metadata.
         docs_url: Catalog docs URL.
 
     Returns:
@@ -142,7 +144,11 @@ def catalog_entry(
         "name": package_name,
         "version": version,
         "description": PACKAGE_DESCRIPTION,
-        "source": source or {"type": "pypi"},
+        "install": install
+        or {
+            "requirement": f"{package_name}=={version}",
+            "index_url": "https://docs.example.test/ddp/simple/",
+        },
         "compatibility": {
             "python": {
                 "specifier": ">=3.10",
@@ -251,8 +257,8 @@ def test_stale_catalog_entry_fails(tmp_path: Path) -> None:
     assert any(".version" in error and "0.0.9" in error for error in errors)
 
 
-@pytest.mark.parametrize("missing_field", ["docs", "source"])
-def test_missing_docs_or_source_fails(tmp_path: Path, missing_field: str) -> None:
+@pytest.mark.parametrize("missing_field", ["docs", "install"])
+def test_missing_docs_or_install_fails(tmp_path: Path, missing_field: str) -> None:
     entry = catalog_entry()
     entry.pop(missing_field)
     write_release_repo(tmp_path, entries=[entry])
@@ -262,16 +268,14 @@ def test_missing_docs_or_source_fails(tmp_path: Path, missing_field: str) -> Non
     assert any(f"missing {missing_field}" in error for error in errors)
 
 
-def test_mismatched_git_source_ref_fails(tmp_path: Path) -> None:
+def test_mismatched_install_requirement_fails(tmp_path: Path) -> None:
     write_release_repo(
         tmp_path,
         entries=[
             catalog_entry(
-                source={
-                    "type": "git",
-                    "url": "https://git.example.test/acme/dd-plugins.git",
-                    "ref": "data-designer-example/v0.0.9",
-                    "subdirectory": "plugins/data-designer-example",
+                install={
+                    "requirement": "data-designer-example==0.0.9",
+                    "index_url": "https://docs.example.test/ddp/simple/",
                 },
             )
         ],
@@ -279,18 +283,19 @@ def test_mismatched_git_source_ref_fails(tmp_path: Path) -> None:
 
     errors = validate_release(tmp_path, PACKAGE_NAME, PACKAGE_VERSION)
 
-    assert any("source.ref" in error and "data-designer-example/v0.1.0" in error for error in errors)
+    assert any("install.requirement" in error and "==0.1.0" in error for error in errors)
 
 
-def test_path_source_fails_release_validation(tmp_path: Path) -> None:
+def test_direct_reference_install_fails_release_validation(tmp_path: Path) -> None:
     write_release_repo(
         tmp_path,
         entries=[
             catalog_entry(
-                source={
-                    "type": "path",
-                    "path": "plugins/data-designer-example",
-                    "editable": True,
+                install={
+                    "requirement": (
+                        "data-designer-example @ "
+                        "https://packages.example.test/data_designer_example-0.1.0-py3-none-any.whl"
+                    ),
                 },
             )
         ],
@@ -298,7 +303,7 @@ def test_path_source_fails_release_validation(tmp_path: Path) -> None:
 
     errors = validate_release(tmp_path, PACKAGE_NAME, PACKAGE_VERSION)
 
-    assert any("source.type 'path'" in error for error in errors)
+    assert any("install.requirement" in error for error in errors)
 
 
 def test_email_only_codeowners_fails(tmp_path: Path) -> None:

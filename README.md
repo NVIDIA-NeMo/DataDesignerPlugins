@@ -45,13 +45,14 @@ Each plugin is an independent Python package with its own `pyproject.toml`, docs
 The default NVIDIA plugin tap catalog URL is:
 
 ```text
-https://raw.githubusercontent.com/NVIDIA-NeMo/DataDesignerPlugins/main/catalog/plugins.json
+https://nvidia-nemo.github.io/DataDesignerPlugins/catalog/plugins.json
 ```
 
-`catalog/plugins.json` is the generated raw JSON tap artifact for Data Designer.
-It is not served from GitHub Pages or an HTML repository page. See
-[docs/taps.md](docs/taps.md) for tap discovery, schema v2 fields, source
-objects, trust expectations, external tap setup, and raw URL pinning guidance.
+`catalog/plugins.json` is the generated JSON tap artifact for Data Designer.
+The published Pages site serves that catalog together with the static Python
+package index at `https://nvidia-nemo.github.io/DataDesignerPlugins/simple/`.
+See [docs/taps.md](docs/taps.md) for tap discovery, schema v2 fields,
+`install` metadata, trust expectations, and external tap setup guidance.
 
 ## Development
 
@@ -66,6 +67,8 @@ make validate           # Run assert_valid_plugin on all entry points
 make check              # Verify generated plugin docs, catalog, CODEOWNERS, and license headers are up to date
 make plugin-docs        # Regenerate docs/plugins/ from per-plugin docs and metadata
 make catalog            # Regenerate catalog/plugins.json
+make package-index      # Add catalog JSON and the static package index to site/
+make qa-package-index   # Build/install a plugin through a scratch local package index
 make docs               # Build the Zensical documentation site
 make docs-server        # Serve docs locally at http://localhost:8000
 make all                # lint + test + validate + check + docs (full local CI)
@@ -96,6 +99,7 @@ The `ddp` command manages the monorepo. Run `uv run ddp --help` to see all subco
 | `ddp sync catalog` | Sync the static plugin catalog JSON |
 | `ddp validate` | Validate all installed plugins |
 | `ddp plugin-docs` | Generate plugin docs site inputs |
+| `ddp package-index` | Build, validate, merge, and QA the static package index |
 | `ddp codeowners` | Aggregate CODEOWNERS to stdout |
 | `ddp license-headers` | Add or check SPDX license headers |
 | `ddp bump <plugin> <part>` | Bump a plugin's semantic version |
@@ -108,7 +112,7 @@ make bump PLUGIN=data-designer-my-plugin PART=patch   # Bump version (major/mino
 git add plugins/data-designer-my-plugin/pyproject.toml
 git commit -m "chore(data-designer-my-plugin): bump version to 0.1.1"
 make release PLUGIN=data-designer-my-plugin            # Tag + build
-git push origin data-designer-my-plugin/v0.1.1         # Triggers CI publish
+git push origin data-designer-my-plugin/v0.1.1         # Triggers CI release
 ```
 
 See [docs/releasing.md](docs/releasing.md) for the full release guide.
