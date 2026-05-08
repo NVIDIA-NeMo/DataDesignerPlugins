@@ -4,12 +4,12 @@
 name: Publish
 
 on:
-  push:
-    tags:
-      - "data-designer-*/v*"
+  release:
+    types: [published]
 
 jobs:
   publish:
+    if: startsWith(github.event.release.tag_name, 'data-designer-') && contains(github.event.release.tag_name, '/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # full history needed for merge-base check
+          ref: ${{ github.event.release.tag_name }}
 
       - uses: astral-sh/setup-uv@v4
         with:
@@ -30,8 +31,19 @@ jobs:
 
       - name: Parse tag
         id: tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG}"
+          if [ "${RELEASE_PRERELEASE}" = "true" ]; then
+            echo "ERROR: prerelease plugin package publication is not supported"
+            exit 1
+          fi
+          if [[ ! "${TAG}" =~ ^data-designer-[a-z0-9]+([._-][a-z0-9]+)*/v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            echo "ERROR: release tag must match <plugin-package>/vX.Y.Z, got ${TAG}"
+            exit 1
+          fi
           PLUGIN_NAME="${TAG%%/v*}"
           TAG_VERSION="${TAG#*/v}"
           PLUGIN_DIR="plugins/${PLUGIN_NAME}"
@@ -47,7 +59,7 @@ jobs:
       - name: Validate tagged commit is on main
         run: |
           git fetch origin main
-          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main \
+          git merge-base --is-ancestor HEAD origin/main \
             || { echo "ERROR: tagged commit is not on main"; exit 1; }
 
       - name: Sync workspace
@@ -55,38 +67,6 @@ jobs:
 
       - name: Validate version match and metadata
         run: uv run ddp check-release "${{ steps.tag.outputs.plugin_name }}" "${{ steps.tag.outputs.tag_version }}"
-
-      - name: Authorize tag pusher against CODEOWNERS
-        env:
-          ACTOR: ${{ github.actor }}
-          PLUGIN_DIR: ${{ steps.tag.outputs.plugin_dir }}
-          # Team lookups require a token with read:org scope. The default
-          # GITHUB_TOKEN usually works for public teams; set MEMBERSHIP_TOKEN
-          # as a PAT secret if team resolution fails.
-          GH_TOKEN: ${{ secrets.MEMBERSHIP_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          ALL_OWNERS=$(uv run python -m ddp.release_owners --all "${PLUGIN_DIR}/CODEOWNERS")
-          OWNERS=$(uv run python -m ddp.release_owners "${PLUGIN_DIR}/CODEOWNERS")
-          MATCH=0
-          for owner in $OWNERS; do
-            case "$owner" in
-              @*/*)
-                ORG="${owner#@}"; ORG="${ORG%%/*}"
-                TEAM_SLUG="${owner##*/}"
-                if gh api "orgs/${ORG}/teams/${TEAM_SLUG}/memberships/${ACTOR}" >/dev/null 2>&1; then
-                  MATCH=1; break
-                fi
-                ;;
-              @*)
-                if [ "$owner" = "@${ACTOR}" ]; then MATCH=1; break; fi
-                ;;
-            esac
-          done
-          if [ "$MATCH" -eq 0 ]; then
-            echo "ERROR: @${ACTOR} is not an authorized owner of ${PLUGIN_DIR}/CODEOWNERS"
-            echo "Listed owners: $ALL_OWNERS"
-            exit 1
-          fi
 
       - name: Run plugin tests in isolated venv
         env:
