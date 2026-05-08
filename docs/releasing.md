@@ -55,6 +55,16 @@ Push the tag printed by the release command:
 git push origin data-designer-my-plugin/v0.2.0
 ```
 
+Then publish a GitHub Release for that tag. Publishing the release is the
+explicit maintainer action that starts package publication:
+
+```bash
+gh release create data-designer-my-plugin/v0.2.0 \
+  --title "data-designer-my-plugin v0.2.0" \
+  --notes "Release data-designer-my-plugin v0.2.0" \
+  --latest=false
+```
+
 ## Catalog discoverability
 
 A released plugin becomes discoverable through a catalog when the generated
@@ -128,12 +138,12 @@ entries in that package's `plugins` array.
 
 ## Release CI
 
-Tag pushes trigger the publish workflow. It verifies that:
+Publishing a GitHub Release whose tag matches `{package}/vX.Y.Z` triggers the
+publish workflow. It verifies that:
 
 - the plugin directory exists;
 - the tagged commit is reachable from `main`;
 - the tag version matches plugin metadata;
-- the tag pusher is authorized by the plugin `CODEOWNERS`;
 - required PyPI metadata is present, including `description`, `license`,
   `readme`, and `authors`;
 - the package declares `requires-python` and a direct versioned

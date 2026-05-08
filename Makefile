@@ -161,5 +161,6 @@ release: check-owner test-plugin build-plugin
 	echo "Creating tag: $(PLUGIN)/v$$PLUGIN_VERSION"; \
 	git tag "$(PLUGIN)/v$$PLUGIN_VERSION"; \
 	echo ""; \
-	echo "Tag created. Push to trigger CI publish:"; \
-	echo "  git push origin $(PLUGIN)/v$$PLUGIN_VERSION"
+	echo "Tag created. Push it, then publish a GitHub Release to trigger CI publish:"; \
+	echo "  git push origin $(PLUGIN)/v$$PLUGIN_VERSION"; \
+	echo "  gh release create $(PLUGIN)/v$$PLUGIN_VERSION --title \"$(PLUGIN) v$$PLUGIN_VERSION\" --notes \"Release $(PLUGIN) v$$PLUGIN_VERSION\" --latest=false"
