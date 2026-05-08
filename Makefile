@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: sync lint format test test-devtools test-plugins validate docs docs-server plugin-docs catalog package-index check-plugin-docs check-catalog check-package-index qa-package-index codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin
+.PHONY: sync lint format test test-devtools test-plugins validate docs docs-server plugin-docs catalog package-index check-plugin-docs check-catalog check-package-index qa-package-index codeowners check-codeowners check-license-headers update-license-headers check all bump release build-plugin validate-release test-plugin check-release-state
 
 # ── Setup ────────────────────────────────────────────────────────────────
 
@@ -116,6 +116,7 @@ all: lint test validate check docs
 
 PLUGIN ?=
 PART ?= patch
+PUBLISH ?= 0
 PLUGIN_DIR = plugins/$(PLUGIN)
 
 bump:
@@ -140,11 +141,33 @@ test-plugin:
 build-plugin: validate-release
 	uv build "$(PLUGIN_DIR)" --out-dir dist/
 
-release: test-plugin build-plugin
+check-release-state:
+	@test -z "$$(git status --porcelain)" || { echo "ERROR: release worktree must be clean"; git status --short; exit 1; }
+	@git fetch origin main
+	@git merge-base --is-ancestor HEAD origin/main || { echo "ERROR: release commit must be reachable from origin/main"; exit 1; }
+
+release: check-release-state test-plugin build-plugin
 	@PLUGIN_VERSION=$$(uv run python -c "import tomllib; print(tomllib.load(open('$(PLUGIN_DIR)/pyproject.toml','rb'))['project']['version'])"); \
-	echo "Creating tag: $(PLUGIN)/v$$PLUGIN_VERSION"; \
-	git tag "$(PLUGIN)/v$$PLUGIN_VERSION"; \
+	RELEASE_TAG="$(PLUGIN)/v$$PLUGIN_VERSION"; \
+	if git rev-parse -q --verify "refs/tags/$$RELEASE_TAG" >/dev/null; then \
+		if [ "$$(git rev-list -n 1 "$$RELEASE_TAG")" != "$$(git rev-parse HEAD)" ]; then \
+			echo "ERROR: tag $$RELEASE_TAG already exists on a different commit"; \
+			exit 1; \
+		fi; \
+		echo "Tag already exists at HEAD: $$RELEASE_TAG"; \
+	else \
+		echo "Creating tag: $$RELEASE_TAG"; \
+		git tag "$$RELEASE_TAG"; \
+	fi; \
 	echo ""; \
-	echo "Tag created. Push it, then publish a GitHub Release to trigger CI publish:"; \
-	echo "  git push origin $(PLUGIN)/v$$PLUGIN_VERSION"; \
-	echo "  gh release create $(PLUGIN)/v$$PLUGIN_VERSION --title \"$(PLUGIN) v$$PLUGIN_VERSION\" --notes \"Release $(PLUGIN) v$$PLUGIN_VERSION\" --latest=false"
+	if [ "$(PUBLISH)" = "1" ]; then \
+		echo "Pushing tag and publishing GitHub Release: $$RELEASE_TAG"; \
+		git push origin "$$RELEASE_TAG"; \
+		gh release create "$$RELEASE_TAG" --title "$(PLUGIN) v$$PLUGIN_VERSION" --notes "Release $(PLUGIN) v$$PLUGIN_VERSION" --latest=false --verify-tag; \
+	else \
+		echo "Tag created. Push it, then publish a GitHub Release to trigger CI publish:"; \
+		echo "  git push origin $$RELEASE_TAG"; \
+		echo "  gh release create $$RELEASE_TAG --title \"$(PLUGIN) v$$PLUGIN_VERSION\" --notes \"Release $(PLUGIN) v$$PLUGIN_VERSION\" --latest=false --verify-tag"; \
+		echo ""; \
+		echo "Run with PUBLISH=1 to push the tag and create the GitHub Release automatically."; \
+	fi
