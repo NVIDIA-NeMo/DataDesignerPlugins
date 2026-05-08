@@ -328,14 +328,17 @@ def test_release_ref_template_mismatch_fails(tmp_path: Path) -> None:
     assert any("release-ref-template" in error and "release/data-designer-example/0.1.0" in error for error in errors)
 
 
-def test_valid_template_plugin_passes() -> None:
-    """validate_release should pass for the template plugin with its actual version."""
+def test_template_plugin_is_not_publicly_cataloged() -> None:
+    """The reference template should stay out of the public catalog."""
     root = find_repo_root()
+    catalog_document = json.loads((root / "catalog" / "plugins.json").read_text(encoding="utf-8"))
+    assert "data-designer-template" not in {package["name"] for package in catalog_document["packages"]}
+
     data = load_toml(root / "plugins" / "data-designer-template" / "pyproject.toml")
     version = data["project"]["version"]
 
     result = main(["data-designer-template", version])
-    assert result == 0
+    assert result == 1
 
 
 def test_wrong_version_fails() -> None:

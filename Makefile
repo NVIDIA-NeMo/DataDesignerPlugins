@@ -113,7 +113,7 @@ check: check-plugin-docs check-catalog check-package-index check-codeowners chec
 all: lint test validate check docs
 
 # ── Release ─────────────────────────────────────────────────────────────
-# Usage: make release PLUGIN=data-designer-template
+# Usage: make release PLUGIN=data-designer-my-plugin
 
 PLUGIN ?=
 PART ?= patch
