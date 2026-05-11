@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+name = "data-designer-sandbox-piston"
+version = "0.1.0"
+description = "Piston-backed code execution columns and MCP tools for Data Designer"
+requires-python = ">=3.10"
+dependencies = [
+    "aiohttp>=3.9.0",
+    "data-designer>=0.5.7",
+    "mcp>=1.0.0",
+]
+license = "Apache-2.0"
+readme = "README.md"
+authors = [
+    {name = "NVIDIA Corporation"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+]
+
+[project.entry-points."data_designer.plugins"]
+code-sandbox = "data_designer_sandbox_piston.plugin:plugin"
+
+[project.scripts]
+data-designer-sandbox-piston-mcp = "data_designer_sandbox_piston.mcp_server:entrypoint"
+
+[project.urls]
+Repository = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/data_designer_sandbox_piston"]
+
+[tool.ruff]
+extend = "../../pyproject.toml"
