@@ -9,16 +9,16 @@ finetuning.
 
 ## Plugins
 
-The single PyPI package contributes two plugins to DataDesigner's
-registries via `[project.entry-points."data_designer.plugins"]`:
+A single package contributes two plugins to DataDesigner's registries
+via `[project.entry-points."data_designer.plugins"]`:
 
 | Slug | Type | Purpose |
 |------|------|---------|
 | `embedding-dedup` | column generator | Generic cosine-similarity dedup of any list-valued column. Implements native `agenerate()` for the async engine. |
 | `document-chunker` | seed reader | Sentence-chunks a directory of text files and emits structured sections, with optional multi-document bundling. |
 
-Both ship with the same `pip install data-designer-retrieval-sdg` and
-become discoverable automatically through Python entry points.
+Both are registered automatically through Python entry points when the
+package is installed (see [Installation](#installation)).
 
 ## Native async (`DATA_DESIGNER_ASYNC_ENGINE=1`)
 
@@ -36,9 +36,39 @@ runs on Python 3.10+ via the framework's sync bridge.
 
 ## Installation
 
+The package is distributed from the NVIDIA-NeMo plugin index (hosted on
+GitHub Pages); it is not on PyPI. Install it by adding the plugin index
+alongside PyPI:
+
 ```bash
-pip install data-designer-retrieval-sdg
+uv pip install \
+  --default-index https://pypi.org/simple/ \
+  --index https://nvidia-nemo.github.io/DataDesignerPlugins/simple/ \
+  data-designer-retrieval-sdg
 ```
+
+For projects managed with `uv`, add it as a dependency:
+
+```bash
+uv add \
+  --default-index https://pypi.org/simple/ \
+  --index https://nvidia-nemo.github.io/DataDesignerPlugins/simple/ \
+  data-designer-retrieval-sdg
+```
+
+`pip` users can pass the equivalent flags:
+
+```bash
+pip install \
+  --index-url https://pypi.org/simple/ \
+  --extra-index-url https://nvidia-nemo.github.io/DataDesignerPlugins/simple/ \
+  data-designer-retrieval-sdg
+```
+
+Standard version constraints work (`>=0.1`, `==0.1.0`, ...). The
+NVIDIA-NeMo index only serves `data-designer-*` plugin packages; the
+default PyPI index supplies transitive dependencies (`data-designer`,
+`nltk`, `pyarrow`, `pyyaml`).
 
 For development inside the monorepo:
 
