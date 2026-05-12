@@ -10,6 +10,8 @@ services:
     privileged: true
     ports:
       - "${PISTON_PORT:-2000}:2000"
+    volumes:
+      - piston-data:/piston
     restart: unless-stopped
     healthcheck:
       test:
@@ -18,3 +20,6 @@ services:
       interval: 10s
       timeout: 2s
       retries: 12
+
+volumes:
+  piston-data:

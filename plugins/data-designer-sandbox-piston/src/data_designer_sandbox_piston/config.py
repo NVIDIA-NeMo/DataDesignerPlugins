@@ -30,8 +30,40 @@ DEFAULT_SANDBOX_MCP_RESULT_FIELDS: tuple[SandboxMCPResultField, ...] = (
     "stderr",
     "exit_code",
 )
+DEFAULT_SANDBOX_RUN_TIMEOUT_MS = 3000
 SANDBOX_MCP_MODULE = "data_designer_sandbox_piston.mcp_server"
 SANDBOX_MCP_LANGUAGE_DISPLAY_NAMES: dict[str, str] = {"gcc": "GCC"}
+
+
+def has_python_packages(value: Sequence[str] | None) -> bool:
+    """Return whether a package list declares at least one Python package."""
+    return bool(value)
+
+
+def validate_python_runtime_requirements(
+    language: str,
+    version: str,
+    python_packages: Sequence[str] | None,
+) -> None:
+    """Validate Python package metadata for a prebuilt Piston runtime.
+
+    Args:
+        language: Piston runtime language.
+        version: Piston runtime version selector.
+        python_packages: Optional Python package requirements.
+
+    Raises:
+        ValueError: If packages are declared for a non-Python runtime or without
+            an explicit custom runtime version.
+    """
+    if python_packages is not None and language != "python":
+        raise ValueError(f"python_packages can only be specified when language='python', but language='{language}'")
+    if has_python_packages(python_packages) and version == "*":
+        raise ValueError(
+            "python_packages requires an explicit Piston runtime version. "
+            "Build or provide a custom Python runtime that includes those packages, "
+            "then set version to that runtime's version."
+        )
 
 
 def validate_sandbox_url(value: str | None) -> str | None:
@@ -104,8 +136,9 @@ class CodeSandboxColumnConfig(SingleColumnConfig):
         target_column: Existing column containing source code to execute.
         language: Piston runtime language, such as ``python`` or ``gcc``.
         version: Piston runtime version selector.
-        python_packages: Optional Python packages for deployments that provide a
-            custom Python runtime. The plugin does not build runtimes itself.
+        python_packages: Optional Python packages expected to be available in a
+            prebuilt custom Python runtime. The plugin does not build runtimes
+            itself, so non-empty packages require an explicit ``version``.
         stdin: Text passed to the program standard input.
         args: Command-line arguments passed to the program.
         compile_timeout: Compile wall-time limit in milliseconds.
@@ -124,13 +157,18 @@ class CodeSandboxColumnConfig(SingleColumnConfig):
         default=None,
         description=(
             "Optional Python package requirements. Only valid when language='python'. "
-            "Deployments must provide or build the matching custom Piston runtime."
+            "Non-empty package lists require an explicit custom Piston runtime version; "
+            "deployments must provide or build that runtime before execution."
         ),
     )
     stdin: str = Field(default="", description="Text passed to standard input.")
     args: list[str] = Field(default_factory=list, description="Command-line arguments passed to the program.")
     compile_timeout: int = Field(default=10000, gt=0, description="Compile wall-time limit in milliseconds.")
-    run_timeout: int = Field(default=10000, gt=0, description="Run wall-time limit in milliseconds.")
+    run_timeout: int = Field(
+        default=DEFAULT_SANDBOX_RUN_TIMEOUT_MS,
+        gt=0,
+        description="Run wall-time limit in milliseconds.",
+    )
     compile_cpu_time: int = Field(default=3000, gt=0, description="Compile CPU-time limit in milliseconds.")
     run_cpu_time: int = Field(default=3000, gt=0, description="Run CPU-time limit in milliseconds.")
     sandbox_url: str | None = Field(
@@ -170,10 +208,7 @@ class CodeSandboxColumnConfig(SingleColumnConfig):
 
     @model_validator(mode="after")
     def _validate_python_packages(self) -> CodeSandboxColumnConfig:
-        if self.python_packages is not None and self.language != "python":
-            raise ValueError(
-                f"python_packages can only be specified when language='python', but language='{self.language}'"
-            )
+        validate_python_runtime_requirements(self.language, self.version, self.python_packages)
         return self
 
 
@@ -186,7 +221,9 @@ class SandboxMCPConfig(BaseModel):
             MCP process must inherit ``SANDBOX_URL`` from its environment.
         language: Piston runtime language used by the ``run_code`` tool.
         version: Piston runtime version selector.
-        python_packages: Optional Python packages made available by the runtime.
+        python_packages: Optional Python packages expected to be available in a
+            prebuilt custom Python runtime. Non-empty packages require an
+            explicit ``version``.
         result_fields: ``SandboxOutput`` fields returned by the MCP tool.
         run_timeout: Run wall-time limit in milliseconds.
         run_cpu_time: Run CPU-time limit in milliseconds.
@@ -197,12 +234,19 @@ class SandboxMCPConfig(BaseModel):
     sandbox_url: str | None = Field(default=None, description="Optional Piston API base URL.")
     language: str = Field(default=DEFAULT_SANDBOX_LANGUAGE, description="Piston runtime language.")
     version: str = Field(default="*", description="Piston runtime version selector.")
-    python_packages: list[str] | None = Field(default=None, description="Optional Python package requirements.")
+    python_packages: list[str] | None = Field(
+        default=None,
+        description="Optional Python package requirements for a prebuilt custom Python runtime.",
+    )
     result_fields: list[SandboxMCPResultField] = Field(
         default_factory=lambda: list(DEFAULT_SANDBOX_MCP_RESULT_FIELDS),
         description="Sandbox output fields included in MCP responses.",
     )
-    run_timeout: int = Field(default=10000, gt=0, description="Run wall-time limit in milliseconds.")
+    run_timeout: int = Field(
+        default=DEFAULT_SANDBOX_RUN_TIMEOUT_MS,
+        gt=0,
+        description="Run wall-time limit in milliseconds.",
+    )
     run_cpu_time: int = Field(default=3000, gt=0, description="Run CPU-time limit in milliseconds.")
     tool_description: str | None = Field(default=None, description="LLM-facing MCP tool description.")
 
@@ -233,10 +277,7 @@ class SandboxMCPConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_and_set_defaults(self) -> SandboxMCPConfig:
-        if self.python_packages is not None and self.language != "python":
-            raise ValueError(
-                f"python_packages can only be specified when language='python', but language='{self.language}'"
-            )
+        validate_python_runtime_requirements(self.language, self.version, self.python_packages)
         if self.tool_description is None:
             self.tool_description = default_sandbox_mcp_tool_description(
                 self.language,

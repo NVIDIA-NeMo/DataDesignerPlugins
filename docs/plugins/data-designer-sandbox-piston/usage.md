@@ -19,6 +19,15 @@ Docker Compose example:
 docker compose -f plugins/data-designer-sandbox-piston/docker/docker-compose.yml up --build
 ```
 
+Piston runtime packages are stored under `/piston` inside a Docker volume. A new
+Piston package volume starts empty, so install the runtimes your workflow needs:
+
+```bash
+curl -X POST http://localhost:2000/api/v2/packages \
+  -H 'Content-Type: application/json' \
+  -d '{"language":"python","version":"3.12.0"}'
+```
+
 ## Execute a code column
 
 ```python
@@ -36,6 +45,11 @@ builder.add_column(
 
 Each output value is a JSON-serializable dictionary containing stdout, stderr,
 exit code, status, timing, and memory fields.
+
+If a workflow needs Python packages, build or provide a custom Piston Python
+runtime first, then set `version` to that exact runtime version and list the
+expected packages in `python_packages`. The package list is metadata for humans
+and tool descriptions; execution still depends on the configured Piston runtime.
 
 ## Add an MCP `run_code` tool
 

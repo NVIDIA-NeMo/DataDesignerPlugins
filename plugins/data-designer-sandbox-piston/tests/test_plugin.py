@@ -118,6 +118,24 @@ class TestCodeSandboxColumnConfig:
                 python_packages=["numpy"],
             )
 
+    def test_python_packages_require_explicit_runtime_version(self) -> None:
+        with pytest.raises(ValidationError, match="explicit Piston runtime version"):
+            CodeSandboxColumnConfig(
+                name="result",
+                target_column="code",
+                language="python",
+                python_packages=["numpy"],
+            )
+
+        config = CodeSandboxColumnConfig(
+            name="result",
+            target_column="code",
+            language="python",
+            version="3.12.0-ddp-numpy",
+            python_packages=["numpy"],
+        )
+        assert config.version == "3.12.0-ddp-numpy"
+
 
 class TestSandboxOutput:
     def test_parses_piston_response(self) -> None:
@@ -221,6 +239,7 @@ class TestSandboxMCPConfig:
             name="sandbox",
             sandbox_url="http://localhost:2000",
             language="python",
+            version="3.12.0-ddp-numpy",
             python_packages=["numpy"],
         )
         provider = config.to_provider()
@@ -243,6 +262,10 @@ class TestSandboxMCPConfig:
         with pytest.raises(ValidationError, match="result_fields"):
             SandboxMCPConfig(result_fields=[])
 
+    def test_python_packages_require_explicit_runtime_version(self) -> None:
+        with pytest.raises(ValidationError, match="explicit Piston runtime version"):
+            SandboxMCPConfig(language="python", python_packages=["numpy"])
+
 
 class TestMCPServer:
     def test_creates_server_from_env(self) -> None:
@@ -251,7 +274,7 @@ class TestMCPServer:
                 "SANDBOX_URL": "http://localhost:2000",
                 "SANDBOX_LANGUAGE": "python",
                 "SANDBOX_VERSION": "*",
-                "SANDBOX_RUN_TIMEOUT": "10000",
+                "SANDBOX_RUN_TIMEOUT": "3000",
                 "SANDBOX_RUN_CPU_TIME": "3000",
                 "SANDBOX_TOOL_DESCRIPTION": "Execute Python.",
                 "SANDBOX_RESULT_FIELDS": "stdout,stderr,exit_code",
@@ -266,7 +289,7 @@ class TestMCPServer:
                 "SANDBOX_URL": "http://localhost:2000",
                 "SANDBOX_LANGUAGE": "python",
                 "SANDBOX_VERSION": "*",
-                "SANDBOX_RUN_TIMEOUT": "10000",
+                "SANDBOX_RUN_TIMEOUT": "3000",
                 "SANDBOX_RUN_CPU_TIME": "3000",
                 "SANDBOX_TOOL_DESCRIPTION": "Execute Python.",
                 "SANDBOX_RESULT_FIELDS": "stdout,exit_code",
@@ -282,7 +305,7 @@ class TestMCPServer:
                 "SANDBOX_URL": "http://localhost:2000",
                 "SANDBOX_LANGUAGE": "python",
                 "SANDBOX_VERSION": "*",
-                "SANDBOX_RUN_TIMEOUT": "10000",
+                "SANDBOX_RUN_TIMEOUT": "3000",
                 "SANDBOX_RUN_CPU_TIME": "3000",
                 "SANDBOX_TOOL_DESCRIPTION": "Execute Python.",
                 "SANDBOX_RESULT_FIELDS": "stderr,exit_code",
