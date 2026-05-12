@@ -54,6 +54,7 @@ class EmbeddingDedupColumnConfig(SingleColumnConfig):
         """Additional columns produced as side effects."""
         return []
 
-    def get_column_emoji(self) -> str:
+    @staticmethod
+    def get_column_emoji() -> str:
         """Emoji displayed in logs for this column type."""
         return "🔍"
