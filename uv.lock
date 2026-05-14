@@ -13,6 +13,7 @@ members = [
     "data-designer-plugins-workspace",
     "data-designer-retrieval-sdg",
     "data-designer-template",
+    "data-designer-visual-search",
     "ddp",
 ]
 constraints = [{ name = "idna", specifier = ">=3.12" }]
@@ -494,6 +495,23 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "data-designer", specifier = ">=0.5.7" }]
+
+[[package]]
+name = "data-designer-visual-search"
+version = "0.1.0"
+source = { editable = "plugins/data-designer-visual-search" }
+dependencies = [
+    { name = "data-designer" },
+    { name = "pillow" },
+    { name = "requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "data-designer", specifier = ">=0.5.7" },
+    { name = "pillow" },
+    { name = "requests" },
+]
 
 [[package]]
 name = "ddp"
