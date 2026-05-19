@@ -10,5 +10,13 @@ class DataDesignerCuratorError(DataDesignerError):
     """Base error for Data Designer Curator plugins."""
 
 
+class CuratorDependencyError(DataDesignerCuratorError):
+    """Raised when optional NeMo Curator dependencies are unavailable."""
+
+
+class CuratorExecutionError(DataDesignerCuratorError):
+    """Raised when NeMo Curator execution fails."""
+
+
 class RemoteScoringError(DataDesignerCuratorError):
     """Raised when a remote scoring endpoint fails."""

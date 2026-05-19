@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from data_designer.engine.processing.processors.base import Processor
 
+from data_designer_curator.adapters.curator_text import CuratorTextAdapter
 from data_designer_curator.audit import write_audit
 from data_designer_curator.config import ScoreFilterProcessorConfig
 
@@ -15,21 +16,20 @@ if TYPE_CHECKING:
 
 
 class ScoreFilterProcessor(Processor[ScoreFilterProcessorConfig]):
-    """Keep rows whose score column falls within configured thresholds."""
+    """Keep rows whose score column passes a Curator metadata filter."""
 
     def process_after_generation(self, data: pd.DataFrame) -> pd.DataFrame:
         """Filter the final generated dataset."""
         if self.config.score_column not in data.columns:
             raise ValueError(f"Missing score column: {self.config.score_column!r}")
 
-        scores = data[self.config.score_column]
-        mask = scores.notna()
-        if self.config.min_score is not None:
-            mask &= scores >= self.config.min_score
-        if self.config.max_score is not None:
-            mask &= scores <= self.config.max_score
-        if self.config.keep_null_scores:
-            mask |= scores.isna()
+        output, mask = CuratorTextAdapter().score_filter(
+            data=data,
+            score_column=self.config.score_column,
+            min_score=self.config.min_score,
+            max_score=self.config.max_score,
+            keep_null_scores=self.config.keep_null_scores,
+        )
 
         if self.config.audit:
             write_audit(
@@ -37,7 +37,7 @@ class ScoreFilterProcessor(Processor[ScoreFilterProcessorConfig]):
                 self.artifact_storage.processors_outputs_path / self.config.name,
             )
 
-        return data.loc[mask].reset_index(drop=True)
+        return output
 
     def _build_audit(self, data: pd.DataFrame, keep_mask: pd.Series) -> pd.DataFrame:
         audit = data[[self.config.score_column]].copy()

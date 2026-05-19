@@ -3,22 +3,39 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from data_designer.config.base import ProcessorConfig, SingleColumnConfig
+from data_designer.config.base import ConfigBase, ProcessorConfig, SingleColumnConfig
 from pydantic import Field, HttpUrl, field_validator, model_validator
 from typing_extensions import Self
 
-KeepPolicy = Literal["first", "last", "highest_score", "lowest_score"]
+CuratorExecutionMode = Literal["none", "local_ray", "existing_ray"]
+
+
+class CuratorExecutionConfig(ConfigBase):
+    """Connection settings for Curator-backed processors."""
+
+    mode: CuratorExecutionMode = "local_ray"
+    ray_address: str | None = None
+    num_cpus: int | None = Field(default=None, ge=1)
+    num_gpus: int | None = Field(default=None, ge=0)
+    object_store_memory: int | None = Field(default=None, ge=1)
+    enable_object_spilling: bool = False
+    include_dashboard: bool = True
+    ray_temp_dir: str | None = None
+    metrics_dir: str | None = None
+    client_kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExactDedupProcessorConfig(ProcessorConfig):
-    """Configuration for exact duplicate row removal."""
+    """Configuration for Curator-backed exact duplicate row removal."""
 
     processor_type: Literal["exact-dedup"] = "exact-dedup"
     text_columns: list[str] = Field(min_length=1)
-    keep: KeepPolicy = "first"
-    score_column: str | None = None
+    id_column: str | None = None
+    hash_method: Literal["md5"] = "md5"
+    cache_dir: str | None = None
+    execution: CuratorExecutionConfig = Field(default_factory=CuratorExecutionConfig)
     audit: bool = True
 
     @field_validator("text_columns")
@@ -29,16 +46,9 @@ class ExactDedupProcessorConfig(ProcessorConfig):
             raise ValueError("text_columns cannot contain empty values.")
         return value
 
-    @model_validator(mode="after")
-    def validate_keep_policy(self) -> Self:
-        """Require score_column for score-based representative selection."""
-        if self.keep in {"highest_score", "lowest_score"} and self.score_column is None:
-            raise ValueError(f"score_column is required when keep={self.keep!r}.")
-        return self
-
 
 class ScoreFilterProcessorConfig(ProcessorConfig):
-    """Configuration for filtering rows by an existing score column."""
+    """Configuration for Curator-backed filtering by an existing score column."""
 
     processor_type: Literal["score-filter"] = "score-filter"
     score_column: str

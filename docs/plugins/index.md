@@ -10,7 +10,7 @@ Browse available Data Designer plugins by what they add to your data generation 
       <span class="plugin-doc-card__title">data-designer-curator</span>
       <span class="plugin-doc-card__version">v0.1.0</span>
     </span>
-    <span class="plugin-doc-card__description">Curator-style curation processors and remote scoring for Data Designer</span>
+    <span class="plugin-doc-card__description">NeMo Curator-backed curation processors and remote scoring for Data Designer</span>
     <span class="plugin-doc-card__section">
       <span class="plugin-doc-card__label">Entry points</span>
       <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">exact-dedup</span><span class="plugin-doc-chip">remote-score</span><span class="plugin-doc-chip">score-filter</span></span>

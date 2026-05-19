@@ -1,12 +1,21 @@
 # data-designer-curator
 
-Curator-style curation plugins for Data Designer.
+NeMo Curator-backed curation plugins for Data Designer.
 
 ## Installation
 
 ```bash
 uv add data-designer data-designer-curator
 ```
+
+The metadata filter processor calls NeMo Curator's CPU text filtering atom:
+
+```bash
+uv add "data-designer-curator[curator-text-cpu]"
+```
+
+The exact dedup processor calls NeMo Curator's GPU dedup workflow. Install
+NeMo Curator's `text_cuda12` extra in the same environment for that processor.
 
 For remote HTTP scoring support:
 
@@ -16,10 +25,10 @@ uv add "data-designer-curator[remote]"
 
 ## Usage
 
-This package provides three lightweight curation plugins:
+This package provides three curation plugins:
 
-- `exact-dedup`: drop exact duplicate rows by one or more columns.
-- `score-filter`: keep rows that pass score thresholds.
+- `exact-dedup`: call NeMo Curator exact deduplication for generated rows.
+- `score-filter`: call NeMo Curator metadata filtering for score thresholds.
 - `remote-score`: call an external HTTP scoring endpoint for each row.
 
 ```python
@@ -34,7 +43,6 @@ builder.add_processor(
     ExactDedupProcessorConfig(
         name="dedup_answers",
         text_columns=["answer"],
-        keep="first",
     )
 )
 builder.add_processor(

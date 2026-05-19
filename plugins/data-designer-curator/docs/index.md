@@ -1,12 +1,21 @@
 # data-designer-curator
 
-Curator-style curation plugins for Data Designer.
+NeMo Curator-backed curation plugins for Data Designer.
 
 ## Installation
 
 ```bash
 uv add data-designer data-designer-curator
 ```
+
+The metadata filter processor calls NeMo Curator's CPU text filtering atom:
+
+```bash
+uv add "data-designer-curator[curator-text-cpu]"
+```
+
+The exact dedup processor calls NeMo Curator's GPU dedup workflow. Install
+NeMo Curator's `text_cuda12` extra in the same environment for that processor.
 
 For remote HTTP scoring support:
 
@@ -18,8 +27,8 @@ uv add "data-designer-curator[remote]"
 
 | Entry point | Type | Purpose |
 | --- | --- | --- |
-| `exact-dedup` | Processor | Drop exact duplicate rows by one or more columns. |
-| `score-filter` | Processor | Keep rows that pass score thresholds. |
+| `exact-dedup` | Processor | Call NeMo Curator exact deduplication for generated rows. |
+| `score-filter` | Processor | Call NeMo Curator metadata filtering for score thresholds. |
 | `remote-score` | Column generator | Call an external HTTP scoring endpoint for each row. |
 
 ## Exact Dedup
@@ -31,7 +40,6 @@ builder.add_processor(
     ExactDedupProcessorConfig(
         name="dedup_answers",
         text_columns=["answer"],
-        keep="first",
     )
 )
 ```
@@ -40,8 +48,10 @@ builder.add_processor(
 | --- | --- | --- |
 | `name` | Yes | Processor name used for artifacts. |
 | `text_columns` | Yes | Columns used to identify exact duplicates. |
-| `keep` | No | Representative policy: `first`, `last`, `highest_score`, or `lowest_score`. |
-| `score_column` | No | Score column required for score-based `keep` policies. |
+| `id_column` | No | Existing stable ID column to pass to Curator. |
+| `hash_method` | No | Hash method passed to Curator. Defaults to `md5`. |
+| `cache_dir` | No | Curator cache directory. Defaults under processor artifacts. |
+| `execution` | No | Optional Curator/Ray execution settings. Defaults to a local Ray client. |
 | `audit` | No | Write an audit parquet file under processor artifacts. |
 
 ## Score Filter

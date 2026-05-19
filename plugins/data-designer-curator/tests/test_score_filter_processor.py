@@ -7,8 +7,30 @@ import pandas as pd
 import pytest
 from data_designer.engine.resources.resource_provider import ResourceProvider
 
+from data_designer_curator.adapters import curator_text
 from data_designer_curator.config import ScoreFilterProcessorConfig
 from data_designer_curator.processors.filters import ScoreFilterProcessor
+
+
+class FakeCuratorFilter:
+    def __init__(self, *, filter_fn: object, filter_field: str) -> None:
+        self.filter_fn = filter_fn
+        self.filter_field = filter_field
+
+    def compute_filter_mask(
+        self,
+        data: pd.DataFrame,
+        filter_fn: object,
+        filter_field: str,
+        invert: bool,
+    ) -> pd.Series:
+        mask = data[filter_field].map(filter_fn)
+        return ~mask if invert else mask
+
+
+@pytest.fixture(autouse=True)
+def fake_curator_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(curator_text, "_import_curator_filter", lambda: FakeCuratorFilter)
 
 
 def test_score_filter_applies_min_score(resource_provider: ResourceProvider) -> None:
