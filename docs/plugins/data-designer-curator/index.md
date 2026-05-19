@@ -8,7 +8,7 @@ NeMo Curator-backed curation plugins for Data Designer.
 uv add data-designer data-designer-curator
 ```
 
-The metadata filter processor calls NeMo Curator's CPU text filtering atom:
+The metadata filter processor calls NeMo Curator's CPU text filtering primitive:
 
 ```bash
 uv add "data-designer-curator[curator-text-cpu]"

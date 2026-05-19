@@ -97,7 +97,7 @@ class CuratorExecutionSession:
 
 
 class CuratorTextAdapter:
-    """Thin adapter over NeMo Curator text curation atoms."""
+    """Thin adapter over NeMo Curator text curation primitives."""
 
     def exact_dedup(
         self,
