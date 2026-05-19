@@ -8,71 +8,72 @@ import pytest
 from data_designer.engine.resources.resource_provider import ResourceProvider
 
 from data_designer_curator.adapters.curator_text import ORIGINAL_INDEX_COLUMN
-from data_designer_curator.config import ExactDedupProcessorConfig
+from data_designer_curator.config import CuratorDedupProcessorConfig
 from data_designer_curator.errors import CuratorDependencyError
-from data_designer_curator.processors.dedup import ExactDedupProcessor
+from data_designer_curator.processors.dedup import CuratorDedupProcessor
 
 
 class FakeCuratorTextAdapter:
     calls: list[dict[str, object]] = []
 
-    def exact_dedup(self, **kwargs: object) -> pd.DataFrame:
+    def dedup(self, **kwargs: object) -> pd.DataFrame:
         self.calls.append(kwargs)
         data = kwargs["data"]
         assert isinstance(data, pd.DataFrame)
         return data.drop_duplicates(subset=["text"], keep="first")
 
 
-def test_exact_dedup_uses_curator_adapter(
+def test_curator_dedup_uses_adapter(
     monkeypatch: pytest.MonkeyPatch,
     resource_provider: ResourceProvider,
 ) -> None:
     FakeCuratorTextAdapter.calls = []
     monkeypatch.setattr("data_designer_curator.processors.dedup.CuratorTextAdapter", FakeCuratorTextAdapter)
     data = pd.DataFrame({"text": ["same", "same", "different"], "value": [1, 2, 3]})
-    config = ExactDedupProcessorConfig(name="dedup", text_columns=["text"], audit=False)
+    config = CuratorDedupProcessorConfig(name="dedup", dedup_type="fuzzy", text_columns=["text"], audit=False)
 
-    output = ExactDedupProcessor(config, resource_provider).process_after_generation(data)
+    output = CuratorDedupProcessor(config, resource_provider).process_after_generation(data)
 
     assert output.to_dict(orient="records") == [
         {"text": "same", "value": 1},
         {"text": "different", "value": 3},
     ]
     call = FakeCuratorTextAdapter.calls[0]
+    assert call["dedup_type"] == "fuzzy"
     assert call["text_columns"] == ["text"]
-    assert call["hash_method"] == "md5"
+    assert call["params"] == {}
     assert call["id_column"] is None
     assert ORIGINAL_INDEX_COLUMN in call["data"].columns
 
 
-def test_exact_dedup_writes_audit(
+def test_curator_dedup_writes_audit(
     monkeypatch: pytest.MonkeyPatch,
     resource_provider: ResourceProvider,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr("data_designer_curator.processors.dedup.CuratorTextAdapter", FakeCuratorTextAdapter)
     data = pd.DataFrame({"text": ["same", "same", "different"]})
-    config = ExactDedupProcessorConfig(name="dedup", text_columns=["text"])
+    config = CuratorDedupProcessorConfig(name="dedup", dedup_type="semantic", text_columns=["text"])
 
-    ExactDedupProcessor(config, resource_provider).process_after_generation(data)
+    CuratorDedupProcessor(config, resource_provider).process_after_generation(data)
 
     audit_path = tmp_path / "dataset" / "processors-files" / "dedup" / "audit.parquet"
     audit = pd.read_parquet(audit_path)
     assert audit["_dd_action"].tolist() == ["kept", "duplicate", "kept"]
-    assert audit["_dd_reason"].tolist() == ["selected representative", "exact duplicate", "selected representative"]
+    assert audit["_dd_reason"].tolist() == ["selected representative", "semantic duplicate", "selected representative"]
 
 
-def test_exact_dedup_raises_for_missing_column(resource_provider: ResourceProvider) -> None:
+def test_curator_dedup_raises_for_missing_column(resource_provider: ResourceProvider) -> None:
     data = pd.DataFrame({"other": ["same"]})
-    config = ExactDedupProcessorConfig(name="dedup", text_columns=["text"], audit=False)
+    config = CuratorDedupProcessorConfig(name="dedup", text_columns=["text"], audit=False)
 
     with pytest.raises(ValueError, match="Missing dedup columns"):
-        ExactDedupProcessor(config, resource_provider).process_after_generation(data)
+        CuratorDedupProcessor(config, resource_provider).process_after_generation(data)
 
 
-def test_exact_dedup_raises_without_curator(resource_provider: ResourceProvider) -> None:
+def test_curator_dedup_raises_without_curator(resource_provider: ResourceProvider) -> None:
     data = pd.DataFrame({"text": ["same"]})
-    config = ExactDedupProcessorConfig(name="dedup", text_columns=["text"], audit=False)
+    config = CuratorDedupProcessorConfig(name="dedup", text_columns=["text"], audit=False)
 
     with pytest.raises(CuratorDependencyError, match="NeMo Curator"):
-        ExactDedupProcessor(config, resource_provider).process_after_generation(data)
+        CuratorDedupProcessor(config, resource_provider).process_after_generation(data)

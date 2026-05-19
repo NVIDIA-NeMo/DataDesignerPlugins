@@ -6,8 +6,13 @@ from data_designer.engine.processing.processors.base import Processor
 from data_designer.engine.testing.utils import assert_valid_plugin
 from data_designer.plugins.plugin import Plugin, PluginType
 
-from data_designer_curator.plugin import curator_modify_plugin, curator_text_filter_plugin, exact_dedup_plugin, plugins
-from data_designer_curator.processors.dedup import ExactDedupProcessor
+from data_designer_curator.plugin import (
+    curator_dedup_plugin,
+    curator_modify_plugin,
+    curator_text_filter_plugin,
+    plugins,
+)
+from data_designer_curator.processors.dedup import CuratorDedupProcessor
 from data_designer_curator.processors.filters import CuratorTextFilterProcessor
 from data_designer_curator.processors.modifiers import CuratorModifyProcessor
 
@@ -20,7 +25,7 @@ def test_valid_plugin(plugin: Plugin) -> None:
 @pytest.mark.parametrize(
     ("plugin", "plugin_type", "impl_cls"),
     [
-        (exact_dedup_plugin, PluginType.PROCESSOR, ExactDedupProcessor),
+        (curator_dedup_plugin, PluginType.PROCESSOR, CuratorDedupProcessor),
         (curator_modify_plugin, PluginType.PROCESSOR, CuratorModifyProcessor),
         (curator_text_filter_plugin, PluginType.PROCESSOR, CuratorTextFilterProcessor),
     ],

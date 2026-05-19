@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 CURATOR_ID_COLUMN = "_dd_curator_id"
 CURATOR_TEXT_COLUMN = "_dd_curator_text"
 ORIGINAL_INDEX_COLUMN = "_dd_original_index"
+FUZZY_ID_COLUMN = "_curator_dedup_id"
 
 MODIFIER_PRIMITIVES = {
     "boilerplate_string": "nemo_curator.stages.text.modifiers.string.c4:BoilerPlateStringModifier",
@@ -155,41 +156,132 @@ class CuratorExecutionSession:
 class CuratorTextAdapter:
     """Thin adapter over NeMo Curator text curation primitives."""
 
-    def exact_dedup(
+    def dedup(
         self,
         *,
         data: pd.DataFrame,
+        dedup_type: str,
         text_columns: list[str],
         id_column: str | None,
-        hash_method: str,
+        params: dict[str, Any],
         cache_dir: Path,
         execution: CuratorExecutionConfig,
     ) -> pd.DataFrame:
 
-        prepared, text_field, id_field = self._prepare_exact_input(data, text_columns, id_column)
+        prepared, text_field, id_field = self._prepare_dedup_input(data, text_columns, id_column)
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            return self._run_legacy_exact_dedup(
-                data=prepared,
-                text_field=text_field,
-                id_field=id_field,
-                hash_method=hash_method,
-                cache_dir=cache_dir,
-                execution=execution,
-            )
-        except CuratorDependencyError:
-            return self._run_workflow_exact_dedup(
-                data=prepared,
-                text_field=text_field,
-                id_field=id_field,
-                cache_dir=cache_dir,
-                execution=execution,
-            )
+            if dedup_type == "exact":
+                return self._run_exact_dedup(
+                    data=prepared,
+                    text_field=text_field,
+                    id_field=id_field,
+                    cache_dir=cache_dir,
+                    execution=execution,
+                    params=params,
+                )
+            if dedup_type == "fuzzy":
+                return self._run_fuzzy_dedup(
+                    data=prepared,
+                    text_field=text_field,
+                    cache_dir=cache_dir,
+                    execution=execution,
+                    params=params,
+                )
+            if dedup_type == "semantic":
+                return self._run_semantic_dedup(
+                    data=prepared,
+                    text_field=text_field,
+                    id_field=id_field,
+                    cache_dir=cache_dir,
+                    execution=execution,
+                    params=params,
+                )
         except Exception as error:
-            if isinstance(error, CuratorExecutionError):
+            if isinstance(error, CuratorExecutionError | CuratorDependencyError):
                 raise
-            raise CuratorExecutionError(f"Curator exact dedup failed: {error}") from error
+            raise CuratorExecutionError(f"Curator {dedup_type} dedup failed: {error}") from error
+
+        raise CuratorExecutionError(f"Unsupported Curator dedup type: {dedup_type!r}")
+
+    def _run_exact_dedup(
+        self,
+        *,
+        data: pd.DataFrame,
+        text_field: str,
+        id_field: str,
+        cache_dir: Path,
+        execution: CuratorExecutionConfig,
+        params: dict[str, Any],
+    ) -> pd.DataFrame:
+        return self._run_current_workflow_dedup(
+            data=data,
+            text_field=text_field,
+            id_field=id_field,
+            cache_dir=cache_dir,
+            execution=execution,
+            workflow_type="exact",
+            params=params,
+        )
+
+    def _run_fuzzy_dedup(
+        self,
+        *,
+        data: pd.DataFrame,
+        text_field: str,
+        cache_dir: Path,
+        execution: CuratorExecutionConfig,
+        params: dict[str, Any],
+    ) -> pd.DataFrame:
+        return self._run_current_workflow_dedup(
+            data=data,
+            text_field=text_field,
+            id_field=FUZZY_ID_COLUMN,
+            cache_dir=cache_dir,
+            execution=execution,
+            workflow_type="fuzzy",
+            params=params,
+        )
+
+    def _run_semantic_dedup(
+        self,
+        *,
+        data: pd.DataFrame,
+        text_field: str,
+        id_field: str,
+        cache_dir: Path,
+        execution: CuratorExecutionConfig,
+        params: dict[str, Any],
+    ) -> pd.DataFrame:
+        TextSemanticDeduplicationWorkflow = _import_semantic_dedup_workflow()
+        input_dir = cache_dir / "input"
+        output_dir = cache_dir / "semantic"
+        input_dir.mkdir(parents=True, exist_ok=True)
+        data.to_parquet(input_dir / "part.0.parquet", index=False)
+
+        workflow_params = dict(params)
+        workflow_params.pop("perform_removal", None)
+        workflow_params.pop("input_path", None)
+        workflow_params.pop("output_path", None)
+        workflow_params.pop("cache_path", None)
+        workflow_params.pop("text_field", None)
+        workflow_params.pop("id_field", None)
+        workflow_params.pop("input_filetype", None)
+
+        with CuratorExecutionSession(execution, working_dir=cache_dir):
+            workflow = TextSemanticDeduplicationWorkflow(
+                input_path=str(input_dir),
+                output_path=str(output_dir),
+                cache_path=str(output_dir / "cache"),
+                text_field=text_field,
+                id_field=id_field,
+                perform_removal=True,
+                input_filetype="parquet",
+                **workflow_params,
+            )
+            workflow.run()
+        return _read_parquet_dir(output_dir / "deduplicated")
 
     def modify(
         self,
@@ -259,7 +351,7 @@ class CuratorTextAdapter:
 
         return scored.loc[keep_mask].reset_index(drop=True), keep_mask, scored
 
-    def _prepare_exact_input(
+    def _prepare_dedup_input(
         self,
         data: pd.DataFrame,
         text_columns: list[str],
@@ -280,36 +372,7 @@ class CuratorTextAdapter:
 
         return prepared, text_field, id_field
 
-    def _run_legacy_exact_dedup(
-        self,
-        *,
-        data: pd.DataFrame,
-        text_field: str,
-        id_field: str,
-        hash_method: str,
-        cache_dir: Path,
-        execution: CuratorExecutionConfig,
-    ) -> pd.DataFrame:
-        ExactDuplicates, DocumentDataset = _import_legacy_exact_dedup()
-        with CuratorExecutionSession(execution, working_dir=cache_dir):
-            dataset = _document_dataset_from_pandas(DocumentDataset, data)
-            deduper = ExactDuplicates(
-                id_field=id_field,
-                text_field=text_field,
-                hash_method=hash_method,
-                perform_removal=True,
-                cache_dir=str(cache_dir),
-            )
-
-            if hasattr(deduper, "identify_duplicates") and hasattr(deduper, "remove"):
-                duplicates = deduper.identify_duplicates(dataset)
-                output = deduper.remove(dataset, duplicates)
-            else:
-                output = deduper(dataset)
-
-        return _document_dataset_to_pandas(output)
-
-    def _run_workflow_exact_dedup(
+    def _run_current_workflow_dedup(
         self,
         *,
         data: pd.DataFrame,
@@ -317,60 +380,119 @@ class CuratorTextAdapter:
         id_field: str,
         cache_dir: Path,
         execution: CuratorExecutionConfig,
+        workflow_type: str,
+        params: dict[str, Any],
     ) -> pd.DataFrame:
-        ExactDeduplicationWorkflow, TextDuplicatesRemovalWorkflow = _import_exact_dedup_workflows()
+        TextDuplicatesRemovalWorkflow = _import_duplicates_removal_workflow()
         input_dir = cache_dir / "input"
-        ids_dir = cache_dir / "exact"
+        ids_dir = cache_dir / workflow_type
         output_dir = cache_dir / "deduplicated"
         input_dir.mkdir(parents=True, exist_ok=True)
         data.to_parquet(input_dir / "part.0.parquet", index=False)
 
+        workflow_params = dict(params)
+        workflow_params.pop("input_path", None)
+        workflow_params.pop("output_path", None)
+        workflow_params.pop("cache_path", None)
+        workflow_params.pop("text_field", None)
+        workflow_params.pop("perform_removal", None)
+        workflow_params.pop("input_filetype", None)
+        workflow_params.pop("assign_id", None)
+        workflow_params.pop("id_field", None)
+
         with CuratorExecutionSession(execution, working_dir=cache_dir):
-            exact_workflow = ExactDeduplicationWorkflow(
-                input_path=str(input_dir),
-                output_path=str(ids_dir),
-                text_field=text_field,
-                perform_removal=False,
-                assign_id=False,
-                id_field=id_field,
-                input_filetype="parquet",
-            )
-            exact_workflow.run()
+            if workflow_type == "exact":
+                DeduplicationWorkflow = _import_exact_dedup_workflow()
+                workflow = DeduplicationWorkflow(
+                    input_path=str(input_dir),
+                    output_path=str(ids_dir),
+                    text_field=text_field,
+                    perform_removal=False,
+                    assign_id=False,
+                    id_field=id_field,
+                    input_filetype="parquet",
+                    **workflow_params,
+                )
+                workflow.run()
+                ids_to_remove_path = ids_dir / "ExactDuplicateIds"
+                id_generator_path = None
+                duplicate_id_field = id_field
+            elif workflow_type == "fuzzy":
+                DeduplicationWorkflow = _import_fuzzy_dedup_workflow()
+                workflow = DeduplicationWorkflow(
+                    input_path=str(input_dir),
+                    cache_path=str(ids_dir / "cache"),
+                    output_path=str(ids_dir),
+                    text_field=text_field,
+                    perform_removal=False,
+                    input_filetype="parquet",
+                    **workflow_params,
+                )
+                result = workflow.run()
+                ids_to_remove_path = ids_dir / "FuzzyDuplicateIds"
+                id_generator_path = _get_workflow_metadata(result, "id_generator_path") or str(
+                    ids_dir / "fuzzy_id_generator.json"
+                )
+                duplicate_id_field = FUZZY_ID_COLUMN
+            else:
+                raise CuratorExecutionError(f"Unsupported current Curator dedup workflow: {workflow_type!r}")
 
             removal_workflow = TextDuplicatesRemovalWorkflow(
                 input_path=str(input_dir),
-                ids_to_remove_path=str(ids_dir / "ExactDuplicateIds"),
+                ids_to_remove_path=str(ids_to_remove_path),
                 output_path=str(output_dir),
                 input_filetype="parquet",
-                input_id_field=id_field,
-                ids_to_remove_duplicate_id_field=id_field,
+                id_field=id_field,
+                duplicate_id_field=duplicate_id_field,
+                id_generator_path=id_generator_path,
+                output_mode="overwrite",
             )
             removal_workflow.run()
         return _read_parquet_dir(output_dir)
 
 
-def _import_legacy_exact_dedup() -> tuple[type, type]:
-    try:
-        from nemo_curator import ExactDuplicates
-        from nemo_curator.datasets import DocumentDataset
-    except Exception as error:
-        raise CuratorDependencyError(
-            "NeMo Curator legacy exact dedup is not installed. Install a compatible NeMo Curator version "
-            "or use the current text_cuda12 workflow dependencies."
-        ) from error
-    return ExactDuplicates, DocumentDataset
-
-
-def _import_exact_dedup_workflows() -> tuple[type, type]:
+def _import_exact_dedup_workflow() -> type:
     try:
         from nemo_curator.stages.deduplication.exact.workflow import ExactDeduplicationWorkflow
-        from nemo_curator.stages.text.deduplication.removal_workflow import TextDuplicatesRemovalWorkflow
     except Exception as error:
         raise CuratorDependencyError(
             "NeMo Curator exact dedup workflows are not installed. Install NeMo Curator with the text_cuda12 "
             "extra in the same environment."
         ) from error
-    return ExactDeduplicationWorkflow, TextDuplicatesRemovalWorkflow
+    return ExactDeduplicationWorkflow
+
+
+def _import_fuzzy_dedup_workflow() -> type:
+    try:
+        from nemo_curator.stages.deduplication.fuzzy.workflow import FuzzyDeduplicationWorkflow
+    except Exception as error:
+        raise CuratorDependencyError(
+            "NeMo Curator fuzzy dedup workflow is not installed. Install NeMo Curator with the text_cuda12 "
+            "extra in the same environment."
+        ) from error
+    return FuzzyDeduplicationWorkflow
+
+
+def _import_semantic_dedup_workflow() -> type:
+    try:
+        from nemo_curator.stages.text.deduplication.semantic import TextSemanticDeduplicationWorkflow
+    except Exception as error:
+        raise CuratorDependencyError(
+            "NeMo Curator semantic dedup workflow is not installed. Install NeMo Curator with the text_cuda12 "
+            "extra in the same environment."
+        ) from error
+    return TextSemanticDeduplicationWorkflow
+
+
+def _import_duplicates_removal_workflow() -> type:
+    try:
+        from nemo_curator.stages.text.deduplication.removal_workflow import TextDuplicatesRemovalWorkflow
+    except Exception as error:
+        raise CuratorDependencyError(
+            "NeMo Curator duplicate removal workflow is not installed. Install NeMo Curator with the text_cuda12 "
+            "extra in the same environment."
+        ) from error
+    return TextDuplicatesRemovalWorkflow
 
 
 def _import_curator_modify() -> tuple[type, type]:
@@ -420,28 +542,13 @@ def _load_class(path: str) -> type:
     return getattr(module, class_name)
 
 
-def _document_dataset_from_pandas(DocumentDataset: type, data: pd.DataFrame) -> object:
-    if hasattr(DocumentDataset, "from_pandas"):
-        return DocumentDataset.from_pandas(data, npartitions=1)
-    raise CuratorExecutionError("Installed NeMo Curator DocumentDataset does not support from_pandas().")
-
-
-def _document_dataset_to_pandas(dataset: object) -> pd.DataFrame:
-    import pandas as pd
-
-    if hasattr(dataset, "to_pandas"):
-        value = dataset.to_pandas()
-        return value.compute() if hasattr(value, "compute") else value
-
-    for attr in ("df", "dataset_df"):
-        value = getattr(dataset, attr, None)
-        if value is None:
-            continue
-        value = value.compute() if hasattr(value, "compute") else value
-        if isinstance(value, pd.DataFrame):
-            return value
-
-    raise CuratorExecutionError("Unable to convert NeMo Curator DocumentDataset output to pandas.")
+def _get_workflow_metadata(result: object, key: str) -> object | None:
+    if hasattr(result, "get_metadata"):
+        return result.get_metadata(key)
+    metadata = getattr(result, "metadata", None)
+    if isinstance(metadata, dict):
+        return metadata.get(key)
+    return None
 
 
 def _document_batch_to_pandas(batch: object) -> pd.DataFrame:

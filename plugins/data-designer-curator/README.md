@@ -14,14 +14,14 @@ The text modifier and filter processors call NeMo Curator CPU text primitives:
 uv add "data-designer-curator[curator-text-cpu]"
 ```
 
-The exact dedup processor calls NeMo Curator's GPU dedup workflow. Install
-NeMo Curator's `text_cuda12` extra in the same environment for that processor.
+The dedup processor calls NeMo Curator's GPU dedup workflows. Install NeMo
+Curator's `text_cuda12` extra in the same environment for that processor.
 
 ## Usage
 
 This package provides three curation plugins:
 
-- `exact-dedup`: call NeMo Curator exact deduplication for generated rows.
+- `curator-dedup`: call NeMo Curator deduplication workflows for generated rows.
 - `curator-modify`: apply a chain of Curator text modifier primitives.
 - `curator-text-filter`: apply a chain of Curator document filter primitives.
 
@@ -30,9 +30,9 @@ import data_designer.config as dd
 from data_designer_curator.config import (
     CuratorModifierConfig,
     CuratorModifyProcessorConfig,
+    CuratorDedupProcessorConfig,
     CuratorTextFilterConfig,
     CuratorTextFilterProcessorConfig,
-    ExactDedupProcessorConfig,
 )
 
 builder = dd.DataDesignerConfigBuilder()
@@ -63,8 +63,9 @@ builder.add_processor(
     )
 )
 builder.add_processor(
-    ExactDedupProcessorConfig(
+    CuratorDedupProcessorConfig(
         name="dedup_answers",
+        dedup_type="exact",
         text_columns=["answer"],
     )
 )
@@ -83,9 +84,9 @@ from data_designer.interface import DataDesigner
 from data_designer_curator.config import (
     CuratorModifierConfig,
     CuratorModifyProcessorConfig,
+    CuratorDedupProcessorConfig,
     CuratorTextFilterConfig,
     CuratorTextFilterProcessorConfig,
-    ExactDedupProcessorConfig,
 )
 
 data_designer = DataDesigner()
@@ -118,9 +119,11 @@ curation.add_processor(
     )
 )
 curation.add_processor(
-    ExactDedupProcessorConfig(
+    CuratorDedupProcessorConfig(
         name="dedup_curated_seeds",
+        dedup_type="fuzzy",
         text_columns=["clean_context"],
+        params={"char_ngrams": 24},
     )
 )
 

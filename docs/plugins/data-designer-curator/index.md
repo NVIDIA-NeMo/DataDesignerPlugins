@@ -14,14 +14,14 @@ The text modifier and filter processors call NeMo Curator CPU text primitives:
 uv add "data-designer-curator[curator-text-cpu]"
 ```
 
-The exact dedup processor calls NeMo Curator's GPU dedup workflow. Install
-NeMo Curator's `text_cuda12` extra in the same environment for that processor.
+The dedup processor calls NeMo Curator's GPU dedup workflows. Install NeMo
+Curator's `text_cuda12` extra in the same environment for that processor.
 
 ## Plugins
 
 | Entry point | Type | Purpose |
 | --- | --- | --- |
-| `exact-dedup` | Processor | Call NeMo Curator exact deduplication for generated rows. |
+| `curator-dedup` | Processor | Call NeMo Curator deduplication workflows for generated rows. |
 | `curator-modify` | Processor | Apply a chain of Curator text modifier primitives. |
 | `curator-text-filter` | Processor | Apply a chain of Curator document filter primitives. |
 
@@ -38,9 +38,9 @@ from data_designer.interface import DataDesigner
 from data_designer_curator.config import (
     CuratorModifierConfig,
     CuratorModifyProcessorConfig,
+    CuratorDedupProcessorConfig,
     CuratorTextFilterConfig,
     CuratorTextFilterProcessorConfig,
-    ExactDedupProcessorConfig,
 )
 
 data_designer = DataDesigner()
@@ -73,9 +73,11 @@ curation.add_processor(
     )
 )
 curation.add_processor(
-    ExactDedupProcessorConfig(
+    CuratorDedupProcessorConfig(
         name="dedup_curated_seeds",
+        dedup_type="fuzzy",
         text_columns=["clean_context"],
+        params={"char_ngrams": 24},
     )
 )
 
@@ -158,14 +160,15 @@ Supported filter primitives include `word_count`, `mean_word_length`,
 `long_word`, `urls`, `numbers`, `non_alpha_numeric`, `whitespace`,
 `common_english_words`, repetition filters, token filters, and code filters.
 
-## Exact Dedup
+## Curator Dedup
 
 ```python
-from data_designer_curator.config import ExactDedupProcessorConfig
+from data_designer_curator.config import CuratorDedupProcessorConfig
 
 builder.add_processor(
-    ExactDedupProcessorConfig(
+    CuratorDedupProcessorConfig(
         name="dedup_answers",
+        dedup_type="exact",
         text_columns=["answer"],
     )
 )
@@ -174,9 +177,10 @@ builder.add_processor(
 | Field | Required | Description |
 | --- | --- | --- |
 | `name` | Yes | Processor name used for artifacts. |
-| `text_columns` | Yes | Columns used to identify exact duplicates. |
+| `dedup_type` | No | Curator dedup workflow: `exact`, `fuzzy`, or `semantic`. Defaults to `exact`. |
+| `text_columns` | Yes | Columns used to identify duplicates. |
 | `id_column` | No | Existing stable ID column to pass to Curator. |
-| `hash_method` | No | Hash method passed to Curator. Defaults to `md5`. |
+| `params` | No | Extra keyword arguments passed to the selected Curator workflow. |
 | `cache_dir` | No | Curator cache directory. Defaults under processor artifacts. |
 | `execution` | No | Optional Curator/Ray execution settings. Defaults to a local Ray client. |
 | `audit` | No | Write an audit parquet file under processor artifacts. |

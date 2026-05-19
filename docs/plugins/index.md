@@ -13,7 +13,7 @@ Browse available Data Designer plugins by what they add to your data generation 
     <span class="plugin-doc-card__description">NeMo Curator-backed curation processors for Data Designer</span>
     <span class="plugin-doc-card__section">
       <span class="plugin-doc-card__label">Entry points</span>
-      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">curator-modify</span><span class="plugin-doc-chip">curator-text-filter</span><span class="plugin-doc-chip">exact-dedup</span></span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">curator-dedup</span><span class="plugin-doc-chip">curator-modify</span><span class="plugin-doc-chip">curator-text-filter</span></span>
     </span>
   </a>
   <a class="plugin-doc-card" href="data-designer-github/" aria-label="Open data-designer-github documentation">

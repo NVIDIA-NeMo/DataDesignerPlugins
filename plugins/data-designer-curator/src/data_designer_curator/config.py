@@ -9,6 +9,7 @@ from data_designer.config.base import ConfigBase, ProcessorConfig
 from pydantic import Field, field_validator
 
 CuratorExecutionMode = Literal["none", "local_ray", "existing_ray"]
+CuratorDedupType = Literal["exact", "fuzzy", "semantic"]
 CuratorModifierPrimitive = Literal[
     "boilerplate_string",
     "line_remover",
@@ -71,13 +72,14 @@ class CuratorExecutionConfig(ConfigBase):
     client_kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
-class ExactDedupProcessorConfig(ProcessorConfig):
-    """Configuration for Curator-backed exact duplicate row removal."""
+class CuratorDedupProcessorConfig(ProcessorConfig):
+    """Configuration for Curator-backed duplicate row removal."""
 
-    processor_type: Literal["exact-dedup"] = "exact-dedup"
+    processor_type: Literal["curator-dedup"] = "curator-dedup"
+    dedup_type: CuratorDedupType = "exact"
     text_columns: list[str] = Field(min_length=1)
     id_column: str | None = None
-    hash_method: Literal["md5"] = "md5"
+    params: dict[str, Any] = Field(default_factory=dict)
     cache_dir: str | None = None
     execution: CuratorExecutionConfig = Field(default_factory=CuratorExecutionConfig)
     audit: bool = True

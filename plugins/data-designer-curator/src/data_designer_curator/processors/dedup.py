@@ -11,18 +11,19 @@ from data_designer.engine.processing.processors.base import Processor
 from data_designer_curator.adapters.curator_text import (
     CURATOR_ID_COLUMN,
     CURATOR_TEXT_COLUMN,
+    FUZZY_ID_COLUMN,
     ORIGINAL_INDEX_COLUMN,
     CuratorTextAdapter,
 )
 from data_designer_curator.audit import write_audit
-from data_designer_curator.config import ExactDedupProcessorConfig
+from data_designer_curator.config import CuratorDedupProcessorConfig
 
 if TYPE_CHECKING:
     import pandas as pd
 
 
-class ExactDedupProcessor(Processor[ExactDedupProcessorConfig]):
-    """Drop exact duplicate rows through NeMo Curator."""
+class CuratorDedupProcessor(Processor[CuratorDedupProcessorConfig]):
+    """Drop duplicate rows through NeMo Curator."""
 
     def process_after_generation(self, data: pd.DataFrame) -> pd.DataFrame:
         """Deduplicate the final generated dataset."""
@@ -30,11 +31,12 @@ class ExactDedupProcessor(Processor[ExactDedupProcessorConfig]):
 
         working = data.copy()
         working[ORIGINAL_INDEX_COLUMN] = data.index
-        output = CuratorTextAdapter().exact_dedup(
+        output = CuratorTextAdapter().dedup(
             data=working,
+            dedup_type=self.config.dedup_type,
             text_columns=self.config.text_columns,
             id_column=self.config.id_column,
-            hash_method=self.config.hash_method,
+            params=self.config.params,
             cache_dir=self._cache_dir(),
             execution=self.config.execution,
         )
@@ -52,7 +54,8 @@ class ExactDedupProcessor(Processor[ExactDedupProcessorConfig]):
             )
 
         return output.drop(
-            columns=[ORIGINAL_INDEX_COLUMN, CURATOR_ID_COLUMN, CURATOR_TEXT_COLUMN], errors="ignore"
+            columns=[ORIGINAL_INDEX_COLUMN, CURATOR_ID_COLUMN, CURATOR_TEXT_COLUMN, FUZZY_ID_COLUMN],
+            errors="ignore",
         ).reset_index(drop=True)
 
     def _validate_columns(self, data: pd.DataFrame) -> None:
@@ -79,7 +82,7 @@ class ExactDedupProcessor(Processor[ExactDedupProcessorConfig]):
         audit["_dd_reason"] = audit["_dd_action"].map(
             {
                 "kept": "selected representative",
-                "duplicate": "exact duplicate",
+                "duplicate": f"{self.config.dedup_type} duplicate",
             }
         )
         audit["_dd_group_id"] = None

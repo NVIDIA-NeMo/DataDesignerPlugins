@@ -8,17 +8,17 @@ import pandas as pd
 import pytest
 from data_designer.interface import DataDesigner
 
-from data_designer_curator.config import ExactDedupProcessorConfig
+from data_designer_curator.config import CuratorDedupProcessorConfig
 
 
 class FakeCuratorTextAdapter:
-    def exact_dedup(self, **kwargs: object) -> pd.DataFrame:
+    def dedup(self, **kwargs: object) -> pd.DataFrame:
         data = kwargs["data"]
         assert isinstance(data, pd.DataFrame)
         return data.drop_duplicates(subset=["text"], keep="first")
 
 
-def test_exact_dedup_runs_through_data_designer_preview(
+def test_curator_dedup_runs_through_data_designer_preview(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -31,7 +31,7 @@ def test_exact_dedup_runs_through_data_designer_preview(
             params=dd.CategorySamplerParams(values=["same"]),
         )
     )
-    builder.add_processor(ExactDedupProcessorConfig(name="dedup", text_columns=["text"]))
+    builder.add_processor(CuratorDedupProcessorConfig(name="dedup", text_columns=["text"]))
 
     result = DataDesigner(artifact_path=tmp_path).preview(builder, num_records=3)
 

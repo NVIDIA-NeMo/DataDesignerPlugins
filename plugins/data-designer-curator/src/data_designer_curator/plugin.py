@@ -4,16 +4,16 @@
 from data_designer.plugins.plugin import Plugin, PluginType
 
 from data_designer_curator.config import (
+    CuratorDedupProcessorConfig,
     CuratorModifyProcessorConfig,
     CuratorTextFilterProcessorConfig,
-    ExactDedupProcessorConfig,
 )
 
-_CONFIG_TYPES = (ExactDedupProcessorConfig, CuratorModifyProcessorConfig, CuratorTextFilterProcessorConfig)
+_CONFIG_TYPES = (CuratorDedupProcessorConfig, CuratorModifyProcessorConfig, CuratorTextFilterProcessorConfig)
 
-exact_dedup_plugin = Plugin(
-    config_qualified_name="data_designer_curator.config.ExactDedupProcessorConfig",
-    impl_qualified_name="data_designer_curator.processors.dedup.ExactDedupProcessor",
+curator_dedup_plugin = Plugin(
+    config_qualified_name="data_designer_curator.config.CuratorDedupProcessorConfig",
+    impl_qualified_name="data_designer_curator.processors.dedup.CuratorDedupProcessor",
     plugin_type=PluginType.PROCESSOR,
 )
 
@@ -29,4 +29,4 @@ curator_text_filter_plugin = Plugin(
     plugin_type=PluginType.PROCESSOR,
 )
 
-plugins = [exact_dedup_plugin, curator_modify_plugin, curator_text_filter_plugin]
+plugins = [curator_dedup_plugin, curator_modify_plugin, curator_text_filter_plugin]

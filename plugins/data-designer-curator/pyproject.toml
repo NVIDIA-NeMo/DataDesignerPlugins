@@ -29,7 +29,7 @@ all = [
 ]
 
 [project.entry-points."data_designer.plugins"]
-exact-dedup = "data_designer_curator.plugin:exact_dedup_plugin"
+curator-dedup = "data_designer_curator.plugin:curator_dedup_plugin"
 curator-modify = "data_designer_curator.plugin:curator_modify_plugin"
 curator-text-filter = "data_designer_curator.plugin:curator_text_filter_plugin"
 
