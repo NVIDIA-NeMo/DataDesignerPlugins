@@ -7,6 +7,7 @@
 /.github/ @NVIDIA-NeMo/data_designer_reviewers
 
 # Plugins
+/plugins/data-designer-curator/ @NVIDIA-NeMo/data_designer_reviewers @nabinchha
 /plugins/data-designer-github/ @NVIDIA-NeMo/data_designer_reviewers @eric-tramel
 /plugins/data-designer-retrieval-sdg/ @NVIDIA-NeMo/data_designer_reviewers @shan-nvidia @oliverholworthy
 /plugins/data-designer-template/ @NVIDIA-NeMo/data_designer_reviewers
