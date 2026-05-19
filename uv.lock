@@ -9,6 +9,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "data-designer-curator",
     "data-designer-github",
     "data-designer-plugins-workspace",
     "data-designer-retrieval-sdg",
@@ -399,6 +400,30 @@ sdist = { url = "https://files.pythonhosted.org/packages/ac/b6/e1b29e2fc98322f98
 wheels = [
     { url = "https://files.pythonhosted.org/packages/65/fc/a85d1d9d7436e4ebccc11b1fc7c0be1287584f4bee3a9ed71d58da0d0b0a/data_designer_config-0.5.7-py3-none-any.whl", hash = "sha256:3d4d22c4d8e4b36189f62ef103122a108add1cfbbacf8afcfdd281e9458bd77d", size = 114479, upload-time = "2026-04-17T22:03:04.993Z" },
 ]
+
+[[package]]
+name = "data-designer-curator"
+version = "0.1.0"
+source = { editable = "plugins/data-designer-curator" }
+dependencies = [
+    { name = "data-designer" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "httpx" },
+]
+remote = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "data-designer", specifier = ">=0.5.7" },
+    { name = "httpx", marker = "extra == 'all'", specifier = ">=0.27,<1" },
+    { name = "httpx", marker = "extra == 'remote'", specifier = ">=0.27,<1" },
+]
+provides-extras = ["remote", "all"]
 
 [[package]]
 name = "data-designer-engine"

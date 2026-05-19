@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+name = "data-designer-curator"
+version = "0.1.0"
+description = "Curator-style curation processors and remote scoring for Data Designer"
+requires-python = ">=3.10"
+dependencies = [
+    "data-designer>=0.5.7",
+]
+license = "Apache-2.0"
+readme = "README.md"
+authors = [
+    {name = "NVIDIA Corporation"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+remote = [
+    "httpx>=0.27,<1",
+]
+all = [
+    "httpx>=0.27,<1",
+]
+
+[project.entry-points."data_designer.plugins"]
+exact-dedup = "data_designer_curator.plugin:exact_dedup_plugin"
+score-filter = "data_designer_curator.plugin:score_filter_plugin"
+remote-score = "data_designer_curator.plugin:remote_score_plugin"
+
+[project.urls]
+Repository = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/data_designer_curator"]
+
+[tool.ruff]
+extend = "../../pyproject.toml"

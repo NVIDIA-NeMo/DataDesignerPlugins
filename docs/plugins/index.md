@@ -5,6 +5,17 @@
 Browse available Data Designer plugins by what they add to your data generation workflow.
 
 <div class="plugin-doc-grid">
+  <a class="plugin-doc-card" href="data-designer-curator/" aria-label="Open data-designer-curator documentation">
+    <span class="plugin-doc-card__header">
+      <span class="plugin-doc-card__title">data-designer-curator</span>
+      <span class="plugin-doc-card__version">v0.1.0</span>
+    </span>
+    <span class="plugin-doc-card__description">Curator-style curation processors and remote scoring for Data Designer</span>
+    <span class="plugin-doc-card__section">
+      <span class="plugin-doc-card__label">Entry points</span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">exact-dedup</span><span class="plugin-doc-chip">remote-score</span><span class="plugin-doc-chip">score-filter</span></span>
+    </span>
+  </a>
   <a class="plugin-doc-card" href="data-designer-github/" aria-label="Open data-designer-github documentation">
     <span class="plugin-doc-card__header">
       <span class="plugin-doc-card__title">data-designer-github</span>
