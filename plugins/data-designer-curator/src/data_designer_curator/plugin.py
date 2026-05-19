@@ -4,12 +4,12 @@
 from data_designer.plugins.plugin import Plugin, PluginType
 
 from data_designer_curator.config import (
+    CuratorModifyProcessorConfig,
+    CuratorTextFilterProcessorConfig,
     ExactDedupProcessorConfig,
-    RemoteScoreColumnConfig,
-    ScoreFilterProcessorConfig,
 )
 
-_CONFIG_TYPES = (ExactDedupProcessorConfig, ScoreFilterProcessorConfig, RemoteScoreColumnConfig)
+_CONFIG_TYPES = (ExactDedupProcessorConfig, CuratorModifyProcessorConfig, CuratorTextFilterProcessorConfig)
 
 exact_dedup_plugin = Plugin(
     config_qualified_name="data_designer_curator.config.ExactDedupProcessorConfig",
@@ -17,16 +17,16 @@ exact_dedup_plugin = Plugin(
     plugin_type=PluginType.PROCESSOR,
 )
 
-score_filter_plugin = Plugin(
-    config_qualified_name="data_designer_curator.config.ScoreFilterProcessorConfig",
-    impl_qualified_name="data_designer_curator.processors.filters.ScoreFilterProcessor",
+curator_modify_plugin = Plugin(
+    config_qualified_name="data_designer_curator.config.CuratorModifyProcessorConfig",
+    impl_qualified_name="data_designer_curator.processors.modifiers.CuratorModifyProcessor",
     plugin_type=PluginType.PROCESSOR,
 )
 
-remote_score_plugin = Plugin(
-    config_qualified_name="data_designer_curator.config.RemoteScoreColumnConfig",
-    impl_qualified_name="data_designer_curator.columns.remote_score.RemoteScoreColumnGenerator",
-    plugin_type=PluginType.COLUMN_GENERATOR,
+curator_text_filter_plugin = Plugin(
+    config_qualified_name="data_designer_curator.config.CuratorTextFilterProcessorConfig",
+    impl_qualified_name="data_designer_curator.processors.filters.CuratorTextFilterProcessor",
+    plugin_type=PluginType.PROCESSOR,
 )
 
-plugins = [exact_dedup_plugin, score_filter_plugin, remote_score_plugin]
+plugins = [exact_dedup_plugin, curator_modify_plugin, curator_text_filter_plugin]

@@ -5,11 +5,55 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from data_designer.config.base import ConfigBase, ProcessorConfig, SingleColumnConfig
-from pydantic import Field, HttpUrl, field_validator, model_validator
-from typing_extensions import Self
+from data_designer.config.base import ConfigBase, ProcessorConfig
+from pydantic import Field, field_validator
 
 CuratorExecutionMode = Literal["none", "local_ray", "existing_ray"]
+CuratorModifierPrimitive = Literal[
+    "boilerplate_string",
+    "line_remover",
+    "markdown_remover",
+    "newline_normalizer",
+    "quotation_remover",
+    "slicer",
+    "unicode_reformatter",
+    "url_remover",
+]
+CuratorTextFilterPrimitive = Literal[
+    "alpha",
+    "boilerplate_string",
+    "bullets",
+    "common_english_words",
+    "ellipsis",
+    "general_comment_to_code",
+    "histogram",
+    "html_boilerplate",
+    "long_word",
+    "mean_word_length",
+    "non_alpha_numeric",
+    "number_of_lines_of_code",
+    "numbers",
+    "parentheses",
+    "per_extension",
+    "pornographic_urls",
+    "punctuation",
+    "python_comment_to_code",
+    "repeated_lines",
+    "repeated_lines_by_char",
+    "repeated_paragraphs",
+    "repeated_paragraphs_by_char",
+    "repeating_duplicate_ngrams",
+    "repeating_top_ngrams",
+    "substring",
+    "symbols_to_words",
+    "token_count",
+    "tokenizer_fertility",
+    "urls",
+    "whitespace",
+    "word_count",
+    "words_without_alphabets",
+    "xml_header",
+]
 
 
 class CuratorExecutionConfig(ConfigBase):
@@ -47,65 +91,60 @@ class ExactDedupProcessorConfig(ProcessorConfig):
         return value
 
 
-class ScoreFilterProcessorConfig(ProcessorConfig):
-    """Configuration for Curator-backed filtering by an existing score column."""
+class CuratorModifierConfig(ConfigBase):
+    """A Curator text modifier primitive and constructor parameters."""
 
-    processor_type: Literal["score-filter"] = "score-filter"
-    score_column: str
-    min_score: float | None = None
-    max_score: float | None = None
-    keep_null_scores: bool = False
-    audit: bool = True
-
-    @model_validator(mode="after")
-    def validate_thresholds(self) -> Self:
-        """Require at least one threshold."""
-        if self.min_score is None and self.max_score is None:
-            raise ValueError("At least one of min_score or max_score is required.")
-        if self.min_score is not None and self.max_score is not None and self.min_score > self.max_score:
-            raise ValueError("min_score cannot be greater than max_score.")
-        return self
+    primitive: CuratorModifierPrimitive
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
-class RemoteScoreColumnConfig(SingleColumnConfig):
-    """Configuration for scoring rows through an external HTTP endpoint."""
+class CuratorModifyProcessorConfig(ProcessorConfig):
+    """Configuration for applying a chain of Curator text modifiers."""
 
-    column_type: Literal["remote-score"] = "remote-score"
-    endpoint_url: HttpUrl
-    target_columns: list[str] = Field(min_length=1)
-    timeout_seconds: float = Field(default=30.0, gt=0)
-    headers: dict[str, str] | None = None
-    score_path: str = "score"
-    side_effect_output_column: str | None = None
+    processor_type: Literal["curator-modify"] = "curator-modify"
+    input_field: str
+    modifiers: list[CuratorModifierConfig] = Field(min_length=1)
+    output_field: str | None = None
 
-    @property
-    def required_columns(self) -> list[str]:
-        """Columns sent to the remote scoring endpoint."""
-        return self.target_columns
-
-    @property
-    def side_effect_columns(self) -> list[str]:
-        """Optional metadata column populated with the full endpoint result."""
-        return [self.side_effect_output_column] if self.side_effect_output_column else []
-
-    @staticmethod
-    def get_column_emoji() -> str:
-        """Label displayed in Data Designer logs."""
-        return "[remote-score]"
-
-    @field_validator("target_columns")
+    @field_validator("input_field", "output_field")
     @classmethod
-    def validate_target_columns(cls, value: list[str]) -> list[str]:
-        """Validate request column names."""
-        if any(not column.strip() for column in value):
-            raise ValueError("target_columns cannot contain empty values.")
+    def validate_field(cls, value: str | None) -> str | None:
+        """Validate column names."""
+        if value is not None and not value.strip():
+            raise ValueError("field names cannot be empty.")
         return value
 
-    @field_validator("score_path")
+
+class CuratorTextFilterConfig(ConfigBase):
+    """A Curator document filter primitive and constructor parameters."""
+
+    primitive: CuratorTextFilterPrimitive
+    params: dict[str, Any] = Field(default_factory=dict)
+    text_field: str | None = None
+    score_field: str | None = None
+    invert: bool = False
+
+    @field_validator("text_field", "score_field")
     @classmethod
-    def validate_score_path(cls, value: str) -> str:
-        """Validate dot-separated response path."""
-        parts = value.split(".")
-        if any(not part.strip() for part in parts):
-            raise ValueError("score_path must be a non-empty dot-separated path.")
+    def validate_field(cls, value: str | None) -> str | None:
+        """Validate optional column names."""
+        if value is not None and not value.strip():
+            raise ValueError("field names cannot be empty.")
+        return value
+
+
+class CuratorTextFilterProcessorConfig(ProcessorConfig):
+    """Configuration for applying Curator document filters."""
+
+    processor_type: Literal["curator-text-filter"] = "curator-text-filter"
+    text_field: str
+    filters: list[CuratorTextFilterConfig] = Field(min_length=1)
+    audit: bool = True
+
+    @field_validator("text_field")
+    @classmethod
+    def validate_text_field(cls, value: str) -> str:
+        """Validate the default text column."""
+        if not value.strip():
+            raise ValueError("text_field cannot be empty.")
         return value

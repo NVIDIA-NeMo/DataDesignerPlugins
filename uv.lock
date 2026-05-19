@@ -619,25 +619,19 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
-    { name = "httpx" },
     { name = "nemo-curator", extra = ["text-cpu"] },
 ]
 curator-text-cpu = [
     { name = "nemo-curator", extra = ["text-cpu"] },
 ]
-remote = [
-    { name = "httpx" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "data-designer", specifier = ">=0.5.7" },
-    { name = "httpx", marker = "extra == 'all'", specifier = ">=0.27,<1" },
-    { name = "httpx", marker = "extra == 'remote'", specifier = ">=0.27,<1" },
     { name = "nemo-curator", extras = ["text-cpu"], marker = "extra == 'all'", specifier = ">=1.1.0,<2" },
     { name = "nemo-curator", extras = ["text-cpu"], marker = "extra == 'curator-text-cpu'", specifier = ">=1.1.0,<2" },
 ]
-provides-extras = ["curator-text-cpu", "remote", "all"]
+provides-extras = ["curator-text-cpu", "all"]
 
 [[package]]
 name = "data-designer-engine"

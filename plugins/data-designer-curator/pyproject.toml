@@ -4,7 +4,7 @@
 [project]
 name = "data-designer-curator"
 version = "0.1.0"
-description = "NeMo Curator-backed curation processors and remote scoring for Data Designer"
+description = "NeMo Curator-backed curation processors for Data Designer"
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "data-designer>=0.5.7",
@@ -24,18 +24,14 @@ classifiers = [
 curator-text-cpu = [
     "nemo-curator[text_cpu]>=1.1.0,<2",
 ]
-remote = [
-    "httpx>=0.27,<1",
-]
 all = [
-    "httpx>=0.27,<1",
     "nemo-curator[text_cpu]>=1.1.0,<2",
 ]
 
 [project.entry-points."data_designer.plugins"]
 exact-dedup = "data_designer_curator.plugin:exact_dedup_plugin"
-score-filter = "data_designer_curator.plugin:score_filter_plugin"
-remote-score = "data_designer_curator.plugin:remote_score_plugin"
+curator-modify = "data_designer_curator.plugin:curator_modify_plugin"
+curator-text-filter = "data_designer_curator.plugin:curator_text_filter_plugin"
 
 [project.urls]
 Repository = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins"

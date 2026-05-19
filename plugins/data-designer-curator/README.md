@@ -8,7 +8,7 @@ NeMo Curator-backed curation plugins for Data Designer.
 uv add data-designer data-designer-curator
 ```
 
-The metadata filter processor calls NeMo Curator's CPU text filtering primitive:
+The text modifier and filter processors call NeMo Curator CPU text primitives:
 
 ```bash
 uv add "data-designer-curator[curator-text-cpu]"
@@ -17,39 +17,55 @@ uv add "data-designer-curator[curator-text-cpu]"
 The exact dedup processor calls NeMo Curator's GPU dedup workflow. Install
 NeMo Curator's `text_cuda12` extra in the same environment for that processor.
 
-For remote HTTP scoring support:
-
-```bash
-uv add "data-designer-curator[remote]"
-```
-
 ## Usage
 
 This package provides three curation plugins:
 
 - `exact-dedup`: call NeMo Curator exact deduplication for generated rows.
-- `score-filter`: call NeMo Curator metadata filtering for score thresholds.
-- `remote-score`: call an external HTTP scoring endpoint for each row.
+- `curator-modify`: apply a chain of Curator text modifier primitives.
+- `curator-text-filter`: apply a chain of Curator document filter primitives.
 
 ```python
 import data_designer.config as dd
-from data_designer_curator.config import ExactDedupProcessorConfig, ScoreFilterProcessorConfig
+from data_designer_curator.config import (
+    CuratorModifierConfig,
+    CuratorModifyProcessorConfig,
+    CuratorTextFilterConfig,
+    CuratorTextFilterProcessorConfig,
+    ExactDedupProcessorConfig,
+)
 
 builder = dd.DataDesignerConfigBuilder()
 
 # Add generation columns first.
 
 builder.add_processor(
-    ExactDedupProcessorConfig(
-        name="dedup_answers",
-        text_columns=["answer"],
+    CuratorModifyProcessorConfig(
+        name="clean_answers",
+        input_field="answer",
+        modifiers=[
+            CuratorModifierConfig(primitive="unicode_reformatter"),
+            CuratorModifierConfig(primitive="markdown_remover"),
+        ],
     )
 )
 builder.add_processor(
-    ScoreFilterProcessorConfig(
-        name="keep_high_quality",
-        score_column="quality_score",
-        min_score=0.8,
+    CuratorTextFilterProcessorConfig(
+        name="keep_prompt_sized_answers",
+        text_field="answer",
+        filters=[
+            CuratorTextFilterConfig(
+                primitive="word_count",
+                params={"min_words": 20, "max_words": 500},
+                score_field="curator_word_count",
+            )
+        ],
+    )
+)
+builder.add_processor(
+    ExactDedupProcessorConfig(
+        name="dedup_answers",
+        text_columns=["answer"],
     )
 )
 ```
@@ -65,34 +81,46 @@ seed source.
 import data_designer.config as dd
 from data_designer.interface import DataDesigner
 from data_designer_curator.config import (
+    CuratorModifierConfig,
+    CuratorModifyProcessorConfig,
+    CuratorTextFilterConfig,
+    CuratorTextFilterProcessorConfig,
     ExactDedupProcessorConfig,
-    RemoteScoreColumnConfig,
-    ScoreFilterProcessorConfig,
 )
 
 data_designer = DataDesigner()
 
 curation = dd.DataDesignerConfigBuilder()
 curation.with_seed_dataset(dd.LocalFileSeedSource(path="raw_seed_rows.parquet"))
-curation.add_column(
-    RemoteScoreColumnConfig(
-        name="quality_score",
-        endpoint_url="https://quality.example/score",
-        target_columns=["context"],
-        score_path="score",
+curation.add_processor(
+    CuratorModifyProcessorConfig(
+        name="clean_seed_context",
+        input_field="context",
+        output_field="clean_context",
+        modifiers=[
+            CuratorModifierConfig(primitive="unicode_reformatter"),
+            CuratorModifierConfig(primitive="markdown_remover"),
+            CuratorModifierConfig(primitive="url_remover"),
+        ],
     )
 )
 curation.add_processor(
-    ScoreFilterProcessorConfig(
+    CuratorTextFilterProcessorConfig(
         name="keep_curated_seeds",
-        score_column="quality_score",
-        min_score=0.8,
+        text_field="clean_context",
+        filters=[
+            CuratorTextFilterConfig(
+                primitive="word_count",
+                params={"min_words": 20, "max_words": 500},
+                score_field="curator_word_count",
+            )
+        ],
     )
 )
 curation.add_processor(
     ExactDedupProcessorConfig(
         name="dedup_curated_seeds",
-        text_columns=["context"],
+        text_columns=["clean_context"],
     )
 )
 

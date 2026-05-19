@@ -45,20 +45,74 @@ class FakeExactDuplicates:
         return FakeDocumentDataset(dataset.df.loc[~dataset.df[self.id_field].isin(duplicate_ids)])
 
 
-class FakeFilter:
-    def __init__(self, *, filter_fn: object, filter_field: str) -> None:
-        self.filter_fn = filter_fn
-        self.filter_field = filter_field
+class FakeDocumentBatch:
+    def __init__(self, *, task_id: str, dataset_name: str, data: pd.DataFrame) -> None:
+        self.task_id = task_id
+        self.dataset_name = dataset_name
+        self.data = data
+
+    def to_pandas(self) -> pd.DataFrame:
+        return self.data
+
+
+class FakeModify:
+    def __init__(self, *, modifier_fn: list[object], input_fields: str) -> None:
+        self.modifier_fn = modifier_fn
+        self.input_fields = input_fields
+
+    def process(self, batch: FakeDocumentBatch) -> FakeDocumentBatch:
+        data = batch.to_pandas()
+        for modifier in self.modifier_fn:
+            data[self.input_fields] = data[self.input_fields].apply(modifier.modify_document)
+        return FakeDocumentBatch(task_id=batch.task_id, dataset_name=batch.dataset_name, data=data)
+
+
+class FakeModifier:
+    def __init__(self, suffix: str) -> None:
+        self.suffix = suffix
+
+    def modify_document(self, text: str) -> str:
+        return f"{text}{self.suffix}"
+
+
+class FakeScoreFilter:
+    def __init__(
+        self,
+        *,
+        filter_obj: object | list[object],
+        text_field: str | list[str],
+        score_field: str | list[str | None] | None,
+        invert: bool | list[bool],
+    ) -> None:
+        self.filter_obj = filter_obj if isinstance(filter_obj, list) else [filter_obj]
+        self.text_field = text_field if isinstance(text_field, list) else [text_field]
+        self.score_field = score_field if isinstance(score_field, list) else [score_field]
+        self.invert = invert if isinstance(invert, list) else [invert]
 
     def compute_filter_mask(
         self,
         data: pd.DataFrame,
-        filter_fn: object,
-        filter_field: str,
+        filter_obj: object,
+        text_field: str,
+        score_field: str | None,
         invert: bool,
     ) -> pd.Series:
-        mask = data[filter_field].map(filter_fn)
+        scores = data[text_field].map(filter_obj.score_document)
+        if score_field is not None:
+            data[score_field] = scores
+        mask = scores.map(filter_obj.keep_document)
         return ~mask if invert else mask
+
+
+class FakeMinWordsFilter:
+    def __init__(self, min_words: int) -> None:
+        self.min_words = min_words
+
+    def score_document(self, text: str) -> int:
+        return len(text.split())
+
+    def keep_document(self, score: int) -> bool:
+        return score >= self.min_words
 
 
 def test_exact_dedup_uses_curator_exact_duplicates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -83,17 +137,40 @@ def test_exact_dedup_uses_curator_exact_duplicates(monkeypatch: pytest.MonkeyPat
     assert output["value"].tolist() == [1, 3]
 
 
-def test_score_filter_uses_curator_filter(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(curator_text, "_import_curator_filter", lambda: FakeFilter)
-    data = pd.DataFrame({"score": [0.2, None, 0.9], "text": ["low", "unknown", "high"]})
+def test_modify_uses_curator_modify(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(curator_text, "_import_curator_modify", lambda: (FakeModify, FakeDocumentBatch))
+    monkeypatch.setattr(curator_text, "_build_modifier", lambda spec: FakeModifier(spec["params"]["suffix"]))
+    data = pd.DataFrame({"text": ["a", "b"]})
 
-    output, mask = CuratorTextAdapter().score_filter(
+    output = CuratorTextAdapter().modify(
         data=data,
-        score_column="score",
-        min_score=0.8,
-        max_score=None,
-        keep_null_scores=True,
+        input_field="text",
+        output_field="clean_text",
+        modifiers=[
+            {"primitive": "fake", "params": {"suffix": "!"}},
+            {"primitive": "fake", "params": {"suffix": "?"}},
+        ],
+    )
+
+    assert output["text"].tolist() == ["a", "b"]
+    assert output["clean_text"].tolist() == ["a!?", "b!?"]
+
+
+def test_text_filter_uses_curator_score_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(curator_text, "_import_curator_score_filter", lambda: FakeScoreFilter)
+    monkeypatch.setattr(
+        curator_text,
+        "_build_text_filter",
+        lambda spec: FakeMinWordsFilter(spec["params"]["min_words"]),
+    )
+    data = pd.DataFrame({"text": ["short", "two words", "three word row"]})
+
+    output, mask, scored = CuratorTextAdapter().text_filter(
+        data=data,
+        default_text_field="text",
+        filters=[{"primitive": "word_count", "params": {"min_words": 2}, "score_field": "word_count"}],
     )
 
     assert mask.tolist() == [False, True, True]
-    assert output["text"].tolist() == ["unknown", "high"]
+    assert output["text"].tolist() == ["two words", "three word row"]
+    assert scored["word_count"].tolist() == [1, 2, 3]

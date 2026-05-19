@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,61 @@ if TYPE_CHECKING:
 CURATOR_ID_COLUMN = "_dd_curator_id"
 CURATOR_TEXT_COLUMN = "_dd_curator_text"
 ORIGINAL_INDEX_COLUMN = "_dd_original_index"
+
+MODIFIER_PRIMITIVES = {
+    "boilerplate_string": "nemo_curator.stages.text.modifiers.string.c4:BoilerPlateStringModifier",
+    "line_remover": "nemo_curator.stages.text.modifiers.string.line_remover:LineRemover",
+    "markdown_remover": "nemo_curator.stages.text.modifiers.string.markdown_remover:MarkdownRemover",
+    "newline_normalizer": "nemo_curator.stages.text.modifiers.string.newline_normalizer:NewlineNormalizer",
+    "quotation_remover": "nemo_curator.stages.text.modifiers.string.quotation_remover:QuotationRemover",
+    "slicer": "nemo_curator.stages.text.modifiers.string.slicer:Slicer",
+    "unicode_reformatter": "nemo_curator.stages.text.modifiers.unicode.unicode_reformatter:UnicodeReformatter",
+    "url_remover": "nemo_curator.stages.text.modifiers.string.url_remover:UrlRemover",
+}
+
+TEXT_FILTER_PRIMITIVES = {
+    "alpha": "nemo_curator.stages.text.filters.heuristic.code.code:AlphaFilter",
+    "boilerplate_string": "nemo_curator.stages.text.filters.heuristic.string:BoilerPlateStringFilter",
+    "bullets": "nemo_curator.stages.text.filters.heuristic.string:BulletsFilter",
+    "common_english_words": "nemo_curator.stages.text.filters.heuristic.string:CommonEnglishWordsFilter",
+    "ellipsis": "nemo_curator.stages.text.filters.heuristic.string:EllipsisFilter",
+    "general_comment_to_code": "nemo_curator.stages.text.filters.heuristic.code.code:GeneralCommentToCodeFilter",
+    "histogram": "nemo_curator.stages.text.filters.histogram.histogram:HistogramFilter",
+    "html_boilerplate": "nemo_curator.stages.text.filters.heuristic.code.code:HTMLBoilerplateFilter",
+    "long_word": "nemo_curator.stages.text.filters.heuristic.string:LongWordFilter",
+    "mean_word_length": "nemo_curator.stages.text.filters.heuristic.string:MeanWordLengthFilter",
+    "non_alpha_numeric": "nemo_curator.stages.text.filters.heuristic.string:NonAlphaNumericFilter",
+    "number_of_lines_of_code": "nemo_curator.stages.text.filters.heuristic.code.code:NumberOfLinesOfCodeFilter",
+    "numbers": "nemo_curator.stages.text.filters.heuristic.string:NumbersFilter",
+    "parentheses": "nemo_curator.stages.text.filters.heuristic.string:ParenthesesFilter",
+    "per_extension": "nemo_curator.stages.text.filters.heuristic.code.code:PerExtensionFilter",
+    "pornographic_urls": "nemo_curator.stages.text.filters.heuristic.string:PornographicUrlsFilter",
+    "punctuation": "nemo_curator.stages.text.filters.heuristic.string:PunctuationFilter",
+    "python_comment_to_code": "nemo_curator.stages.text.filters.heuristic.code.code:PythonCommentToCodeFilter",
+    "repeated_lines": "nemo_curator.stages.text.filters.heuristic.repetition.repetition:RepeatedLinesFilter",
+    "repeated_lines_by_char": (
+        "nemo_curator.stages.text.filters.heuristic.repetition.repetition:RepeatedLinesByCharFilter"
+    ),
+    "repeated_paragraphs": "nemo_curator.stages.text.filters.heuristic.repetition.repetition:RepeatedParagraphsFilter",
+    "repeated_paragraphs_by_char": (
+        "nemo_curator.stages.text.filters.heuristic.repetition.repetition:RepeatedParagraphsByCharFilter"
+    ),
+    "repeating_duplicate_ngrams": (
+        "nemo_curator.stages.text.filters.heuristic.repetition.repetition:RepeatingDuplicateNGramsFilter"
+    ),
+    "repeating_top_ngrams": (
+        "nemo_curator.stages.text.filters.heuristic.repetition.repetition:RepeatingTopNGramsFilter"
+    ),
+    "substring": "nemo_curator.stages.text.filters.heuristic.string:SubstringFilter",
+    "symbols_to_words": "nemo_curator.stages.text.filters.heuristic.string:SymbolsToWordsFilter",
+    "token_count": "nemo_curator.stages.text.filters.token.token_count:TokenCountFilter",
+    "tokenizer_fertility": "nemo_curator.stages.text.filters.heuristic.code.code:TokenizerFertilityFilter",
+    "urls": "nemo_curator.stages.text.filters.heuristic.string:UrlsFilter",
+    "whitespace": "nemo_curator.stages.text.filters.heuristic.string:WhiteSpaceFilter",
+    "word_count": "nemo_curator.stages.text.filters.heuristic.string:WordCountFilter",
+    "words_without_alphabets": "nemo_curator.stages.text.filters.heuristic.string:WordsWithoutAlphabetsFilter",
+    "xml_header": "nemo_curator.stages.text.filters.heuristic.code.code:XMLHeaderFilter",
+}
 
 
 class CuratorExecutionSession:
@@ -135,33 +191,73 @@ class CuratorTextAdapter:
                 raise
             raise CuratorExecutionError(f"Curator exact dedup failed: {error}") from error
 
-    def score_filter(
+    def modify(
         self,
         *,
         data: pd.DataFrame,
-        score_column: str,
-        min_score: float | None,
-        max_score: float | None,
-        keep_null_scores: bool,
-    ) -> tuple[pd.DataFrame, pd.Series]:
-        import pandas as pd
-
-        Filter = _import_curator_filter()
-
-        def keep_score(score: object) -> bool:
-            if pd.isna(score):
-                return keep_null_scores
-            if min_score is not None and score < min_score:
-                return False
-            return not (max_score is not None and score > max_score)
+        input_field: str,
+        output_field: str | None,
+        modifiers: list[dict[str, Any]],
+    ) -> pd.DataFrame:
+        Modify, DocumentBatch = _import_curator_modify()
+        target_field = output_field or input_field
+        working = data.copy()
+        if output_field is not None:
+            working[output_field] = working[input_field]
 
         try:
-            stage = Filter(filter_fn=keep_score, filter_field=score_column)
-            mask = stage.compute_filter_mask(data, keep_score, score_column, False)
+            stage = Modify(
+                modifier_fn=[_build_modifier(spec) for spec in modifiers],
+                input_fields=target_field,
+            )
+            batch = DocumentBatch(task_id="data-designer", dataset_name="data-designer", data=working)
+            output = stage.process(batch)
         except Exception as error:
-            raise CuratorExecutionError(f"Curator score filter failed: {error}") from error
+            raise CuratorExecutionError(f"Curator modify failed: {error}") from error
 
-        return data.loc[mask].reset_index(drop=True), mask
+        return _document_batch_to_pandas(output).reset_index(drop=True)
+
+    def text_filter(
+        self,
+        *,
+        data: pd.DataFrame,
+        default_text_field: str,
+        filters: list[dict[str, Any]],
+    ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
+        import pandas as pd
+
+        ScoreFilter = _import_curator_score_filter()
+        filter_objs = [_build_text_filter(spec) for spec in filters]
+        text_fields = [spec.get("text_field") or default_text_field for spec in filters]
+        score_fields = [spec.get("score_field") for spec in filters]
+        inverts = [spec.get("invert", False) for spec in filters]
+
+        try:
+            single_filter = len(filter_objs) == 1
+            stage = ScoreFilter(
+                filter_obj=filter_objs[0] if single_filter else filter_objs,
+                text_field=text_fields[0] if single_filter else text_fields,
+                score_field=score_fields[0] if single_filter else score_fields,
+                invert=inverts[0] if single_filter else inverts,
+            )
+            scored = data.copy()
+            keep_mask = pd.Series(True, index=scored.index)
+            for filter_obj, text_field, score_field, invert in zip(
+                stage.filter_obj,
+                stage.text_field,
+                stage.score_field,
+                stage.invert,
+                strict=True,
+            ):
+                active = scored.loc[keep_mask].copy()
+                active_mask = stage.compute_filter_mask(active, filter_obj, text_field, score_field, invert)
+                if score_field is not None and score_field in active:
+                    scored.loc[active.index, score_field] = active[score_field]
+                keep_mask.loc[active.index] = active_mask.to_numpy()
+        except Exception as error:
+            raise CuratorExecutionError(f"Curator text filter failed: {error}") from error
+
+        return scored.loc[keep_mask].reset_index(drop=True), keep_mask, scored
 
     def _prepare_exact_input(
         self,
@@ -277,29 +373,51 @@ def _import_exact_dedup_workflows() -> tuple[type, type]:
     return ExactDeduplicationWorkflow, TextDuplicatesRemovalWorkflow
 
 
-def _import_curator_filter() -> type:
-    import_errors: list[Exception] = []
-    for import_fn in (_import_current_filter, _import_legacy_filter):
-        try:
-            return import_fn()
-        except Exception as error:
-            import_errors.append(error)
-    raise CuratorDependencyError(
-        "NeMo Curator text filters are not installed. Install data-designer-curator[curator-text-cpu] "
-        "or install NeMo Curator in the same environment."
-    ) from import_errors[-1]
+def _import_curator_modify() -> tuple[type, type]:
+    try:
+        from nemo_curator.stages.text.modifiers.modifier import Modify
+        from nemo_curator.tasks import DocumentBatch
+    except Exception as error:
+        raise CuratorDependencyError(
+            "NeMo Curator text modifiers are not installed. Install data-designer-curator[curator-text-cpu] "
+            "or install NeMo Curator in the same environment."
+        ) from error
+    return Modify, DocumentBatch
 
 
-def _import_current_filter() -> type:
-    from nemo_curator.stages.text.filters.score_filter import Filter
+def _import_curator_score_filter() -> type:
+    try:
+        from nemo_curator.stages.text.filters.score_filter import ScoreFilter
+    except Exception as error:
+        raise CuratorDependencyError(
+            "NeMo Curator text filters are not installed. Install data-designer-curator[curator-text-cpu] "
+            "or install NeMo Curator in the same environment."
+        ) from error
+    return ScoreFilter
 
-    return Filter
+
+def _build_modifier(spec: dict[str, Any]) -> object:
+    return _build_primitive(spec, MODIFIER_PRIMITIVES)
 
 
-def _import_legacy_filter() -> type:
-    from nemo_curator.modules import Filter
+def _build_text_filter(spec: dict[str, Any]) -> object:
+    return _build_primitive(spec, TEXT_FILTER_PRIMITIVES)
 
-    return Filter
+
+def _build_primitive(spec: dict[str, Any], registry: dict[str, str]) -> object:
+    primitive = spec["primitive"]
+    path = registry[primitive]
+    params = spec.get("params", {})
+    try:
+        return _load_class(path)(**params)
+    except Exception as error:
+        raise CuratorExecutionError(f"Unable to build Curator primitive {primitive!r}: {error}") from error
+
+
+def _load_class(path: str) -> type:
+    module_name, _, class_name = path.partition(":")
+    module = import_module(module_name)
+    return getattr(module, class_name)
 
 
 def _document_dataset_from_pandas(DocumentDataset: type, data: pd.DataFrame) -> object:
@@ -324,6 +442,14 @@ def _document_dataset_to_pandas(dataset: object) -> pd.DataFrame:
             return value
 
     raise CuratorExecutionError("Unable to convert NeMo Curator DocumentDataset output to pandas.")
+
+
+def _document_batch_to_pandas(batch: object) -> pd.DataFrame:
+    if batch is None:
+        raise CuratorExecutionError("Curator stage returned no output batch.")
+    if hasattr(batch, "to_pandas"):
+        return batch.to_pandas()
+    raise CuratorExecutionError("Unable to convert NeMo Curator DocumentBatch output to pandas.")
 
 
 def _read_parquet_dir(output_dir: Path) -> pd.DataFrame:
