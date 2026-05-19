@@ -66,8 +66,8 @@ after installation.
           "specifier": ">=3.10"
         },
         "data_designer": {
-          "requirement": "data-designer>=0.5.7",
-          "specifier": ">=0.5.7",
+          "requirement": "data-designer>=0.6.0",
+          "specifier": ">=0.6.0",
           "marker": null
         }
       },

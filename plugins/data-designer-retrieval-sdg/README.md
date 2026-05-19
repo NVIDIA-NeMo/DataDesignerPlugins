@@ -20,19 +20,27 @@ via `[project.entry-points."data_designer.plugins"]`:
 Both are registered automatically through Python entry points when the
 package is installed (see [Installation](#installation)).
 
-## Native async (`DATA_DESIGNER_ASYNC_ENGINE=1`)
+## Native async and resumable generation
 
 `embedding-dedup` implements `agenerate()` directly on top of
 `model.agenerate_text_embeddings`, so the column participates in
-DataDesigner's async cell-level scheduler whenever the env var is set:
+DataDesigner's async cell-level scheduler.
+
+The `generate` command uses DataDesigner's native resumable generation.
+Use a stable `--artifact-path`, `--dataset-name`, and `--buffer-size`, then
+resume an interrupted run with `--resume always`:
 
 ```bash
-export DATA_DESIGNER_ASYNC_ENGINE=1
-data-designer-retrieval-sdg generate ...
+data-designer-retrieval-sdg generate \
+    --input-dir ./my_documents \
+    --output-dir ./generated_output \
+    --dataset-name my_retrieval_run \
+    --buffer-size 200 \
+    --resume always
 ```
 
-The async engine requires Python 3.11+; without the env var the package
-runs on Python 3.10+ via the framework's sync bridge.
+Use `--resume if_possible` to resume only when the saved config matches and
+otherwise start a fresh run.
 
 ## Installation
 
@@ -91,15 +99,27 @@ uv run data-designer-retrieval-sdg generate --help
 data-designer-retrieval-sdg generate \
     --input-dir ./my_documents \
     --output-dir ./generated_output \
+    --dataset-name my_retrieval_run \
+    --buffer-size 200 \
+    --resume if_possible \
     --num-pairs 7
 ```
+
+Generation writes DataDesigner artifacts under `--artifact-path` and exports a
+single JSONL file to `--output-dir`.
 
 ### Convert to training format
 
 ```bash
-data-designer-retrieval-sdg convert ./generated_output \
+data-designer-retrieval-sdg convert ./generated_output/my_retrieval_run.jsonl \
     --corpus-id my_corpus
 ```
+
+Legacy `generated_batch*.json` directories remain supported by `convert`, but
+`generate` no longer writes per-batch JSON files. The old manual restart flags
+`--batch-size`, `--start-batch-index`, and `--end-batch-index` were removed
+because DataDesigner now owns checkpointing through `--buffer-size` and
+`--resume`.
 
 ### Use as a library
 
