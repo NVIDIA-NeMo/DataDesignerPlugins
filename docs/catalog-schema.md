@@ -32,8 +32,8 @@ The top-level document must contain `schema_version` and `packages`:
           "specifier": ">=3.10"
         },
         "data_designer": {
-          "requirement": "data-designer>=0.6.0",
-          "specifier": ">=0.6.0",
+          "requirement": "data-designer>=0.6.1",
+          "specifier": ">=0.6.1",
           "marker": null
         }
       },
