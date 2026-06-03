@@ -19,6 +19,7 @@ import json
 import os
 import random
 from collections import defaultdict
+from pathlib import Path
 
 import pandas as pd
 
@@ -58,6 +59,27 @@ def filter_mismatched_records(records: list[dict]) -> tuple[list[dict], int]:
     return filtered, dropped_count
 
 
+def _to_plain_python(value: object) -> object:
+    """Recursively convert array-like values from parquet into plain Python containers."""
+    if isinstance(value, dict):
+        return {key: _to_plain_python(nested_value) for key, nested_value in value.items()}
+    if isinstance(value, list):
+        return [_to_plain_python(nested_value) for nested_value in value]
+    if isinstance(value, tuple):
+        return [_to_plain_python(nested_value) for nested_value in value]
+    if not isinstance(value, str) and hasattr(value, "tolist"):
+        return _to_plain_python(value.tolist())
+    return value
+
+
+def _normalize_generated_record(record: object) -> dict:
+    """Convert one loaded record to a plain dict."""
+    normalized = _to_plain_python(record)
+    if not isinstance(normalized, dict):
+        raise ValueError(f"Generated record must be a JSON object, got {type(normalized).__name__}")
+    return normalized
+
+
 def normalize_file_name(file_name: object) -> list[str]:
     """Normalise *file_name* to a list of strings.
 
@@ -74,48 +96,104 @@ def normalize_file_name(file_name: object) -> list[str]:
         return [file_name]
     if isinstance(file_name, list):
         return file_name
+    if hasattr(file_name, "tolist"):
+        value = file_name.tolist()
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            return [value]
     return [str(file_name)]
 
 
+def _load_json_records(input_file: Path) -> list[dict]:
+    """Load records from a JSON file containing one object or a list of objects."""
+    with input_file.open(encoding="utf-8") as f:
+        records = json.load(f)
+    if isinstance(records, list):
+        return records
+    return [records]
+
+
+def _load_jsonl_records(input_file: Path) -> list[dict]:
+    """Load records from a JSONL file containing one JSON object per line."""
+    records: list[dict] = []
+    with input_file.open(encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            record = json.loads(stripped)
+            if isinstance(record, list):
+                records.extend(record)
+            else:
+                records.append(record)
+    return records
+
+
+def _load_parquet_records(input_file: Path) -> list[dict]:
+    """Load records from a parquet file exported by DataDesigner."""
+    records = pd.read_parquet(input_file).to_dict(orient="records")
+    return [_normalize_generated_record(record) for record in records]
+
+
+def _load_generated_records_file(input_file: Path) -> list[dict]:
+    """Load generated records from one supported file path."""
+    suffix = input_file.suffix.lower()
+    if suffix == ".json":
+        print(f"Loading JSON file: {input_file}")
+        return _load_json_records(input_file)
+    if suffix == ".jsonl":
+        print(f"Loading JSONL file: {input_file}")
+        return _load_jsonl_records(input_file)
+    if suffix == ".parquet":
+        print(f"Loading parquet file: {input_file}")
+        return _load_parquet_records(input_file)
+    raise ValueError(f"Unsupported generated data file format: {input_file}")
+
+
+def _discover_generated_record_files(input_dir: Path) -> list[Path]:
+    """Discover generated output files in a directory, preferring the newest output contract."""
+    pattern_groups = [
+        "*.jsonl",
+        "generated_batch*.json",
+        "*.json",
+        "*.parquet",
+    ]
+    for pattern in pattern_groups:
+        files = sorted(Path(p) for p in glob_mod.glob(str(input_dir / pattern)))
+        if files:
+            return files
+    return []
+
+
 def load_generated_json_files(input_path: str) -> pd.DataFrame:
-    """Load generated JSON from a single file or a directory of batch files.
+    """Load generated records from a file or output directory.
 
     Args:
-        input_path: Path to a merged JSON file **or** a directory containing
-            ``generated_batch*.json`` files.
+        input_path: Path to a generated ``.jsonl``, ``.json``, or ``.parquet``
+            file, or a directory containing generated output files.
 
     Returns:
         Combined DataFrame with all records.
 
     Raises:
-        ValueError: If no JSON files are found.
+        ValueError: If no supported generated files are found.
     """
     all_records: list[dict] = []
+    path = Path(input_path)
 
-    if os.path.isfile(input_path):
-        print(f"Loading single JSON file: {input_path}")
-        with open(input_path, encoding="utf-8") as f:
-            records = json.load(f)
-            if isinstance(records, list):
-                all_records.extend(records)
-            else:
-                all_records.append(records)
+    if path.is_file():
+        all_records.extend(_load_generated_records_file(path))
     else:
-        json_files = sorted(glob_mod.glob(os.path.join(input_path, "generated_batch*.json")))
-        if not json_files:
-            json_files = sorted(glob_mod.glob(os.path.join(input_path, "*.json")))
-        if not json_files:
-            raise ValueError(f"No JSON files found in {input_path}")
+        generated_files = _discover_generated_record_files(path)
+        if not generated_files:
+            raise ValueError(f"No generated JSONL, JSON, or parquet files found in {input_path}")
 
-        print(f"Found {len(json_files)} JSON files")
-        for json_file in json_files:
-            print(f"  Loading: {json_file}")
-            with open(json_file, encoding="utf-8") as f:
-                records = json.load(f)
-                if isinstance(records, list):
-                    all_records.extend(records)
-                else:
-                    all_records.append(records)
+        print(f"Found {len(generated_files)} generated file(s)")
+        for generated_file in generated_files:
+            all_records.extend(_load_generated_records_file(generated_file))
+
+    all_records = [_normalize_generated_record(record) for record in all_records]
 
     print("Normalizing file_name fields...")
     for record in all_records:
@@ -199,16 +277,13 @@ def build_corpus_and_mappings(
     print("Building corpus and chunk mappings...")
 
     for _, row in generated_df.iterrows():
-        file_name_list = row.get("file_name", [])
-        chunks = row.get("chunks", [])
+        file_name_list = normalize_file_name(_to_plain_python(row.get("file_name", [])))
+        chunks = _to_plain_python(row.get("chunks", []))
 
-        if not chunks or not file_name_list:
+        if not isinstance(chunks, list) or len(chunks) == 0 or len(file_name_list) == 0:
             continue
 
         file_identifier = get_file_identifier(file_name_list)
-
-        if hasattr(chunks, "tolist"):
-            chunks = chunks.tolist()
 
         for chunk in chunks:
             if isinstance(chunk, dict):

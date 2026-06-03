@@ -161,11 +161,23 @@ def test_config_round_trip() -> None:
     assert cfg.similarity_threshold == 0.9
 
 
-def test_is_llm_bound_true() -> None:
-    """The column issues embedding HTTP calls and must route through the
-    async scheduler's LLM-wait semaphore."""
+def test_scheduling_metadata_uses_embedding_model_alias() -> None:
+    """Embedding calls should route through DataDesigner's model scheduler."""
     gen = _make_generator()
-    assert gen.is_llm_bound is True
+    gen.resource_provider.model_registry.get_model_config.return_value = ModelConfig(
+        alias="embed",
+        model="mock-embedding-model",
+        provider="mock-provider",
+        inference_parameters=EmbeddingInferenceParams(max_parallel_requests=3),
+    )
+    gen.resource_provider.model_registry.get_model_provider.return_value.name = "mock-provider"
+
+    metadata = gen.get_scheduling_metadata()
+
+    assert metadata.kind == "model"
+    assert metadata.identity == ("model", "mock-provider", "mock-embedding-model", "embedding")
+    assert metadata.weight == 3
+    assert metadata.diagnostics["aliases"] == ("embed",)
 
 
 def test_validate_accepts_embedding_model() -> None:
@@ -175,6 +187,7 @@ def test_validate_accepts_embedding_model() -> None:
     gen.resource_provider.model_registry.get_model_config.return_value = ModelConfig(
         alias="embed",
         model="some/embedding-model",
+        provider="mock-provider",
         inference_parameters=EmbeddingInferenceParams(),
     )
     gen._validate()
@@ -187,6 +200,7 @@ def test_validate_rejects_chat_model() -> None:
     gen.resource_provider.model_registry.get_model_config.return_value = ModelConfig(
         alias="embed",
         model="some/chat-model",
+        provider="mock-provider",
         inference_parameters=ChatCompletionInferenceParams(),
     )
     with pytest.raises(BuilderConfigurationError, match="embed"):

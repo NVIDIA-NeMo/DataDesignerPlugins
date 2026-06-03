@@ -41,10 +41,10 @@ class EmbeddingDedupColumnGenerator(ColumnGeneratorWithModelRegistry[EmbeddingDe
        similarity exceeds ``similarity_threshold``.
     5. Returns the surviving items under ``self.config.name``.
 
-    Extends :class:`ColumnGeneratorWithModelRegistry` so the column reports
-    ``is_llm_bound = True`` to the async scheduler. Without this, embedding
-    HTTP calls would bypass ``_llm_wait_semaphore`` and could fan out up to
-    a full row group's worth of concurrent requests at the embedding endpoint.
+    Extends :class:`ColumnGeneratorWithModelRegistry` so DataDesigner's scheduler
+    can derive model resource metadata from the configured embedding alias.
+    Without that model-aware metadata, embedding HTTP calls could bypass endpoint
+    concurrency limits and fan out up to a full row group's worth of requests.
     """
 
     @staticmethod
