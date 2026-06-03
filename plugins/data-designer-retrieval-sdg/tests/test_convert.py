@@ -198,6 +198,28 @@ def test_load_from_parquet_file(tmp_path: Path) -> None:
     assert df.iloc[0]["file_name"] == ["doc.txt"]
 
 
+def test_load_from_parquet_normalizes_nested_arrays_for_chunk_mapping(tmp_path: Path) -> None:
+    path = tmp_path / "generated.parquet"
+    pd.DataFrame(
+        [
+            {
+                "file_name": ["doc.txt"],
+                "chunks": [{"chunk_id": 1, "text": "hello"}, {"chunk_id": 2, "text": "world"}],
+                "deduplicated_qa_pairs": [],
+                "qa_evaluations": {"evaluations": []},
+            }
+        ]
+    ).to_parquet(path, index=False)
+
+    df = load_generated_json_files(str(path))
+    corpus, mapping = build_corpus_and_mappings(df)
+
+    assert isinstance(df.iloc[0]["chunks"], list)
+    assert len(corpus) == 2
+    assert mapping[("doc", 1)] == "hello"
+    assert mapping[("doc", 2)] == "world"
+
+
 # ---------------------------------------------------------------------------
 # generate_training_set / generate_eval_set
 # ---------------------------------------------------------------------------

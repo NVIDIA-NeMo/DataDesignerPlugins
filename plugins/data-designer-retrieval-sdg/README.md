@@ -42,6 +42,11 @@ data-designer-retrieval-sdg generate \
 Use `--resume if_possible` to resume only when the saved config matches and
 otherwise start a fresh run.
 
+`--buffer-size` controls DataDesigner's checkpoint/write granularity and must
+match across resumed runs. In DataDesigner 0.6.1, `create()` still profiles the
+completed dataset before returning, so `--buffer-size` is not a hard cap on
+final peak memory for very large runs.
+
 ## Installation
 
 The package is distributed from the NVIDIA-NeMo plugin index (hosted on
@@ -119,7 +124,9 @@ Legacy `generated_batch*.json` directories remain supported by `convert`, but
 `generate` no longer writes per-batch JSON files. The old manual restart flags
 `--batch-size`, `--start-batch-index`, and `--end-batch-index` were removed
 because DataDesigner now owns checkpointing through `--buffer-size` and
-`--resume`.
+`--resume`. For very large corpora, keep input partitions sized for
+DataDesigner's final profiling step until DataDesigner exposes a no-materialize
+create/export path.
 
 ### Use as a library
 

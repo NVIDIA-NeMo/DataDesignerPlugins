@@ -15,7 +15,11 @@ members = [
     "data-designer-template",
     "ddp",
 ]
-constraints = [{ name = "idna", specifier = ">=3.12" }]
+constraints = [
+    { name = "idna", specifier = ">=3.12" },
+    { name = "python-multipart", specifier = ">=0.0.29" },
+    { name = "urllib3", specifier = ">=2.7.0" },
+]
 
 [[package]]
 name = "annotated-doc"

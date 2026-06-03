@@ -65,6 +65,55 @@ def _count_seed_records(seed_source: DocumentChunkerSeedSource) -> int:
     return reader.get_seed_dataset_size()
 
 
+def _path_is_relative_to(path: Path, root: Path) -> bool:
+    """Return whether *path* is contained by *root* after resolution."""
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_dataset_name(dataset_name: str, artifact_path: Path) -> str:
+    """Validate a DataDesigner dataset name before it is used as an artifact path segment.
+
+    Args:
+        dataset_name: Requested dataset name.
+        artifact_path: DataDesigner artifact root.
+
+    Returns:
+        The validated dataset name.
+
+    Raises:
+        ValueError: If the dataset name is empty, unsafe, or escapes the artifact root.
+    """
+    if not dataset_name:
+        raise ValueError("--dataset-name must not be empty")
+    if dataset_name in {".", ".."}:
+        raise ValueError("--dataset-name must be a real path segment, not '.' or '..'")
+    if any(ord(char) < 32 or ord(char) == 127 for char in dataset_name):
+        raise ValueError("--dataset-name must not contain control characters")
+    if any(separator in dataset_name for separator in ("/", "\\")):
+        raise ValueError("--dataset-name must be a single path segment without path separators")
+
+    dataset_path = Path(dataset_name)
+    if dataset_path.is_absolute() or len(dataset_path.parts) != 1:
+        raise ValueError("--dataset-name must be a single relative path segment")
+
+    artifact_root = artifact_path.resolve()
+    resolved_dataset_path = (artifact_root / dataset_name).resolve()
+    if resolved_dataset_path == artifact_root or not _path_is_relative_to(resolved_dataset_path, artifact_root):
+        raise ValueError("--dataset-name must resolve under --artifact-path")
+
+    return dataset_name
+
+
+def _resolve_dataset_name(input_dir: Path, artifact_path: Path, dataset_name: str | None) -> str:
+    """Return the explicit or default dataset name after safety validation."""
+    resolved_name = dataset_name if dataset_name is not None else input_dir.name or "retrieval_sdg"
+    return _validate_dataset_name(resolved_name, artifact_path)
+
+
 def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the ``generate`` subcommand."""
     p = subparsers.add_parser(
@@ -161,6 +210,12 @@ def _run_generate(args: argparse.Namespace) -> None:
 
     row_type = "bundles" if args.multi_doc else "text files"
     print(f"Discovered {total_records} {row_type} under {args.input_dir}")
+
+    try:
+        args.dataset_name = _resolve_dataset_name(args.input_dir, args.artifact_path, args.dataset_name)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(2)
 
     model_providers, custom_providers = build_model_providers(
         custom_provider_endpoint=args.custom_provider_endpoint,
@@ -260,7 +315,7 @@ def _run_create(
         **pipeline_kwargs,
     )
 
-    dataset_name = args.dataset_name or args.input_dir.name or "retrieval_sdg"
+    dataset_name = _resolve_dataset_name(args.input_dir, args.artifact_path, args.dataset_name)
     print(f"Dataset name: {dataset_name}")
     print("\nGenerating dataset...")
     result = data_designer.create(

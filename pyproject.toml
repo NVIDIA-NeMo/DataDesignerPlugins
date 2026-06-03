@@ -22,6 +22,8 @@ package = false
 required-version = ">=0.7.10"
 constraint-dependencies = [
     "idna>=3.12",
+    "python-multipart>=0.0.29",
+    "urllib3>=2.7.0",
 ]
 
 [tool.ddp.catalog]

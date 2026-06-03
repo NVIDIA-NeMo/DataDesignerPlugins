@@ -59,6 +59,27 @@ def filter_mismatched_records(records: list[dict]) -> tuple[list[dict], int]:
     return filtered, dropped_count
 
 
+def _to_plain_python(value: object) -> object:
+    """Recursively convert array-like values from parquet into plain Python containers."""
+    if isinstance(value, dict):
+        return {key: _to_plain_python(nested_value) for key, nested_value in value.items()}
+    if isinstance(value, list):
+        return [_to_plain_python(nested_value) for nested_value in value]
+    if isinstance(value, tuple):
+        return [_to_plain_python(nested_value) for nested_value in value]
+    if not isinstance(value, str) and hasattr(value, "tolist"):
+        return _to_plain_python(value.tolist())
+    return value
+
+
+def _normalize_generated_record(record: object) -> dict:
+    """Convert one loaded record to a plain dict."""
+    normalized = _to_plain_python(record)
+    if not isinstance(normalized, dict):
+        raise ValueError(f"Generated record must be a JSON object, got {type(normalized).__name__}")
+    return normalized
+
+
 def normalize_file_name(file_name: object) -> list[str]:
     """Normalise *file_name* to a list of strings.
 
@@ -111,7 +132,8 @@ def _load_jsonl_records(input_file: Path) -> list[dict]:
 
 def _load_parquet_records(input_file: Path) -> list[dict]:
     """Load records from a parquet file exported by DataDesigner."""
-    return pd.read_parquet(input_file).to_dict(orient="records")
+    records = pd.read_parquet(input_file).to_dict(orient="records")
+    return [_normalize_generated_record(record) for record in records]
 
 
 def _load_generated_records_file(input_file: Path) -> list[dict]:
@@ -170,6 +192,8 @@ def load_generated_json_files(input_path: str) -> pd.DataFrame:
         print(f"Found {len(generated_files)} generated file(s)")
         for generated_file in generated_files:
             all_records.extend(_load_generated_records_file(generated_file))
+
+    all_records = [_normalize_generated_record(record) for record in all_records]
 
     print("Normalizing file_name fields...")
     for record in all_records:
@@ -253,16 +277,13 @@ def build_corpus_and_mappings(
     print("Building corpus and chunk mappings...")
 
     for _, row in generated_df.iterrows():
-        file_name_list = row.get("file_name", [])
-        chunks = row.get("chunks", [])
+        file_name_list = normalize_file_name(_to_plain_python(row.get("file_name", [])))
+        chunks = _to_plain_python(row.get("chunks", []))
 
-        if not chunks or not file_name_list:
+        if not isinstance(chunks, list) or len(chunks) == 0 or len(file_name_list) == 0:
             continue
 
         file_identifier = get_file_identifier(file_name_list)
-
-        if hasattr(chunks, "tolist"):
-            chunks = chunks.tolist()
 
         for chunk in chunks:
             if isinstance(chunk, dict):

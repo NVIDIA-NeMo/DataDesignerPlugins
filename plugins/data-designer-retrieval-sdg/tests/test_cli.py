@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -62,7 +61,7 @@ class FakeDataDesigner:
         self.model_providers = model_providers
         self.run_config = None
         self.create_calls: list[dict[str, object]] = []
-        self.result = FakeCreateResult(FakeArtifactStorage(artifact_path / "my_run", "my_run"))
+        self.result = FakeCreateResult(FakeArtifactStorage(artifact_path / "my_run_resolved", "my_run_resolved"))
         FakeDataDesigner.instances.append(self)
 
     def set_run_config(self, run_config: object) -> None:
@@ -87,52 +86,35 @@ class FakeDataDesigner:
         return self.result
 
 
-def _generate_args(tmp_path: Path) -> argparse.Namespace:
-    """Build generate args with defaults that match the CLI parser."""
+def generate_argv(
+    tmp_path: Path,
+    *,
+    dataset_name: str = "my_run",
+    artifact_path: Path | None = None,
+    extra_args: list[str] | None = None,
+) -> list[str]:
+    """Build generate CLI arguments for parser-level tests."""
     input_dir = tmp_path / "docs"
-    input_dir.mkdir()
-    return argparse.Namespace(
-        input_dir=input_dir,
-        output_dir=tmp_path / "out",
-        file_pattern="*",
-        recursive=True,
-        file_extensions=[".txt", ".md", ".text"],
-        min_text_length=50,
-        sentences_per_chunk=5,
-        num_sections=1,
-        num_files=None,
-        max_artifacts_per_type=2,
-        num_pairs=7,
-        min_hops=2,
-        max_hops=4,
-        min_complexity=4,
-        similarity_threshold=0.9,
-        preview=False,
-        artifact_path=tmp_path / "artifacts",
-        dataset_name="my_run",
-        buffer_size=37,
-        resume=ResumeMode.ALWAYS.value,
-        multi_doc=False,
-        bundle_size=2,
-        bundle_strategy="sequential",
-        max_docs_per_bundle=3,
-        multi_doc_manifest=None,
-        log_level="INFO",
-        artifact_extraction_model="artifact-model",
-        artifact_extraction_provider="nvidia",
-        qa_generation_model="qa-model",
-        qa_generation_provider="nvidia",
-        quality_judge_model="judge-model",
-        quality_judge_provider="nvidia",
-        embed_model="embed-model",
-        embed_provider="nvidia",
-        max_parallel_requests_for_gen=None,
-        custom_provider_endpoint=None,
-        custom_provider_name="custom",
-        custom_provider_type="openai",
-        custom_provider_api_key=None,
-        model_providers_file=None,
-    )
+    input_dir.mkdir(exist_ok=True)
+    argv = [
+        "data-designer-retrieval-sdg",
+        "generate",
+        "--input-dir",
+        str(input_dir),
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--artifact-path",
+        str(artifact_path or tmp_path / "artifacts"),
+        "--dataset-name",
+        dataset_name,
+        "--buffer-size",
+        "37",
+        "--resume",
+        "always",
+    ]
+    if extra_args:
+        argv.extend(extra_args)
+    return argv
 
 
 def test_generate_uses_native_resume_and_exports_jsonl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -142,8 +124,9 @@ def test_generate_uses_native_resume_and_exports_jsonl(monkeypatch: pytest.Monke
     monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
     monkeypatch.setattr(cli, "build_model_providers", fake_build_model_providers)
     monkeypatch.setattr(cli, "build_qa_generation_pipeline", fake_build_qa_generation_pipeline)
+    monkeypatch.setattr(sys, "argv", generate_argv(tmp_path))
 
-    cli._run_generate(_generate_args(tmp_path))
+    cli.main()
 
     instance = FakeDataDesigner.instances[0]
     assert instance.run_config.buffer_size == 37
@@ -158,7 +141,46 @@ def test_generate_uses_native_resume_and_exports_jsonl(monkeypatch: pytest.Monke
     ]
     assert BUILD_CALLS[0]["start_index"] == 0
     assert BUILD_CALLS[0]["end_index"] == 2
-    assert instance.result.export_calls == [(tmp_path / "out" / "my_run.jsonl", "jsonl")]
+    assert instance.result.export_calls == [(tmp_path / "out" / "my_run_resolved.jsonl", "jsonl")]
+
+
+@pytest.mark.parametrize("dataset_name", ["", ".", "..", "nested/name", "nested\\name", "bad\nname"])
+def test_generate_rejects_unsafe_dataset_names(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    dataset_name: str,
+) -> None:
+    FakeDataDesigner.instances.clear()
+    monkeypatch.setattr(cli, "DataDesigner", FakeDataDesigner)
+    monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
+    monkeypatch.setattr(sys, "argv", generate_argv(tmp_path, dataset_name=dataset_name))
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
+    assert FakeDataDesigner.instances == []
+
+
+def test_generate_rejects_dataset_name_that_resolves_outside_artifact_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifacts"
+    artifact_path.mkdir()
+    outside_path = tmp_path / "outside"
+    outside_path.mkdir()
+    (artifact_path / "linked").symlink_to(outside_path, target_is_directory=True)
+    FakeDataDesigner.instances.clear()
+    monkeypatch.setattr(cli, "DataDesigner", FakeDataDesigner)
+    monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
+    monkeypatch.setattr(sys, "argv", generate_argv(tmp_path, dataset_name="linked", artifact_path=artifact_path))
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
+    assert FakeDataDesigner.instances == []
 
 
 @pytest.mark.parametrize("removed_flag", ["--batch-size", "--start-batch-index", "--end-batch-index"])
