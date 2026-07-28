@@ -107,11 +107,13 @@ data-designer-retrieval-sdg generate \
     --dataset-name my_retrieval_run \
     --buffer-size 200 \
     --resume if_possible \
-    --num-pairs 7
+    --num-pairs 10
 ```
 
 Generation writes DataDesigner artifacts under `--artifact-path` and exports a
-single JSONL file to `--output-dir`.
+single JSONL file to `--output-dir`. The default profile uses
+`nvidia/nemotron-3-ultra-550b-a55b` for generation and
+`nvidia/nemotron-3-embed-1b` for embedding deduplication.
 
 ### Convert to training format
 
@@ -120,8 +122,10 @@ data-designer-retrieval-sdg convert ./generated_output/my_retrieval_run.jsonl \
     --corpus-id my_corpus
 ```
 
-Legacy `generated_batch*.json` directories remain supported by `convert`, but
-`generate` no longer writes per-batch JSON files. The old manual restart flags
+Legacy `generated_batch*.json` directories remain supported by `convert`, but a
+directory containing more than one generated-data format class is rejected as
+ambiguous. Pass the exact JSONL, JSON, or parquet file in that case. `generate`
+no longer writes per-batch JSON files. The old manual restart flags
 `--batch-size`, `--start-batch-index`, and `--end-batch-index` were removed
 because DataDesigner now owns checkpointing through `--buffer-size` and
 `--resume`. For very large corpora, keep input partitions sized for
@@ -131,17 +135,47 @@ create/export path.
 ### Use as a library
 
 ```python
+from pathlib import Path
+
 from data_designer_retrieval_sdg import (
     DocumentChunkerSeedSource,
-    build_qa_generation_pipeline,
+    GenerationPipelineConfig,
+    GenerationRunConfig,
+    run_conversion,
+    run_generation,
 )
 
 seed_source = DocumentChunkerSeedSource(
     path="./docs",
     file_extensions=[".txt", ".md"],
 )
-config_builder = build_qa_generation_pipeline(seed_source)
+generation = run_generation(
+    GenerationRunConfig(
+        seed_source=seed_source,
+        output_dir=Path("./generated"),
+        artifact_path=Path("./artifacts"),
+        dataset_name="my_retrieval_run",
+        pipeline=GenerationPipelineConfig(
+            num_pairs=10,
+            min_hops=1,
+            max_hops=3,
+        ),
+    )
+)
+conversion = run_conversion(
+    input_path=str(generation.output_path),
+    corpus_id="my_corpus",
+)
+assert conversion.train_file is not None
 ```
+
+The generation result contains the exact exported JSONL path, resolved Data
+Designer dataset path and name, record count, and producer version. Conversion
+returns the generated train, validation, corpus, and evaluation paths plus
+example counts. `GenerationRunConfig` and `GenerationPipelineConfig` reject
+unknown fields so recipe adapters cannot silently pass misspelled settings.
+`GenerationRunConfig.to_redacted_dict()` returns every effective Python API
+setting while replacing provider credentials and authorization headers.
 
 ## Plugin configuration examples
 
@@ -177,6 +211,11 @@ seed_source = DocumentChunkerSeedSource(
     multi_doc=False,                # set True for bundle-per-row mode
 )
 ```
+
+Every emitted row includes a normalized corpus-relative `source_id`. Conversion
+uses it for chunk lookup so same-basename documents in different directories do
+not overwrite one another. Legacy records without `source_id` retain their full
+normalized `file_name` as the lookup key.
 
 Output schema (one record per row): `file_name`, `text`, `chunks`,
 `sections_structured`, `bundle_id`, `bundle_members`, `is_multi_doc`.

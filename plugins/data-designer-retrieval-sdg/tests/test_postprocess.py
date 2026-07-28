@@ -53,6 +53,7 @@ def test_filter_by_quality() -> None:
         [
             {
                 "file_name": ["a.txt"],
+                "source_id": "nested/a.txt",
                 "deduplicated_qa_pairs": [
                     {"question": "Q1", "answer": "A1"},
                     {"question": "Q2", "answer": "A2"},
@@ -69,6 +70,7 @@ def test_filter_by_quality() -> None:
     filtered_df, skipped = filter_qa_pairs_by_quality(df, quality_threshold=7.0)
     assert len(filtered_df) == 1
     assert filtered_df.iloc[0]["question"] == "Q1"
+    assert filtered_df.iloc[0]["source_id"] == "nested/a.txt"
     assert skipped == []
 
 

@@ -5,10 +5,12 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from data_designer_retrieval_sdg.convert import (
     UnionFind,
     build_corpus_and_mappings,
+    build_file_to_group_mapping,
     create_train_val_test_split,
     extract_base_filename,
     file_tuple_in_set,
@@ -20,6 +22,7 @@ from data_designer_retrieval_sdg.convert import (
     load_generated_json_files,
     merge_groups_union_find,
     normalize_file_name,
+    run_conversion,
 )
 
 # ---------------------------------------------------------------------------
@@ -45,7 +48,8 @@ def test_normalize_file_name() -> None:
 
 
 def test_get_file_identifier_single() -> None:
-    assert get_file_identifier(["path/to/doc.txt"]) == "doc"
+    assert get_file_identifier(["path/to/doc.txt"]) == "path/to/doc.txt"
+    assert get_file_identifier([r"path\to\doc.txt"]) == "path/to/doc.txt"
 
 
 def test_get_file_identifier_multi() -> None:
@@ -91,8 +95,30 @@ def test_build_corpus_and_mappings() -> None:
     )
     corpus, mapping = build_corpus_and_mappings(df)
     assert len(corpus) == 2
-    assert ("a", 1) in mapping
-    assert mapping[("a", 1)] == "hello"
+    assert ("a.txt", 1) in mapping
+    assert mapping[("a.txt", 1)] == "hello"
+
+
+def test_source_id_prevents_same_basename_collision() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "file_name": ["/mnt/corpus/finance/report.txt"],
+                "source_id": "finance/report.txt",
+                "chunks": [{"chunk_id": 1, "text": "finance"}],
+            },
+            {
+                "file_name": ["/mnt/corpus/hr/report.txt"],
+                "source_id": "hr/report.txt",
+                "chunks": [{"chunk_id": 1, "text": "hr"}],
+            },
+        ]
+    )
+
+    _, mapping = build_corpus_and_mappings(df)
+
+    assert mapping[("finance/report.txt", 1)] == "finance"
+    assert mapping[("hr/report.txt", 1)] == "hr"
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +131,36 @@ def test_split_basic() -> None:
     df = pd.DataFrame(rows)
     train, val, test = create_train_val_test_split(df, train_ratio=0.6, val_ratio=0.2, seed=42)
     assert len(train) + len(val) + len(test) == 10
+
+
+def test_split_is_stable_across_input_order() -> None:
+    rows = [{"file_name": [f"f{i}.txt"], "question": f"Q{i}"} for i in range(20)]
+    forward = pd.DataFrame(rows)
+    reverse = pd.DataFrame(reversed(rows))
+
+    forward_splits = create_train_val_test_split(forward, train_ratio=0.6, val_ratio=0.2, seed=42)
+    reverse_splits = create_train_val_test_split(reverse, train_ratio=0.6, val_ratio=0.2, seed=42)
+
+    for forward_split, reverse_split in zip(forward_splits, reverse_splits, strict=True):
+        assert set(forward_split["question"]) == set(reverse_split["question"])
+
+
+def test_group_matching_rejects_ambiguous_basename() -> None:
+    groups = {
+        "finance": ["finance/annual/report.pdf"],
+        "hr": ["hr/annual/report.pdf"],
+    }
+
+    with pytest.raises(ValueError, match="Ambiguous basename match"):
+        build_file_to_group_mapping(groups, {"legacy/report.txt"})
+
+
+def test_group_matching_allows_unique_extension_fallback() -> None:
+    groups = {"finance": ["finance/annual/report.pdf"]}
+
+    mapping = build_file_to_group_mapping(groups, {"finance/annual/report.txt"})
+
+    assert mapping == {"finance/annual/report.txt": "finance"}
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +236,15 @@ def test_load_from_jsonl_directory(tmp_path: Path) -> None:
     assert len(df) == 2
 
 
+def test_load_rejects_mixed_format_directory(tmp_path: Path) -> None:
+    record = {"file_name": "doc.txt", "deduplicated_qa_pairs": [], "qa_evaluations": {"evaluations": []}}
+    (tmp_path / "retrieval.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    (tmp_path / "generated_batch0.json").write_text(json.dumps([record]), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Mixed generated-data formats"):
+        load_generated_json_files(str(tmp_path))
+
+
 def test_load_from_parquet_file(tmp_path: Path) -> None:
     path = tmp_path / "generated.parquet"
     pd.DataFrame(
@@ -216,8 +281,8 @@ def test_load_from_parquet_normalizes_nested_arrays_for_chunk_mapping(tmp_path: 
 
     assert isinstance(df.iloc[0]["chunks"], list)
     assert len(corpus) == 2
-    assert mapping[("doc", 1)] == "hello"
-    assert mapping[("doc", 2)] == "world"
+    assert mapping[("doc.txt", 1)] == "hello"
+    assert mapping[("doc.txt", 2)] == "world"
 
 
 # ---------------------------------------------------------------------------
@@ -227,20 +292,50 @@ def test_load_from_parquet_normalizes_nested_arrays_for_chunk_mapping(tmp_path: 
 
 def test_generate_training_set(tmp_path: Path) -> None:
     corpus = {"hello": "d_abc"}
-    chunk_mapping = {("doc", 1): "hello"}
+    chunk_mapping = {("doc.txt", 1): "hello"}
     df = pd.DataFrame([{"file_name": ["doc.txt"], "question": "Q?", "segment_ids": [1]}])
-    generate_training_set(corpus, chunk_mapping, df, str(tmp_path), "my_corpus")
+    count = generate_training_set(corpus, chunk_mapping, df, str(tmp_path), "my_corpus")
     train_path = tmp_path / "train.json"
     assert train_path.exists()
     payload = json.loads(train_path.read_text())
     assert len(payload["data"]) == 1
+    assert count == 1
 
 
 def test_generate_eval_set(tmp_path: Path) -> None:
     corpus = {"hello": "d_abc"}
-    chunk_mapping = {("doc", 1): "hello"}
+    chunk_mapping = {("doc.txt", 1): "hello"}
     df = pd.DataFrame([{"file_name": ["doc.txt"], "question": "Q?", "segment_ids": [1]}])
-    generate_eval_set(corpus, chunk_mapping, df, str(tmp_path), eval_only=True)
+    count = generate_eval_set(corpus, chunk_mapping, df, str(tmp_path), eval_only=True)
     assert (tmp_path / "corpus.jsonl").exists()
     assert (tmp_path / "queries.jsonl").exists()
     assert (tmp_path / "qrels" / "test.tsv").exists()
+    assert count == 1
+
+
+def test_run_conversion_returns_generated_paths_and_counts(tmp_path: Path) -> None:
+    input_path = tmp_path / "generated.jsonl"
+    record = {
+        "file_name": ["nested/doc.txt"],
+        "source_id": "nested/doc.txt",
+        "chunks": [{"chunk_id": 1, "text": "hello"}],
+        "deduplicated_qa_pairs": [{"question": "Q?", "segment_ids": [1]}],
+        "qa_evaluations": {"evaluations": [{"overall": {"score": 9.0}}]},
+    }
+    input_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    result = run_conversion(
+        input_path=str(input_path),
+        corpus_id="my_corpus",
+        output_dir=str(tmp_path / "converted"),
+        eval_only=True,
+    )
+
+    assert result.output_dir == tmp_path / "converted"
+    assert result.train_file is None
+    assert result.validation_file is None
+    assert result.corpus_dir is None
+    assert result.evaluation_dir == tmp_path / "converted"
+    assert result.training_examples == 0
+    assert result.validation_examples == 0
+    assert result.evaluation_queries == 1

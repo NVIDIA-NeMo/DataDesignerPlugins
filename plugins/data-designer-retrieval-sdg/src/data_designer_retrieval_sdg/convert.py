@@ -19,11 +19,29 @@ import json
 import os
 import random
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
+from data_designer_retrieval_sdg.chunking import build_source_id, normalize_source_id
 from data_designer_retrieval_sdg.postprocess import filter_qa_pairs_by_quality
+
+
+@dataclass(frozen=True)
+class ConversionResult:
+    """Paths and counts produced by one conversion run."""
+
+    output_dir: Path
+    train_file: Path | None
+    validation_file: Path | None
+    corpus_dir: Path | None
+    evaluation_dir: Path
+    training_examples: int
+    validation_examples: int
+    evaluation_queries: int
+
 
 # ---------------------------------------------------------------------------
 # Record loading
@@ -152,18 +170,28 @@ def _load_generated_records_file(input_file: Path) -> list[dict]:
 
 
 def _discover_generated_record_files(input_dir: Path) -> list[Path]:
-    """Discover generated output files in a directory, preferring the newest output contract."""
-    pattern_groups = [
-        "*.jsonl",
-        "generated_batch*.json",
-        "*.json",
-        "*.parquet",
-    ]
-    for pattern in pattern_groups:
-        files = sorted(Path(p) for p in glob_mod.glob(str(input_dir / pattern)))
-        if files:
-            return files
-    return []
+    """Discover one unambiguous generated-data format class in a directory."""
+    jsonl_files = sorted(Path(path) for path in glob_mod.glob(str(input_dir / "*.jsonl")))
+    legacy_batch_files = sorted(Path(path) for path in glob_mod.glob(str(input_dir / "generated_batch*.json")))
+    json_files = legacy_batch_files or sorted(Path(path) for path in glob_mod.glob(str(input_dir / "*.json")))
+    parquet_files = sorted(Path(path) for path in glob_mod.glob(str(input_dir / "*.parquet")))
+
+    format_files = {
+        "JSONL": jsonl_files,
+        "JSON": json_files,
+        "parquet": parquet_files,
+    }
+    discovered = {format_name: files for format_name, files in format_files.items() if files}
+    if len(discovered) > 1:
+        candidates = ", ".join(
+            f"{format_name}: [{', '.join(str(path.name) for path in files)}]"
+            for format_name, files in discovered.items()
+        )
+        raise ValueError(
+            f"Mixed generated-data formats found in {input_dir}: {candidates}. "
+            "Pass an exact input file or a directory containing only one format class."
+        )
+    return next(iter(discovered.values()), [])
 
 
 def load_generated_json_files(input_path: str) -> pd.DataFrame:
@@ -199,6 +227,9 @@ def load_generated_json_files(input_path: str) -> pd.DataFrame:
     for record in all_records:
         if "file_name" in record:
             record["file_name"] = normalize_file_name(record["file_name"])
+        source_id = record.get("source_id")
+        if isinstance(source_id, str) and source_id:
+            record["source_id"] = normalize_source_id(source_id)
 
     print("Filtering mismatched records...")
     all_records, dropped_count = filter_mismatched_records(all_records)
@@ -242,8 +273,8 @@ def extract_base_filename(file_path: str) -> str:
 def get_file_identifier(file_name_list: list[str]) -> str:
     """Derive a canonical identifier from a file-name list.
 
-    Single-document bundles use the base filename; multi-document bundles
-    use a truncated hash of sorted paths.
+    Single-document bundles retain the full normalized source path.
+    Multi-document bundles use a truncated hash of sorted normalized paths.
 
     Args:
         file_name_list: List of file names in the bundle.
@@ -251,11 +282,16 @@ def get_file_identifier(file_name_list: list[str]) -> str:
     Returns:
         String identifier for chunk-mapping lookups.
     """
-    if not file_name_list:
-        return ""
-    if len(file_name_list) == 1:
-        return extract_base_filename(file_name_list[0])
-    return hashlib.md5("||".join(sorted(file_name_list)).encode()).hexdigest()[:16]
+    return build_source_id(file_name_list)
+
+
+def _get_record_identifier(record: Any) -> str:
+    """Return an explicit source ID or a path-preserving legacy fallback."""
+    source_id = record.get("source_id")
+    if isinstance(source_id, str) and source_id:
+        return normalize_source_id(source_id)
+    file_names = normalize_file_name(record.get("file_name", []))
+    return get_file_identifier(file_names)
 
 
 def build_corpus_and_mappings(
@@ -283,7 +319,7 @@ def build_corpus_and_mappings(
         if not isinstance(chunks, list) or len(chunks) == 0 or len(file_name_list) == 0:
             continue
 
-        file_identifier = get_file_identifier(file_name_list)
+        file_identifier = _get_record_identifier(row)
 
         for chunk in chunks:
             if isinstance(chunk, dict):
@@ -349,7 +385,7 @@ def create_train_val_test_split(
     if test_ratio < 0:
         raise ValueError(f"train_ratio ({train_ratio}) + val_ratio ({val_ratio}) must be <= 1.0")
 
-    unique_file_tuples = list({tuple(f) if isinstance(f, list) else (f,) for f in filtered_qa_df["file_name"]})
+    unique_file_tuples = sorted({tuple(f) if isinstance(f, list) else (f,) for f in filtered_qa_df["file_name"]})
     random.shuffle(unique_file_tuples)
 
     n_train = int(len(unique_file_tuples) * train_ratio)
@@ -481,9 +517,10 @@ def build_file_to_group_mapping(
     groups: dict[str, list[str]],
     qa_file_names: set[str],
 ) -> dict[str, str]:
-    """Map QA file names to group IDs with fallback matching.
+    """Map QA file names to group IDs with checked fallback matching.
 
-    Matching order: exact string, strip extension, basename.
+    Matching order: normalized exact path, extension-stripped path, basename.
+    A fallback is accepted only when it resolves to one source document.
 
     Args:
         groups: ``group_id -> [doc_id, ...]``.
@@ -492,41 +529,46 @@ def build_file_to_group_mapping(
     Returns:
         Mapping of ``file_name -> group_id`` (only matched files).
     """
-    doc_to_group: dict[str, str] = {}
+    indexed_docs: list[tuple[str, str]] = []
     for group_id, doc_list in groups.items():
         for doc_id in doc_list:
-            doc_to_group[doc_id] = group_id
+            indexed_docs.append((normalize_source_id(doc_id), group_id))
 
-    noext_to_doc = {os.path.splitext(d)[0]: d for d in doc_to_group}
-    basename_to_doc = {extract_base_filename(d): d for d in doc_to_group}
+    exact_index: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    noext_index: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    basename_index: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for doc_id, group_id in indexed_docs:
+        candidate = (doc_id, group_id)
+        exact_index[doc_id].append(candidate)
+        noext_index[os.path.splitext(doc_id)[0]].append(candidate)
+        basename_index[extract_base_filename(doc_id)].append(candidate)
 
     file_to_group: dict[str, str] = {}
     matched = 0
     unmatched = 0
 
-    for fname in qa_file_names:
-        if fname in doc_to_group:
-            file_to_group[fname] = doc_to_group[fname]
+    for fname in sorted(qa_file_names):
+        normalized_name = normalize_source_id(fname)
+        match_steps = (
+            ("exact path", exact_index.get(normalized_name, [])),
+            ("extension-stripped path", noext_index.get(os.path.splitext(normalized_name)[0], [])),
+            ("basename", basename_index.get(extract_base_filename(normalized_name), [])),
+        )
+        for match_kind, candidates in match_steps:
+            if not candidates:
+                continue
+            unique_candidates = sorted(set(candidates))
+            if len(unique_candidates) > 1:
+                display = ", ".join(f"{group_id}:{doc_id}" for doc_id, group_id in unique_candidates)
+                raise ValueError(
+                    f"Ambiguous {match_kind} match for {fname!r}; candidates: {display}. "
+                    "Use corpus-relative paths that identify one grouped document."
+                )
+            file_to_group[fname] = unique_candidates[0][1]
             matched += 1
-            continue
-
-        fname_noext = os.path.splitext(fname)[0]
-        if fname_noext in doc_to_group:
-            file_to_group[fname] = doc_to_group[fname_noext]
-            matched += 1
-            continue
-        if fname_noext in noext_to_doc:
-            file_to_group[fname] = doc_to_group[noext_to_doc[fname_noext]]
-            matched += 1
-            continue
-
-        bn = extract_base_filename(fname)
-        if bn in basename_to_doc:
-            file_to_group[fname] = doc_to_group[basename_to_doc[bn]]
-            matched += 1
-            continue
-
-        unmatched += 1
+            break
+        else:
+            unmatched += 1
 
     print(f"  File matching: {matched} matched, {unmatched} unmatched (out of {len(qa_file_names)} QA files)")
     return file_to_group
@@ -562,7 +604,7 @@ def create_group_aware_split(
     if test_ratio < 0:
         raise ValueError(f"train_ratio ({train_ratio}) + val_ratio ({val_ratio}) must be <= 1.0")
 
-    unique_file_tuples = list({tuple(f) if isinstance(f, list) else (f,) for f in filtered_qa_df["file_name"]})
+    unique_file_tuples = sorted({tuple(f) if isinstance(f, list) else (f,) for f in filtered_qa_df["file_name"]})
 
     file_tuple_counts: dict[tuple[str, ...], int] = {}
     for ft in unique_file_tuples:
@@ -645,7 +687,7 @@ def generate_training_set(
     output_filename: str = "train.json",
     set_name: str = "training",
     write_corpus: bool = True,
-) -> None:
+) -> int:
     """Generate a training/validation set in NeMo Retriever format.
 
     Args:
@@ -658,6 +700,9 @@ def generate_training_set(
         output_filename: Name of the output JSON file.
         set_name: Label for log messages (e.g. ``"training"``).
         write_corpus: Whether to write corpus parquet and metadata.
+
+    Returns:
+        Number of generated training or validation examples.
     """
     print(f"Generating {set_name} set...")
 
@@ -670,8 +715,7 @@ def generate_training_set(
     skipped_too_many_pos = 0
 
     for _, qa_pair in train_df.iterrows():
-        file_name_list = qa_pair.get("file_name", [])
-        file_identifier = get_file_identifier(file_name_list) if file_name_list else ""
+        file_identifier = _get_record_identifier(qa_pair)
         segment_ids = qa_pair.get("segment_ids", [])
         question = qa_pair.get("question", "")
 
@@ -734,6 +778,8 @@ def generate_training_set(
             json.dump({"corpus_id": corpus_id, "class": "TextQADataset"}, f, indent=2, sort_keys=False)
         print(f"  Wrote {metadata_path}")
 
+    return len(training_data)
+
 
 def generate_eval_set(
     corpus: dict[str, str],
@@ -743,7 +789,7 @@ def generate_eval_set(
     max_pos_docs: int = 5,
     eval_only: bool = False,
     use_group_id_in_eval: bool = False,
-) -> None:
+) -> int:
     """Generate an evaluation set in BEIR format.
 
     Args:
@@ -756,6 +802,9 @@ def generate_eval_set(
             an ``eval_beir/`` sub-directory.
         use_group_id_in_eval: Use hash-based group ID in qrels instead of
             sequential BEIR IDs.
+
+    Returns:
+        Number of generated evaluation queries.
     """
     print("Generating evaluation set...")
 
@@ -788,7 +837,7 @@ def generate_eval_set(
     with open(queries_path, "w", encoding="utf-8") as queries_file:
         for _, qa_pair in eval_df.iterrows():
             file_name_list = qa_pair.get("file_name", [])
-            file_identifier = get_file_identifier(file_name_list) if file_name_list else ""
+            file_identifier = _get_record_identifier(qa_pair)
             segment_ids = qa_pair.get("segment_ids", [])
             question = qa_pair.get("question", "")
 
@@ -867,6 +916,7 @@ def generate_eval_set(
 
     id_type = "group_id" if use_group_id_in_eval else "_id"
     print(f"  Wrote {qrels_path} with {qrels_count} mappings (using {id_type})")
+    return query_counter
 
 
 # ---------------------------------------------------------------------------
@@ -887,7 +937,7 @@ def run_conversion(
     use_group_id_in_eval: bool = False,
     split_strategy: str = "random",
     groups_json: list[str] | None = None,
-) -> None:
+) -> ConversionResult:
     """Run the full SDG-to-retriever-data conversion pipeline.
 
     Args:
@@ -903,6 +953,9 @@ def run_conversion(
         use_group_id_in_eval: Use hash-based group IDs in eval qrels.
         split_strategy: ``"random"``, ``"dedupped"``, or ``"cluster"``.
         groups_json: Paths to dedup group JSON files.
+
+    Returns:
+        Paths and example counts for all generated conversion artifacts.
     """
     abs_input = os.path.abspath(input_path)
     if not os.path.exists(abs_input):
@@ -938,8 +991,10 @@ def run_conversion(
     corpus, chunk_mapping = build_corpus_and_mappings(generated_df)
     filtered_qa_df, skipped_files = filter_qa_pairs_by_quality(generated_df, quality_threshold)
 
+    train_count = 0
+    validation_count = 0
     if eval_only:
-        generate_eval_set(
+        evaluation_count = generate_eval_set(
             corpus,
             chunk_mapping,
             filtered_qa_df,
@@ -957,7 +1012,7 @@ def run_conversion(
             split_strategy,
             groups_json,
         )
-        generate_training_set(
+        train_count = generate_training_set(
             corpus,
             chunk_mapping,
             train_df,
@@ -967,7 +1022,7 @@ def run_conversion(
             output_filename="train.json",
             set_name="training",
         )
-        generate_training_set(
+        validation_count = generate_training_set(
             corpus,
             chunk_mapping,
             val_df,
@@ -978,7 +1033,7 @@ def run_conversion(
             set_name="validation",
             write_corpus=False,
         )
-        generate_eval_set(
+        evaluation_count = generate_eval_set(
             corpus,
             chunk_mapping,
             test_df,
@@ -989,6 +1044,17 @@ def run_conversion(
         )
 
     _print_conversion_footer(output_dir, eval_only, skipped_files)
+    resolved_output_dir = Path(output_dir)
+    return ConversionResult(
+        output_dir=resolved_output_dir,
+        train_file=None if eval_only else resolved_output_dir / "train.json",
+        validation_file=None if eval_only else resolved_output_dir / "val.json",
+        corpus_dir=None if eval_only else resolved_output_dir / "corpus",
+        evaluation_dir=resolved_output_dir if eval_only else resolved_output_dir / "eval_beir",
+        training_examples=train_count,
+        validation_examples=validation_count,
+        evaluation_queries=evaluation_count,
+    )
 
 
 # ---------------------------------------------------------------------------

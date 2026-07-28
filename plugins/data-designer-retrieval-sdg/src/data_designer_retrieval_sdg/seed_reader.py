@@ -25,6 +25,7 @@ from data_designer.engine.resources.seed_reader import (
 from data_designer_retrieval_sdg.chunking import (
     build_bundle_id,
     build_bundles,
+    build_source_id,
     chunks_to_sections_structured,
     load_multi_doc_manifest,
     text_to_sentence_chunks,
@@ -59,6 +60,7 @@ class DocumentChunkerSeedReader(FileSystemSeedReader[DocumentChunkerSeedSource])
 
     - ``file_name``: ``list[str]`` of relative paths (always a list,
       even in single-doc mode, for downstream uniformity).
+    - ``source_id``: stable corpus-relative path or multi-document bundle ID.
     - ``text``: combined document text.  In multi-doc mode documents are
       joined with ``"\\n\\n=== Document Boundary ===\\n\\n"`` separators.
     - ``chunks``: ``list[dict]`` of sentence chunks with metadata.
@@ -73,6 +75,7 @@ class DocumentChunkerSeedReader(FileSystemSeedReader[DocumentChunkerSeedSource])
 
     output_columns: ClassVar[list[str] | None] = [
         "file_name",
+        "source_id",
         "text",
         "chunks",
         "sections_structured",
@@ -188,6 +191,7 @@ class DocumentChunkerSeedReader(FileSystemSeedReader[DocumentChunkerSeedSource])
         )
         return {
             "file_name": [relative_path],
+            "source_id": build_source_id([relative_path]),
             "text": content,
             "chunks": chunks,
             "sections_structured": sections,
@@ -233,6 +237,7 @@ class DocumentChunkerSeedReader(FileSystemSeedReader[DocumentChunkerSeedSource])
         )
         return {
             "file_name": bundle_members,
+            "source_id": build_source_id(bundle_members),
             "text": combined_text,
             "chunks": bundle_chunks,
             "sections_structured": sections,

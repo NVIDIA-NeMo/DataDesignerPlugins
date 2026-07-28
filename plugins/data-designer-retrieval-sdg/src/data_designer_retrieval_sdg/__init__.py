@@ -15,8 +15,11 @@ Retriever / BEIR formats (``convert``), and reusable post-processing
 helpers.
 """
 
+from importlib import import_module
+from typing import Any
+
 from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
-from data_designer_retrieval_sdg.pipeline import build_qa_generation_pipeline
+from data_designer_retrieval_sdg.pipeline import build_model_providers, build_qa_generation_pipeline
 from data_designer_retrieval_sdg.postprocess import (
     filter_qa_pairs_by_quality,
     load_positive_docs_with_modality,
@@ -27,8 +30,39 @@ from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 __all__ = [
     "DocumentChunkerSeedSource",
     "EmbeddingDedupColumnConfig",
+    "ConversionResult",
+    "GenerationResult",
+    "GenerationPipelineConfig",
+    "GenerationRunConfig",
+    "GenerationPreviewResult",
+    "build_model_providers",
     "build_qa_generation_pipeline",
     "filter_qa_pairs_by_quality",
     "load_positive_docs_with_modality",
     "postprocess_retriever_data",
+    "preview_generation",
+    "run_conversion",
+    "run_generation",
 ]
+
+_LAZY_EXPORTS = {
+    "ConversionResult": ("data_designer_retrieval_sdg.convert", "ConversionResult"),
+    "GenerationPreviewResult": ("data_designer_retrieval_sdg.generation", "GenerationPreviewResult"),
+    "GenerationResult": ("data_designer_retrieval_sdg.generation", "GenerationResult"),
+    "GenerationPipelineConfig": ("data_designer_retrieval_sdg.run_config", "GenerationPipelineConfig"),
+    "GenerationRunConfig": ("data_designer_retrieval_sdg.run_config", "GenerationRunConfig"),
+    "preview_generation": ("data_designer_retrieval_sdg.generation", "preview_generation"),
+    "run_conversion": ("data_designer_retrieval_sdg.convert", "run_conversion"),
+    "run_generation": ("data_designer_retrieval_sdg.generation", "run_generation"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Load orchestration APIs lazily so Data Designer can discover plugins safely."""
+    try:
+        module_name, attribute_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name), attribute_name)
+    globals()[name] = value
+    return value
