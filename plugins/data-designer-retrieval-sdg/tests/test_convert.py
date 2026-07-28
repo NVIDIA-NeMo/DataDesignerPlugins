@@ -23,7 +23,9 @@ from data_designer_retrieval_sdg.convert import (
     merge_groups_union_find,
     normalize_file_name,
     run_conversion,
+    run_conversion_with_config,
 )
+from data_designer_retrieval_sdg.run_config import ConversionRunConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -339,3 +341,32 @@ def test_run_conversion_returns_generated_paths_and_counts(tmp_path: Path) -> No
     assert result.training_examples == 0
     assert result.validation_examples == 0
     assert result.evaluation_queries == 1
+
+
+def test_run_conversion_with_config_writes_run_metadata(tmp_path: Path) -> None:
+    input_path = tmp_path / "generated.jsonl"
+    record = {
+        "file_name": ["nested/doc.txt"],
+        "source_id": "nested/doc.txt",
+        "chunks": [{"chunk_id": 1, "text": "hello"}],
+        "deduplicated_qa_pairs": [{"question": "Q?", "segment_ids": [1]}],
+        "qa_evaluations": {"evaluations": [{"overall": {"score": 9.0}}]},
+    }
+    input_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    result = run_conversion_with_config(
+        ConversionRunConfig(
+            input_path=input_path,
+            corpus_id="my_corpus",
+            output_dir=tmp_path / "converted",
+            eval_only=True,
+        ),
+        override_paths=["eval_only"],
+    )
+
+    assert result.resolved_config_path == tmp_path / "converted" / ".retrieval_sdg_run" / "resolved_config.yaml"
+    assert result.provenance_path == tmp_path / "converted" / ".retrieval_sdg_run" / "config_provenance.json"
+    assert result.resolved_config_path.exists()
+    assert result.provenance_path.exists()
+    assert result.config_fingerprint
+    assert result.input_fingerprint

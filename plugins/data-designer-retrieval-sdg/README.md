@@ -39,13 +39,21 @@ data-designer-retrieval-sdg generate \
     --resume always
 ```
 
-Use `--resume if_possible` to resume only when the saved config matches and
-otherwise start a fresh run.
+Use `--resume if_possible` to resume when artifacts are available. Before either
+resume mode reaches DataDesigner, the plugin verifies that the source corpus and
+all data-producing settings match the saved run. A mismatch is refused with an
+instruction to use a new dataset name.
 
-`--buffer-size` controls DataDesigner's checkpoint/write granularity and must
-match across resumed runs. In DataDesigner 0.6.1, `create()` still profiles the
-completed dataset before returning, so `--buffer-size` is not a hard cap on
-final peak memory for very large runs.
+Artifacts created before this metadata contract cannot be safely fingerprinted,
+so resume is refused when a dataset directory exists without matching plugin
+provenance.
+
+`--buffer-size` controls DataDesigner's checkpoint/write granularity. It is
+recorded in the resolved config but excluded from the plugin's data fingerprint;
+DataDesigner may still impose its own checkpoint compatibility constraints. In
+DataDesigner 0.6.1, `create()` still profiles the completed dataset before
+returning, so `--buffer-size` is not a hard cap on final peak memory for very
+large runs.
 
 ## Installation
 
@@ -96,6 +104,59 @@ Or prefix any command with `uv run`:
 uv run data-designer-retrieval-sdg generate --help
 ```
 
+## Run configuration
+
+The package contains one complete generation default and one complete conversion
+default. No separate model profile is required. Print either effective default
+without starting a run:
+
+```bash
+data-designer-retrieval-sdg generate --print-resolved-config
+data-designer-retrieval-sdg convert --print-resolved-config
+```
+
+Layer a YAML or JSON file over the packaged default with `--config`. Ordinary
+CLI flags override that file, and repeatable `--set key=value` entries have final
+precedence:
+
+```bash
+data-designer-retrieval-sdg generate \
+    --config ./generation.yaml \
+    --min-complexity 3 \
+    --set pipeline.similarity_threshold=0.92
+```
+
+A generation file can be intentionally small because omitted values remain
+visible through `--print-resolved-config`:
+
+```yaml
+schema_version: 1
+seed_source:
+  path: ./my_documents
+output_dir: ./generated_output
+artifact_path: ./artifacts
+dataset_name: my_retrieval_run
+resume: if_possible
+pipeline:
+  num_pairs: 7
+```
+
+Relative paths are interpreted from the process working directory. Unknown
+fields, unsupported schema versions, and invalid values fail validation. For an
+explicit environment-backed provider endpoint or credential, use an exact
+`${VARIABLE_NAME}` reference in the config:
+
+```yaml
+model_providers:
+  - name: nvidia
+    provider_type: openai
+    endpoint: ${NVIDIA_API_BASE_URL}
+    api_key: ${NVIDIA_API_KEY}
+```
+
+The environment variable names are recorded as provenance, while credential
+values and authorization headers are redacted.
+
 ## Quick start
 
 ### Generate QA pairs
@@ -111,13 +172,22 @@ data-designer-retrieval-sdg generate \
 ```
 
 Generation writes DataDesigner artifacts under `--artifact-path` and exports a
-single JSONL file to `--output-dir`. The default profile uses
+single JSONL file to `--output-dir`. The packaged default uses
 `nvidia/nemotron-3-ultra-550b-a55b` for generation and
 `nvidia/nemotron-3-embed-1b` for embedding deduplication.
 
 `--query-counts` and `--reasoning-counts` are exact orthogonal
 distributions, and each must sum to `--num-pairs`. Pass entries as
 `NAME=COUNT` when changing the default of seven pairs.
+
+Before the first model request, generation writes:
+
+- `<artifact-path>/.retrieval_sdg_runs/<dataset-name>/resolved_config.yaml`
+- `<artifact-path>/.retrieval_sdg_runs/<dataset-name>/config_provenance.json`
+
+The resolved YAML is complete and redacted. Provenance includes plugin version,
+config file names and hashes, explicit override paths, environment variable
+names, and fingerprints of the data-producing config and selected source bytes.
 
 ### Convert to training format
 
@@ -136,50 +206,50 @@ because DataDesigner now owns checkpointing through `--buffer-size` and
 DataDesigner's final profiling step until DataDesigner exposes a no-materialize
 create/export path.
 
+Typed conversion runs also write `resolved_config.yaml` and
+`config_provenance.json` under `<output-dir>/.retrieval_sdg_run/`. The input
+fingerprint covers the exact JSONL, JSON, or parquet files selected by the
+conversion format-discovery rules.
+
 ### Use as a library
 
 ```python
 from pathlib import Path
 
 from data_designer_retrieval_sdg import (
-    DocumentChunkerSeedSource,
-    GenerationPipelineConfig,
-    GenerationRunConfig,
-    run_conversion,
+    ConversionRunConfig,
+    load_generation_config,
+    run_conversion_with_config,
     run_generation,
 )
 
-seed_source = DocumentChunkerSeedSource(
-    path="./docs",
-    file_extensions=[".txt", ".md"],
+loaded = load_generation_config(
+    Path("./generation.yaml"),
+    set_overrides=["pipeline.min_complexity=3"],
 )
 generation = run_generation(
-    GenerationRunConfig(
-        seed_source=seed_source,
-        output_dir=Path("./generated"),
-        artifact_path=Path("./artifacts"),
-        dataset_name="my_retrieval_run",
-        pipeline=GenerationPipelineConfig(
-            num_pairs=7,
-            min_hops=1,
-            max_hops=3,
-        ),
-    )
+    loaded.config,
+    config_sources=loaded.sources,
+    override_paths=loaded.override_paths,
+    environment_variables=loaded.environment_variables,
 )
-conversion = run_conversion(
-    input_path=str(generation.output_path),
-    corpus_id="my_corpus",
+conversion = run_conversion_with_config(
+    ConversionRunConfig(
+        input_path=generation.output_path,
+        corpus_id="my_corpus",
+    )
 )
 assert conversion.train_file is not None
 ```
 
 The generation result contains the exact exported JSONL path, resolved Data
-Designer dataset path and name, record count, and producer version. Conversion
-returns the generated train, validation, corpus, and evaluation paths plus
-example counts. `GenerationRunConfig` and `GenerationPipelineConfig` reject
-unknown fields so recipe adapters cannot silently pass misspelled settings.
-`GenerationRunConfig.to_redacted_dict()` returns every effective Python API
-setting while replacing provider credentials and authorization headers.
+Designer dataset path and name, record count, producer version, run metadata
+paths, and fingerprints. Conversion returns the generated train, validation,
+corpus, evaluation, and run metadata paths plus example counts.
+`GenerationRunConfig`, `GenerationPipelineConfig`, and `ConversionRunConfig`
+reject unknown fields so recipe adapters cannot silently pass misspelled
+settings. Their redacted serialization replaces provider credentials and
+authorization headers.
 
 ## Plugin configuration examples
 

@@ -133,6 +133,7 @@ def build_model_providers(
     custom_provider_type: str = "openai",
     custom_provider_api_key: str | None = None,
     model_providers_file: Path | None = None,
+    model_providers: list[dd.ModelProvider] | None = None,
 ) -> tuple[list[dd.ModelProvider] | None, list[dd.ModelProvider]]:
     """Build a list of custom ``ModelProvider`` objects from CLI flags / config.
 
@@ -147,6 +148,7 @@ def build_model_providers(
         custom_provider_type: API format (default ``"openai"``).
         custom_provider_api_key: API key or env-var name.
         model_providers_file: Path to a YAML/JSON file with provider entries.
+        model_providers: Providers already loaded from a run configuration.
 
     Returns:
         Tuple of ``(all_providers, custom_only_providers)``.  ``all_providers``
@@ -164,6 +166,9 @@ def build_model_providers(
                 "use distinct aliases or make the endpoint, provider type, and credential identical."
             )
         custom_by_name[provider.name] = provider
+
+    for provider in model_providers or []:
+        add_provider(provider, "run configuration")
 
     if model_providers_file is not None:
         raw = model_providers_file.read_text(encoding="utf-8")

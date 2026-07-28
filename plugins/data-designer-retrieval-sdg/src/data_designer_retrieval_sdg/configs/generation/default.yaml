@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: 1
+seed_source:
+  seed_type: document-chunker
+  path: .
+  file_pattern: "*"
+  recursive: true
+  file_extensions:
+    - .txt
+    - .md
+    - .text
+  min_text_length: 50
+  sentences_per_chunk: 5
+  num_sections: 1
+  num_files: null
+  multi_doc: false
+  bundle_size: 2
+  bundle_strategy: sequential
+  max_docs_per_bundle: 3
+  multi_doc_manifest: null
+output_dir: ./generated
+artifact_path: ./artifacts
+dataset_name: null
+buffer_size: 200
+resume: never
+model_providers: null
+pipeline:
+  max_artifacts_per_type: 2
+  num_pairs: 7
+  query_counts:
+    multi_hop: 3
+    structural: 2
+    contextual: 2
+  min_hops: 1
+  max_hops: 3
+  reasoning_counts:
+    factual: 1
+    relational: 1
+    inferential: 1
+    temporal: 1
+    procedural: 1
+    causal: 1
+    visual: 1
+  min_complexity: 2
+  similarity_threshold: 0.9
+  max_parallel_requests_for_gen: null
+  artifact_extraction_model: nvidia/nemotron-3-ultra-550b-a55b
+  artifact_extraction_provider: nvidia
+  qa_generation_model: nvidia/nemotron-3-ultra-550b-a55b
+  qa_generation_provider: nvidia
+  quality_judge_model: nvidia/nemotron-3-ultra-550b-a55b
+  quality_judge_provider: nvidia
+  embed_model: nvidia/nemotron-3-embed-1b
+  embed_provider: nvidia
+num_records: null
+log_level: INFO

@@ -19,14 +19,17 @@ import json
 import os
 import random
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import pandas as pd
 
 from data_designer_retrieval_sdg.chunking import build_source_id, normalize_source_id
 from data_designer_retrieval_sdg.postprocess import filter_qa_pairs_by_quality
+from data_designer_retrieval_sdg.run_artifacts import write_conversion_run_artifacts
+from data_designer_retrieval_sdg.run_config import ConfigSource, ConversionRunConfig
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,10 @@ class ConversionResult:
     training_examples: int
     validation_examples: int
     evaluation_queries: int
+    resolved_config_path: Path | None = None
+    provenance_path: Path | None = None
+    config_fingerprint: str | None = None
+    input_fingerprint: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -924,6 +931,53 @@ def generate_eval_set(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_conversion_output_dir(input_path: str, output_dir: str | None, eval_only: bool) -> Path:
+    """Resolve the output path using the conversion API's established rules."""
+    abs_input = os.path.abspath(input_path)
+    if output_dir is not None:
+        return Path(os.path.abspath(output_dir))
+    suffix = "_eval" if eval_only else "_train_eval"
+    if os.path.isfile(abs_input):
+        input_basename = os.path.splitext(os.path.basename(abs_input))[0]
+        return Path(os.path.join(os.path.dirname(abs_input), f"{input_basename}{suffix}"))
+    return Path(os.path.abspath(abs_input.rstrip("/") + suffix))
+
+
+def _producer_version() -> str:
+    """Return the installed package version, including editable checkouts."""
+    try:
+        return version("data-designer-retrieval-sdg")
+    except PackageNotFoundError:
+        return "0+unknown"
+
+
+def run_conversion_with_config(
+    config: ConversionRunConfig,
+    *,
+    config_sources: Sequence[ConfigSource] = (),
+    override_paths: Sequence[str] = (),
+) -> ConversionResult:
+    """Run conversion from a typed config and persist its resolved snapshot."""
+    output_dir = _resolve_conversion_output_dir(
+        str(config.input_path), str(config.output_dir) if config.output_dir else None, config.eval_only
+    )
+    run_artifacts = write_conversion_run_artifacts(
+        config,
+        output_dir=output_dir,
+        producer_version=_producer_version(),
+        sources=config_sources,
+        override_paths=override_paths,
+    )
+    result = run_conversion(**config.model_copy(update={"output_dir": output_dir}).to_conversion_kwargs())
+    return replace(
+        result,
+        resolved_config_path=run_artifacts.resolved_config_path,
+        provenance_path=run_artifacts.provenance_path,
+        config_fingerprint=run_artifacts.config_fingerprint,
+        input_fingerprint=run_artifacts.input_fingerprint,
+    )
+
+
 def run_conversion(
     input_path: str,
     corpus_id: str,
@@ -961,15 +1015,7 @@ def run_conversion(
     if not os.path.exists(abs_input):
         raise ValueError(f"Input path does not exist: {abs_input}")
 
-    if output_dir is None:
-        suffix = "_eval" if eval_only else "_train_eval"
-        if os.path.isfile(abs_input):
-            input_basename = os.path.splitext(os.path.basename(abs_input))[0]
-            output_dir = os.path.join(os.path.dirname(abs_input), f"{input_basename}{suffix}")
-        else:
-            output_dir = os.path.abspath(abs_input.rstrip("/") + suffix)
-    else:
-        output_dir = os.path.abspath(output_dir)
+    output_dir = str(_resolve_conversion_output_dir(input_path, output_dir, eval_only))
     os.makedirs(output_dir, exist_ok=True)
 
     _print_conversion_header(

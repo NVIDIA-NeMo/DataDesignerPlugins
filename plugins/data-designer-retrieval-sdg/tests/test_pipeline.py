@@ -18,7 +18,7 @@ from data_designer_retrieval_sdg.pipeline import (
 from data_designer_retrieval_sdg.run_config import GenerationPipelineConfig
 
 
-def test_defaults_match_nemotron_profile() -> None:
+def test_defaults_match_canonical_nemotron_models() -> None:
     assert DEFAULT_CHAT_MODEL == "nvidia/nemotron-3-ultra-550b-a55b"
     assert DEFAULT_EMBED_MODEL == "nvidia/nemotron-3-embed-1b"
 

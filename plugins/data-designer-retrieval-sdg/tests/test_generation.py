@@ -86,6 +86,7 @@ def test_run_generation_returns_stable_artifact_contract(monkeypatch: pytest.Mon
     build_calls: list[dict[str, object]] = []
     docs = tmp_path / "docs"
     docs.mkdir()
+    (docs / "source.txt").write_text("A source document.", encoding="utf-8")
 
     monkeypatch.setattr(generation, "DataDesigner", FakeDataDesigner)
     monkeypatch.setattr(generation, "_count_seed_records", lambda _: 3)
@@ -134,6 +135,15 @@ def test_run_generation_returns_stable_artifact_contract(monkeypatch: pytest.Mon
     assert result.num_records == 2
     assert result.requested_num_records == 3
     assert result.producer_version == "0.1.0"
+    assert (
+        result.resolved_config_path
+        == tmp_path / "artifacts" / ".retrieval_sdg_runs" / "retrieval" / "resolved_config.yaml"
+    )
+    assert result.provenance_path == (
+        tmp_path / "artifacts" / ".retrieval_sdg_runs" / "retrieval" / "config_provenance.json"
+    )
+    assert result.config_fingerprint
+    assert result.input_fingerprint
 
 
 def test_run_generation_creates_output_directory_before_generation(

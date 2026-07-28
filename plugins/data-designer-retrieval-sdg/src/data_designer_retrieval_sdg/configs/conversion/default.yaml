@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: 1
+input_path: ./generated/retrieval_sdg.jsonl
+corpus_id: retrieval_sdg
+output_dir: null
+eval_only: false
+train_ratio: 0.8
+val_ratio: 0.1
+seed: 42
+quality_threshold: 7.0
+max_pos_docs: 5
+use_group_id_in_eval: false
+split_strategy: random
+groups_json: null
