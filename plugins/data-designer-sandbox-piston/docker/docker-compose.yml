@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+services:
+  piston:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: data-designer-piston
+    privileged: true
+    ports:
+      - "${PISTON_PORT:-2000}:2000"
+    volumes:
+      - piston-data:/piston
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:2000/api/v2/runtimes\", timeout=1)'"
+      interval: 10s
+      timeout: 2s
+      retries: 12
+
+volumes:
+  piston-data:

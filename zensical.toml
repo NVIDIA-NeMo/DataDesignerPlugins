@@ -28,6 +28,10 @@ nav = [
     {"data-designer-retrieval-sdg" = [
       {"Overview" = "plugins/data-designer-retrieval-sdg/index.md"},
     ]},
+    {"data-designer-sandbox-piston" = [
+      {"Overview" = "plugins/data-designer-sandbox-piston/index.md"},
+      {"Usage" = "plugins/data-designer-sandbox-piston/usage.md"},
+    ]},
     {"data-designer-template" = [
       {"Overview" = "plugins/data-designer-template/index.md"},
       {"Usage" = "plugins/data-designer-template/usage.md"},
