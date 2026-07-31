@@ -6,12 +6,15 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import data_designer.config as dd
 import pytest
 from data_designer.engine.storage.artifact_storage import ResumeMode
 
 from data_designer_retrieval_sdg import cli
+from data_designer_retrieval_sdg.generation import GenerationResult
 
-BUILD_CALLS: list[dict[str, object]] = []
+RUN_CONFIGS: list[object] = []
+PREVIEW_CONFIGS: list[object] = []
 
 
 def fake_count_seed_records(seed_source: object) -> int:
@@ -19,15 +22,27 @@ def fake_count_seed_records(seed_source: object) -> int:
     return 3
 
 
-def fake_build_model_providers(**kwargs: object) -> tuple[list[str], list[object]]:
+def fake_build_model_providers(**kwargs: object) -> tuple[list[dd.ModelProvider], list[dd.ModelProvider]]:
     """Return a deterministic provider tuple for CLI generation tests."""
-    return ["providers"], []
+    return [], []
 
 
-def fake_build_qa_generation_pipeline(**kwargs: object) -> object:
-    """Capture pipeline-builder kwargs and return a sentinel builder."""
-    BUILD_CALLS.append(kwargs)
-    return {"builder": "qa"}
+def fake_run_generation(config: object) -> GenerationResult:
+    """Capture a public generation request and return deterministic metadata."""
+    RUN_CONFIGS.append(config)
+    return GenerationResult(
+        output_path=Path("/output/my_run_resolved.jsonl"),
+        dataset_path=Path("/artifacts/my_run_resolved"),
+        dataset_name="my_run_resolved",
+        num_records=3,
+        requested_num_records=3,
+        producer_version="0.1.0",
+    )
+
+
+def fake_preview_generation(config: object) -> None:
+    """Capture a public preview request."""
+    PREVIEW_CONFIGS.append(config)
 
 
 class FakeArtifactStorage:
@@ -118,30 +133,100 @@ def generate_argv(
 
 
 def test_generate_uses_native_resume_and_exports_jsonl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    BUILD_CALLS.clear()
-    FakeDataDesigner.instances.clear()
-    monkeypatch.setattr(cli, "DataDesigner", FakeDataDesigner)
+    RUN_CONFIGS.clear()
     monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
     monkeypatch.setattr(cli, "build_model_providers", fake_build_model_providers)
-    monkeypatch.setattr(cli, "build_qa_generation_pipeline", fake_build_qa_generation_pipeline)
+    monkeypatch.setattr(cli, "run_generation", fake_run_generation)
     monkeypatch.setattr(sys, "argv", generate_argv(tmp_path))
 
     cli.main()
 
-    instance = FakeDataDesigner.instances[0]
-    assert instance.run_config.buffer_size == 37
-    assert instance.run_config.disable_early_shutdown is True
-    assert instance.create_calls == [
-        {
-            "config_builder": {"builder": "qa"},
-            "num_records": 3,
-            "dataset_name": "my_run",
-            "resume": ResumeMode.ALWAYS,
-        }
-    ]
-    assert BUILD_CALLS[0]["start_index"] == 0
-    assert BUILD_CALLS[0]["end_index"] == 2
-    assert instance.result.export_calls == [(tmp_path / "out" / "my_run_resolved.jsonl", "jsonl")]
+    config = RUN_CONFIGS[0]
+    assert config.buffer_size == 37
+    assert config.resume == ResumeMode.ALWAYS.value
+    assert config.num_records == 3
+    assert config.dataset_name == "my_run"
+    assert config.output_dir == tmp_path / "out"
+    assert config.pipeline.num_pairs == 7
+    assert config.pipeline.embed_model == "nvidia/nemotron-3-embed-1b"
+
+
+def test_preview_delegates_to_public_generation_api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    PREVIEW_CONFIGS.clear()
+    monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
+    monkeypatch.setattr(cli, "build_model_providers", fake_build_model_providers)
+    monkeypatch.setattr(cli, "preview_generation", fake_preview_generation)
+    monkeypatch.setattr(sys, "argv", generate_argv(tmp_path, extra_args=["--preview"]))
+
+    cli.main()
+
+    config = PREVIEW_CONFIGS[0]
+    assert config.num_records == 3
+    assert config.buffer_size == 37
+    assert config.pipeline.num_pairs == 7
+
+
+def test_generate_accepts_matching_custom_question_distributions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    RUN_CONFIGS.clear()
+    monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
+    monkeypatch.setattr(cli, "build_model_providers", fake_build_model_providers)
+    monkeypatch.setattr(cli, "run_generation", fake_run_generation)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        generate_argv(
+            tmp_path,
+            extra_args=[
+                "--num-pairs",
+                "3",
+                "--query-counts",
+                "multi_hop=1",
+                "structural=1",
+                "contextual=1",
+                "--reasoning-counts",
+                "factual=1",
+                "relational=1",
+                "inferential=1",
+                "temporal=0",
+                "procedural=0",
+                "causal=0",
+                "visual=0",
+            ],
+        ),
+    )
+
+    cli.main()
+
+    config = RUN_CONFIGS[0]
+    assert config.pipeline.num_pairs == 3
+    assert config.pipeline.query_counts == {"multi_hop": 1, "structural": 1, "contextual": 1}
+    assert config.pipeline.reasoning_counts == {
+        "factual": 1,
+        "relational": 1,
+        "inferential": 1,
+        "temporal": 0,
+        "procedural": 0,
+        "causal": 0,
+        "visual": 0,
+    }
+
+
+def test_print_model_config_does_not_expose_provider_api_key(capsys: pytest.CaptureFixture[str]) -> None:
+    provider = dd.ModelProvider(
+        name="custom",
+        endpoint="https://example.invalid/v1",
+        provider_type="openai",
+        api_key="do-not-print-this",
+    )
+
+    cli._print_model_config(cli.GenerationPipelineConfig(), [provider])
+
+    output = capsys.readouterr().out
+    assert "do-not-print-this" not in output
+    assert "credential=configured" in output
 
 
 @pytest.mark.parametrize("dataset_name", ["", ".", "..", "nested/name", "nested\\name", "bad\nname"])
@@ -151,7 +236,6 @@ def test_generate_rejects_unsafe_dataset_names(
     dataset_name: str,
 ) -> None:
     FakeDataDesigner.instances.clear()
-    monkeypatch.setattr(cli, "DataDesigner", FakeDataDesigner)
     monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
     monkeypatch.setattr(sys, "argv", generate_argv(tmp_path, dataset_name=dataset_name))
 
@@ -172,7 +256,6 @@ def test_generate_rejects_dataset_name_that_resolves_outside_artifact_path(
     outside_path.mkdir()
     (artifact_path / "linked").symlink_to(outside_path, target_is_directory=True)
     FakeDataDesigner.instances.clear()
-    monkeypatch.setattr(cli, "DataDesigner", FakeDataDesigner)
     monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
     monkeypatch.setattr(sys, "argv", generate_argv(tmp_path, dataset_name="linked", artifact_path=artifact_path))
 

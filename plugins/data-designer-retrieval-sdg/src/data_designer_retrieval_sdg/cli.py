@@ -22,17 +22,40 @@ from pathlib import Path
 
 import data_designer.config as dd
 from data_designer.engine.resources.seed_reader import SeedReaderError
-from data_designer.engine.secret_resolver import PlaintextResolver
 from data_designer.engine.storage.artifact_storage import ResumeMode
-from data_designer.interface import DataDesigner
 from data_designer.logging import LoggerConfig, LoggingConfig, OutputConfig, configure_logging
 
 from data_designer_retrieval_sdg.convert import run_conversion
-from data_designer_retrieval_sdg.pipeline import build_model_providers, build_qa_generation_pipeline
-from data_designer_retrieval_sdg.seed_reader import DocumentChunkerSeedReader
+from data_designer_retrieval_sdg.generation import (
+    _count_seed_records,
+    _resolve_dataset_name,
+    preview_generation,
+    run_generation,
+)
+from data_designer_retrieval_sdg.pipeline import build_model_providers
+from data_designer_retrieval_sdg.run_config import (
+    DEFAULT_ARTIFACT_PATH,
+    DEFAULT_BUFFER_SIZE,
+    GenerationPipelineConfig,
+    GenerationRunConfig,
+)
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_count_entry(value: str) -> tuple[str, int]:
+    """Parse one ``NAME=COUNT`` question-distribution entry."""
+    name, separator, raw_count = value.partition("=")
+    if not separator or not name or not raw_count:
+        raise argparse.ArgumentTypeError("expected NAME=COUNT")
+    try:
+        count = int(raw_count)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"count must be an integer, got {raw_count!r}") from exc
+    if count < 0:
+        raise argparse.ArgumentTypeError("count must be non-negative")
+    return name, count
 
 
 def _build_seed_source(args: argparse.Namespace) -> DocumentChunkerSeedSource:
@@ -54,68 +77,9 @@ def _build_seed_source(args: argparse.Namespace) -> DocumentChunkerSeedSource:
     )
 
 
-def _count_seed_records(seed_source: DocumentChunkerSeedSource) -> int:
-    """Probe the seed reader for the total number of records it will produce.
-
-    Builds and attaches a temporary reader so the manifest is materialised
-    once for batch math without reading any file contents.
-    """
-    reader = DocumentChunkerSeedReader()
-    reader.attach(seed_source, PlaintextResolver())
-    return reader.get_seed_dataset_size()
-
-
-def _path_is_relative_to(path: Path, root: Path) -> bool:
-    """Return whether *path* is contained by *root* after resolution."""
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
-
-
-def _validate_dataset_name(dataset_name: str, artifact_path: Path) -> str:
-    """Validate a DataDesigner dataset name before it is used as an artifact path segment.
-
-    Args:
-        dataset_name: Requested dataset name.
-        artifact_path: DataDesigner artifact root.
-
-    Returns:
-        The validated dataset name.
-
-    Raises:
-        ValueError: If the dataset name is empty, unsafe, or escapes the artifact root.
-    """
-    if not dataset_name:
-        raise ValueError("--dataset-name must not be empty")
-    if dataset_name in {".", ".."}:
-        raise ValueError("--dataset-name must be a real path segment, not '.' or '..'")
-    if any(ord(char) < 32 or ord(char) == 127 for char in dataset_name):
-        raise ValueError("--dataset-name must not contain control characters")
-    if any(separator in dataset_name for separator in ("/", "\\")):
-        raise ValueError("--dataset-name must be a single path segment without path separators")
-
-    dataset_path = Path(dataset_name)
-    if dataset_path.is_absolute() or len(dataset_path.parts) != 1:
-        raise ValueError("--dataset-name must be a single relative path segment")
-
-    artifact_root = artifact_path.resolve()
-    resolved_dataset_path = (artifact_root / dataset_name).resolve()
-    if resolved_dataset_path == artifact_root or not _path_is_relative_to(resolved_dataset_path, artifact_root):
-        raise ValueError("--dataset-name must resolve under --artifact-path")
-
-    return dataset_name
-
-
-def _resolve_dataset_name(input_dir: Path, artifact_path: Path, dataset_name: str | None) -> str:
-    """Return the explicit or default dataset name after safety validation."""
-    resolved_name = dataset_name if dataset_name is not None else input_dir.name or "retrieval_sdg"
-    return _validate_dataset_name(resolved_name, artifact_path)
-
-
 def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the ``generate`` subcommand."""
+    defaults = GenerationPipelineConfig()
     p = subparsers.add_parser(
         "generate",
         help="Generate synthetic QA pairs from a directory of text files",
@@ -137,16 +101,47 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--sentences-per-chunk", type=int, default=5, help="Sentences per chunk")
     p.add_argument("--num-sections", type=int, default=1, help="Sections to divide chunks into")
     p.add_argument("--num-files", type=int, default=None, help="Max files to process")
-    p.add_argument("--max-artifacts-per-type", type=int, default=2, help="Max artifacts per type")
-    p.add_argument("--num-pairs", type=int, default=7, help="QA pairs per document")
-    p.add_argument("--min-hops", type=int, default=2, help="Min hops for multi-hop questions")
-    p.add_argument("--max-hops", type=int, default=4, help="Max hops for multi-hop questions")
-    p.add_argument("--min-complexity", type=int, default=4, help="Min question complexity")
-    p.add_argument("--similarity-threshold", type=float, default=0.9, help="Cosine threshold for QA-pair dedup")
+    p.add_argument(
+        "--max-artifacts-per-type",
+        type=int,
+        default=defaults.max_artifacts_per_type,
+        help="Max artifacts per type",
+    )
+    p.add_argument("--num-pairs", type=int, default=defaults.num_pairs, help="QA pairs per document")
+    p.add_argument(
+        "--query-counts",
+        nargs="+",
+        type=_parse_count_entry,
+        default=list(defaults.query_counts.items()),
+        metavar="NAME=COUNT",
+        help="Exact query-type counts; values must sum to --num-pairs",
+    )
+    p.add_argument(
+        "--reasoning-counts",
+        nargs="+",
+        type=_parse_count_entry,
+        default=list(defaults.reasoning_counts.items()),
+        metavar="NAME=COUNT",
+        help="Exact reasoning-type counts; values must sum to --num-pairs",
+    )
+    p.add_argument("--min-hops", type=int, default=defaults.min_hops, help="Min hops for multi-hop questions")
+    p.add_argument("--max-hops", type=int, default=defaults.max_hops, help="Max hops for multi-hop questions")
+    p.add_argument(
+        "--min-complexity",
+        type=int,
+        default=defaults.min_complexity,
+        help="Min question complexity",
+    )
+    p.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=defaults.similarity_threshold,
+        help="Cosine threshold for QA-pair dedup",
+    )
     p.add_argument("--preview", action="store_true", help="Preview without full generation")
-    p.add_argument("--artifact-path", type=Path, default=Path("./artifacts"), help="DD artifact path")
+    p.add_argument("--artifact-path", type=Path, default=DEFAULT_ARTIFACT_PATH, help="DD artifact path")
     p.add_argument("--dataset-name", default=None, help="Stable DD dataset name for artifacts and resume")
-    p.add_argument("--buffer-size", type=int, default=200, help="DataDesigner checkpoint buffer size")
+    p.add_argument("--buffer-size", type=int, default=DEFAULT_BUFFER_SIZE, help="DataDesigner checkpoint buffer size")
     p.add_argument(
         "--resume",
         "-r",
@@ -171,15 +166,15 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
     g.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO")
 
     g = p.add_argument_group("model configuration")
-    g.add_argument("--artifact-extraction-model", default="nvidia/nemotron-3-nano-30b-a3b")
-    g.add_argument("--artifact-extraction-provider", default="nvidia")
-    g.add_argument("--qa-generation-model", default="nvidia/nemotron-3-nano-30b-a3b")
-    g.add_argument("--qa-generation-provider", default="nvidia")
-    g.add_argument("--quality-judge-model", default="nvidia/nemotron-3-nano-30b-a3b")
-    g.add_argument("--quality-judge-provider", default="nvidia")
-    g.add_argument("--embed-model", default="nvidia/llama-3.2-nv-embedqa-1b-v2")
-    g.add_argument("--embed-provider", default="nvidia")
-    g.add_argument("--max-parallel-requests-for-gen", type=int, default=None)
+    g.add_argument("--artifact-extraction-model", default=defaults.artifact_extraction_model)
+    g.add_argument("--artifact-extraction-provider", default=defaults.artifact_extraction_provider)
+    g.add_argument("--qa-generation-model", default=defaults.qa_generation_model)
+    g.add_argument("--qa-generation-provider", default=defaults.qa_generation_provider)
+    g.add_argument("--quality-judge-model", default=defaults.quality_judge_model)
+    g.add_argument("--quality-judge-provider", default=defaults.quality_judge_provider)
+    g.add_argument("--embed-model", default=defaults.embed_model)
+    g.add_argument("--embed-provider", default=defaults.embed_provider)
+    g.add_argument("--max-parallel-requests-for-gen", type=int, default=defaults.max_parallel_requests_for_gen)
 
     g = p.add_argument_group("custom provider")
     g.add_argument("--custom-provider-endpoint", default=None, help="Base URL for custom provider")
@@ -212,7 +207,7 @@ def _run_generate(args: argparse.Namespace) -> None:
     print(f"Discovered {total_records} {row_type} under {args.input_dir}")
 
     try:
-        args.dataset_name = _resolve_dataset_name(args.input_dir, args.artifact_path, args.dataset_name)
+        args.dataset_name = _resolve_dataset_name(seed_source, args.artifact_path, args.dataset_name)
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(2)
@@ -225,111 +220,112 @@ def _run_generate(args: argparse.Namespace) -> None:
         model_providers_file=args.model_providers_file,
     )
 
-    data_designer = DataDesigner(artifact_path=args.artifact_path, model_providers=model_providers)
-    data_designer.set_run_config(dd.RunConfig(disable_early_shutdown=True, buffer_size=args.buffer_size))
-
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-
-    pipeline_kwargs = _pipeline_kwargs(args)
-    _print_model_config(args, custom_providers)
+    pipeline_config = _pipeline_config(args)
+    _print_model_config(pipeline_config, custom_providers)
 
     if args.preview:
-        _run_preview(data_designer, seed_source, total_records, args, pipeline_kwargs)
+        _run_preview(seed_source, total_records, args, pipeline_config, model_providers)
         return
 
-    _run_create(data_designer, seed_source, total_records, args, pipeline_kwargs)
+    _run_create(seed_source, total_records, args, pipeline_config, model_providers)
 
 
-def _pipeline_kwargs(args: argparse.Namespace) -> dict:
-    """Collect pipeline-builder keyword arguments shared between preview and create runs."""
-    return {
-        "max_artifacts_per_type": args.max_artifacts_per_type,
-        "num_pairs": args.num_pairs,
-        "min_hops": args.min_hops,
-        "max_hops": args.max_hops,
-        "min_complexity": args.min_complexity,
-        "similarity_threshold": args.similarity_threshold,
-        "max_parallel_requests_for_gen": args.max_parallel_requests_for_gen,
-        "artifact_extraction_model": args.artifact_extraction_model,
-        "artifact_extraction_provider": args.artifact_extraction_provider,
-        "qa_generation_model": args.qa_generation_model,
-        "qa_generation_provider": args.qa_generation_provider,
-        "quality_judge_model": args.quality_judge_model,
-        "quality_judge_provider": args.quality_judge_provider,
-        "embed_model": args.embed_model,
-        "embed_provider": args.embed_provider,
-    }
+def _pipeline_config(args: argparse.Namespace) -> GenerationPipelineConfig:
+    """Build validated pipeline settings shared by preview and create runs."""
+    return GenerationPipelineConfig(
+        max_artifacts_per_type=args.max_artifacts_per_type,
+        num_pairs=args.num_pairs,
+        query_counts=dict(args.query_counts),
+        min_hops=args.min_hops,
+        max_hops=args.max_hops,
+        reasoning_counts=dict(args.reasoning_counts),
+        min_complexity=args.min_complexity,
+        similarity_threshold=args.similarity_threshold,
+        max_parallel_requests_for_gen=args.max_parallel_requests_for_gen,
+        artifact_extraction_model=args.artifact_extraction_model,
+        artifact_extraction_provider=args.artifact_extraction_provider,
+        qa_generation_model=args.qa_generation_model,
+        qa_generation_provider=args.qa_generation_provider,
+        quality_judge_model=args.quality_judge_model,
+        quality_judge_provider=args.quality_judge_provider,
+        embed_model=args.embed_model,
+        embed_provider=args.embed_provider,
+    )
 
 
-def _print_model_config(args: argparse.Namespace, custom_providers: list) -> None:
+def _print_model_config(config: GenerationPipelineConfig, custom_providers: list[dd.ModelProvider]) -> None:
     """Print model configuration to stdout."""
     print("\nModel configuration:")
-    print(f"  Artifact extraction: {args.artifact_extraction_model} ({args.artifact_extraction_provider})")
-    print(f"  QA generation:       {args.qa_generation_model} ({args.qa_generation_provider})")
-    print(f"  Quality judge:       {args.quality_judge_model} ({args.quality_judge_provider})")
-    print(f"  Embedding:           {args.embed_model} ({args.embed_provider})")
+    print(f"  Artifact extraction: {config.artifact_extraction_model} ({config.artifact_extraction_provider})")
+    print(f"  QA generation:       {config.qa_generation_model} ({config.qa_generation_provider})")
+    print(f"  Quality judge:       {config.quality_judge_model} ({config.quality_judge_provider})")
+    print(f"  Embedding:           {config.embed_model} ({config.embed_provider})")
     if custom_providers:
         print("\nCustom model providers:")
-        for p in custom_providers:
-            print(f"  {p.name}: {p.endpoint} (type={p.provider_type}, api_key={p.api_key or 'none'})")
+        for provider in custom_providers:
+            credential_status = "configured" if provider.api_key else "none"
+            print(
+                f"  {provider.name}: {provider.endpoint} "
+                f"(type={provider.provider_type}, credential={credential_status})"
+            )
 
 
 def _run_preview(
-    data_designer: DataDesigner,
     seed_source: DocumentChunkerSeedSource,
     total_records: int,
     args: argparse.Namespace,
-    pipeline_kwargs: dict,
+    pipeline_config: GenerationPipelineConfig,
+    model_providers: list[dd.ModelProvider] | None,
 ) -> None:
     """Run a single-record preview of the pipeline."""
-    config_builder = build_qa_generation_pipeline(
-        seed_source=seed_source,
-        start_index=0,
-        end_index=min(args.buffer_size - 1, total_records - 1),
-        **pipeline_kwargs,
-    )
     print("\nPreviewing generation...")
     try:
-        preview_result = data_designer.preview(config_builder, num_records=1)
-        preview_result.display_sample_record()
+        preview_generation(
+            GenerationRunConfig(
+                seed_source=seed_source,
+                output_dir=args.output_dir,
+                artifact_path=args.artifact_path,
+                dataset_name=args.dataset_name,
+                buffer_size=args.buffer_size,
+                model_providers=model_providers,
+                pipeline=pipeline_config,
+                num_records=total_records,
+            )
+        )
     except Exception as e:  # noqa: BLE001 - preview is best-effort UX
         logger.warning("Preview error: %s", e)
 
 
 def _run_create(
-    data_designer: DataDesigner,
     seed_source: DocumentChunkerSeedSource,
     total_records: int,
     args: argparse.Namespace,
-    pipeline_kwargs: dict,
+    pipeline_config: GenerationPipelineConfig,
+    model_providers: list[dd.ModelProvider] | None,
 ) -> None:
     """Run full generation once and export the resulting dataset as JSONL."""
     print(f"\nTotal records: {total_records}")
     print(f"Buffer size: {args.buffer_size}")
     print(f"Resume mode: {args.resume}")
 
-    config_builder = build_qa_generation_pipeline(
-        seed_source=seed_source,
-        start_index=0,
-        end_index=total_records - 1,
-        **pipeline_kwargs,
-    )
-
-    dataset_name = _resolve_dataset_name(args.input_dir, args.artifact_path, args.dataset_name)
-    print(f"Dataset name: {dataset_name}")
+    print(f"Dataset name: {args.dataset_name}")
     print("\nGenerating dataset...")
-    result = data_designer.create(
-        config_builder,
-        num_records=total_records,
-        dataset_name=dataset_name,
-        resume=ResumeMode(args.resume),
+    result = run_generation(
+        GenerationRunConfig(
+            seed_source=seed_source,
+            output_dir=args.output_dir,
+            artifact_path=args.artifact_path,
+            dataset_name=args.dataset_name,
+            buffer_size=args.buffer_size,
+            resume=args.resume,
+            model_providers=model_providers,
+            pipeline=pipeline_config,
+            num_records=total_records,
+        )
     )
 
-    output_path = args.output_dir / f"{result.artifact_storage.resolved_dataset_name}.jsonl"
-    result.export(output_path, format="jsonl")
-
-    print(f"\nGeneration complete! Artifacts saved to {result.artifact_storage.base_dataset_path}")
-    print(f"Exported JSONL to {output_path}")
+    print(f"\nGeneration complete! Artifacts saved to {result.dataset_path}")
+    print(f"Exported JSONL to {result.output_path}")
 
 
 def _add_convert_parser(subparsers: argparse._SubParsersAction) -> None:

@@ -33,11 +33,20 @@ from data_designer_retrieval_sdg.prompts import (
     QA_GENERATION_SYSTEM_PROMPT,
     QA_GENERATION_USER_PROMPT,
 )
+from data_designer_retrieval_sdg.run_config import (
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_EMBED_MODEL,
+    DEFAULT_MAX_ARTIFACTS_PER_TYPE,
+    DEFAULT_MAX_HOPS,
+    DEFAULT_MIN_COMPLEXITY,
+    DEFAULT_MIN_HOPS,
+    DEFAULT_NUM_PAIRS,
+    DEFAULT_PROVIDER,
+    DEFAULT_QUERY_COUNTS,
+    DEFAULT_REASONING_COUNTS,
+    DEFAULT_SIMILARITY_THRESHOLD,
+)
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
-
-DEFAULT_CHAT_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
-DEFAULT_EMBED_MODEL = "nvidia/llama-3.2-nv-embedqa-1b-v2"
-DEFAULT_PROVIDER = "nvidia"
 
 
 def custom_model_config(
@@ -128,8 +137,8 @@ def build_model_providers(
     """Build a list of custom ``ModelProvider`` objects from CLI flags / config.
 
     Inline flags define a single provider; the config file can define
-    multiple.  When both are supplied the inline provider overwrites any
-    file entry with the same name.  Custom providers are merged with Data
+    multiple. Distinct aliases compose, while conflicting definitions for
+    the same alias are rejected. Custom providers are merged with Data
     Designer defaults so that built-in providers remain available.
 
     Args:
@@ -145,7 +154,16 @@ def build_model_providers(
     """
     import yaml
 
-    custom: list[dd.ModelProvider] = []
+    custom_by_name: dict[str, dd.ModelProvider] = {}
+
+    def add_provider(provider: dd.ModelProvider, source: str) -> None:
+        existing = custom_by_name.get(provider.name)
+        if existing is not None and existing.model_dump() != provider.model_dump():
+            raise ValueError(
+                f"Conflicting model provider alias {provider.name!r} from {source}; "
+                "use distinct aliases or make the endpoint, provider type, and credential identical."
+            )
+        custom_by_name[provider.name] = provider
 
     if model_providers_file is not None:
         raw = model_providers_file.read_text(encoding="utf-8")
@@ -157,19 +175,20 @@ def build_model_providers(
         if not isinstance(entries, list):
             raise ValueError(f"model-providers-file must contain a YAML/JSON list, got {type(entries).__name__}")
         for entry in entries:
-            custom.append(dd.ModelProvider(**entry))
+            add_provider(dd.ModelProvider(**entry), str(model_providers_file))
 
     if custom_provider_endpoint is not None:
-        custom = [p for p in custom if p.name != custom_provider_name]
-        custom.append(
+        add_provider(
             dd.ModelProvider(
                 name=custom_provider_name,
                 endpoint=custom_provider_endpoint,
                 provider_type=custom_provider_type,
                 api_key=custom_provider_api_key,
-            )
+            ),
+            "inline provider configuration",
         )
 
+    custom = list(custom_by_name.values())
     if not custom:
         return None, []
 
@@ -178,30 +197,18 @@ def build_model_providers(
     return defaults + custom, custom
 
 
-DEFAULT_QUERY_COUNTS: dict[str, int] = {"multi_hop": 3, "structural": 2, "contextual": 2}
-DEFAULT_REASONING_COUNTS: dict[str, int] = {
-    "factual": 1,
-    "relational": 1,
-    "inferential": 1,
-    "temporal": 1,
-    "procedural": 1,
-    "causal": 1,
-    "visual": 1,
-}
-
-
 def build_qa_generation_pipeline(
     seed_source: DocumentChunkerSeedSource,
     start_index: int = 0,
     end_index: int = 199,
-    max_artifacts_per_type: int = 2,
-    num_pairs: int = 5,
+    max_artifacts_per_type: int = DEFAULT_MAX_ARTIFACTS_PER_TYPE,
+    num_pairs: int = DEFAULT_NUM_PAIRS,
     query_counts: dict[str, int] | None = None,
-    min_hops: int = 2,
-    max_hops: int = 3,
+    min_hops: int = DEFAULT_MIN_HOPS,
+    max_hops: int = DEFAULT_MAX_HOPS,
     reasoning_counts: dict[str, int] | None = None,
-    min_complexity: int = 4,
-    similarity_threshold: float = 0.9,
+    min_complexity: int = DEFAULT_MIN_COMPLEXITY,
+    similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
     max_parallel_requests_for_gen: int | None = None,
     artifact_extraction_model: str = DEFAULT_CHAT_MODEL,
     artifact_extraction_provider: str = DEFAULT_PROVIDER,

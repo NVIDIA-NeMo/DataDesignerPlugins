@@ -127,6 +127,7 @@ def filter_qa_pairs_by_quality(
 
     for _, row in generated_df.iterrows():
         file_name = row.get("file_name", "unknown")
+        source_id = row.get("source_id")
         dedup_pairs = _to_list(row.get("deduplicated_qa_pairs"))
         if dedup_pairs is None:
             print(f"Warning: Skipping {file_name} - deduplicated_qa_pairs is None")
@@ -149,6 +150,8 @@ def filter_qa_pairs_by_quality(
             if quality_score >= quality_threshold:
                 pair_dict = _qa_pair_to_dict(qa_pair)
                 pair_dict["file_name"] = file_name
+                if isinstance(source_id, str) and source_id:
+                    pair_dict["source_id"] = source_id
                 pair_dict["quality_score"] = quality_score
                 all_filtered.append(pair_dict)
             else:

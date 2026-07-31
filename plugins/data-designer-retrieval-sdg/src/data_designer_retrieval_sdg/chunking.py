@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import math
+import posixpath
 import re
 from collections import defaultdict, deque
 from pathlib import Path
@@ -25,6 +26,21 @@ import yaml
 from nltk.tokenize import sent_tokenize
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_source_id(source_id: str) -> str:
+    """Normalize a source identifier without discarding path components."""
+    return posixpath.normpath(source_id.replace("\\", "/"))
+
+
+def build_source_id(source_ids: list[str]) -> str:
+    """Build a stable identifier for one source or a multi-source bundle."""
+    normalized = sorted(normalize_source_id(source_id) for source_id in source_ids)
+    if not normalized:
+        return ""
+    if len(normalized) == 1:
+        return normalized[0]
+    return hashlib.md5("||".join(normalized).encode()).hexdigest()[:16]
 
 
 def load_multi_doc_manifest(manifest_path: Path | None) -> list[list[str]]:
@@ -92,7 +108,7 @@ def build_bundle_id(bundle_members: list[str]) -> str:
     """
     if not bundle_members:
         return ""
-    normalized = "||".join(sorted(str(member) for member in bundle_members))
+    normalized = "||".join(sorted(normalize_source_id(str(member)) for member in bundle_members))
     return hashlib.md5(normalized.encode()).hexdigest()
 
 
