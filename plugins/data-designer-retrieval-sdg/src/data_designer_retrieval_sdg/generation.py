@@ -29,6 +29,7 @@ class GenerationResult:
     dataset_path: Path
     dataset_name: str
     num_records: int
+    requested_num_records: int
     producer_version: str
 
 
@@ -116,6 +117,7 @@ def run_generation(config: GenerationRunConfig) -> GenerationResult:
     if num_records <= 0:
         raise SeedReaderError("The seed source produced no records")
 
+    config.output_dir.mkdir(parents=True, exist_ok=True)
     data_designer = DataDesigner(artifact_path=config.artifact_path, model_providers=config.model_providers)
     data_designer.set_run_config(dd.RunConfig(disable_early_shutdown=True, buffer_size=config.buffer_size))
 
@@ -132,16 +134,17 @@ def run_generation(config: GenerationRunConfig) -> GenerationResult:
         resume=ResumeMode(config.resume),
     )
 
-    config.output_dir.mkdir(parents=True, exist_ok=True)
     resolved_dataset_name = result.artifact_storage.resolved_dataset_name
     output_path = config.output_dir / f"{resolved_dataset_name}.jsonl"
     result.export(output_path, format="jsonl")
+    actual_num_records = result.count_records()
 
     return GenerationResult(
         output_path=output_path,
         dataset_path=Path(result.artifact_storage.base_dataset_path),
         dataset_name=resolved_dataset_name,
-        num_records=num_records,
+        num_records=actual_num_records,
+        requested_num_records=num_records,
         producer_version=_producer_version(),
     )
 

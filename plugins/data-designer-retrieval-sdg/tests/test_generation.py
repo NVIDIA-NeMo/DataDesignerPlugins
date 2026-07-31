@@ -28,6 +28,10 @@ class FakeCreateResult:
         self.artifact_storage = FakeArtifactStorage(artifact_path)
         self.export_calls: list[tuple[Path, str | None]] = []
 
+    def count_records(self) -> int:
+        """Return a count that differs from the requested record count."""
+        return 2
+
     def export(self, path: Path, *, format: str | None = None) -> Path:
         self.export_calls.append((path, format))
         path.write_text("{}\n", encoding="utf-8")
@@ -101,7 +105,7 @@ def test_run_generation_returns_stable_artifact_contract(monkeypatch: pytest.Mon
             buffer_size=37,
             resume=ResumeMode.ALWAYS,
             model_providers=[],
-            pipeline=GenerationPipelineConfig(num_pairs=10),
+            pipeline=GenerationPipelineConfig(num_pairs=7),
         )
     )
 
@@ -120,15 +124,38 @@ def test_run_generation_returns_stable_artifact_contract(monkeypatch: pytest.Mon
     assert build_calls[0]["seed_source"] == generation.DocumentChunkerSeedSource(path=str(docs))
     assert build_calls[0]["start_index"] == 0
     assert build_calls[0]["end_index"] == 2
-    assert build_calls[0]["num_pairs"] == 10
+    assert build_calls[0]["num_pairs"] == 7
     assert build_calls[0]["artifact_extraction_model"] == "nvidia/nemotron-3-ultra-550b-a55b"
     assert build_calls[0]["embed_model"] == "nvidia/nemotron-3-embed-1b"
     assert instance.result.export_calls == [(tmp_path / "output" / "retrieval_resolved.jsonl", "jsonl")]
     assert result.output_path == tmp_path / "output" / "retrieval_resolved.jsonl"
     assert result.dataset_path == tmp_path / "artifacts" / "retrieval_resolved"
     assert result.dataset_name == "retrieval_resolved"
-    assert result.num_records == 3
+    assert result.num_records == 2
+    assert result.requested_num_records == 3
     assert result.producer_version == "0.1.0"
+
+
+def test_run_generation_creates_output_directory_before_generation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "output"
+    output_dir.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setattr(generation, "_count_seed_records", lambda _: 1)
+    monkeypatch.setattr(
+        generation,
+        "DataDesigner",
+        lambda **_: pytest.fail("DataDesigner must not be constructed before output directory validation"),
+    )
+
+    with pytest.raises(FileExistsError):
+        generation.run_generation(
+            GenerationRunConfig(
+                seed_source=DocumentChunkerSeedSource(path=str(tmp_path)),
+                output_dir=output_dir,
+            )
+        )
 
 
 def test_run_generation_rejects_nonpositive_buffer_size(tmp_path: Path) -> None:

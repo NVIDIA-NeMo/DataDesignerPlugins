@@ -21,7 +21,7 @@ DEFAULT_PROVIDER = "nvidia"
 DEFAULT_ARTIFACT_PATH = Path("./artifacts")
 DEFAULT_BUFFER_SIZE = 200
 DEFAULT_MAX_ARTIFACTS_PER_TYPE = 2
-DEFAULT_NUM_PAIRS = 10
+DEFAULT_NUM_PAIRS = 7
 DEFAULT_MIN_HOPS = 1
 DEFAULT_MAX_HOPS = 3
 DEFAULT_MIN_COMPLEXITY = 2
@@ -38,6 +38,26 @@ DEFAULT_REASONING_COUNTS: dict[str, int] = {
 }
 
 NonNegativeInt = Annotated[int, Field(ge=0)]
+_QUERY_COUNT_KEYS = frozenset(DEFAULT_QUERY_COUNTS)
+_REASONING_COUNT_KEYS = frozenset(DEFAULT_REASONING_COUNTS)
+
+
+def _validate_count_distribution(
+    name: str,
+    counts: dict[str, int],
+    expected_keys: frozenset[str],
+    num_pairs: int,
+) -> None:
+    """Validate one complete question-distribution mapping."""
+    actual_keys = set(counts)
+    if actual_keys != expected_keys:
+        missing = sorted(expected_keys - actual_keys)
+        unexpected = sorted(actual_keys - expected_keys)
+        raise ValueError(f"{name} keys must match the expected set; missing={missing}, unexpected={unexpected}")
+
+    total = sum(counts.values())
+    if total != num_pairs:
+        raise ValueError(f"{name} must sum to num_pairs ({num_pairs}); got {total}")
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -92,7 +112,7 @@ class GenerationPipelineConfig(ConfigBase):
     min_hops: int = Field(default=DEFAULT_MIN_HOPS, ge=1)
     max_hops: int = Field(default=DEFAULT_MAX_HOPS, ge=1)
     reasoning_counts: dict[str, NonNegativeInt] = Field(default_factory=lambda: dict(DEFAULT_REASONING_COUNTS))
-    min_complexity: int = Field(default=DEFAULT_MIN_COMPLEXITY, ge=1)
+    min_complexity: int = Field(default=DEFAULT_MIN_COMPLEXITY, ge=1, le=5)
     similarity_threshold: float = Field(default=DEFAULT_SIMILARITY_THRESHOLD, ge=0.0, le=1.0)
     max_parallel_requests_for_gen: int | None = Field(default=None, ge=1)
     artifact_extraction_model: str = Field(default=DEFAULT_CHAT_MODEL, min_length=1)
@@ -105,10 +125,12 @@ class GenerationPipelineConfig(ConfigBase):
     embed_provider: str = Field(default=DEFAULT_PROVIDER, min_length=1)
 
     @model_validator(mode="after")
-    def validate_hop_range(self) -> GenerationPipelineConfig:
-        """Reject a minimum hop count greater than the maximum."""
+    def validate_pipeline_settings(self) -> GenerationPipelineConfig:
+        """Reject inconsistent hop and question-distribution settings."""
         if self.min_hops > self.max_hops:
             raise ValueError("min_hops must be less than or equal to max_hops")
+        _validate_count_distribution("query_counts", self.query_counts, _QUERY_COUNT_KEYS, self.num_pairs)
+        _validate_count_distribution("reasoning_counts", self.reasoning_counts, _REASONING_COUNT_KEYS, self.num_pairs)
         return self
 
     def to_pipeline_kwargs(self) -> dict[str, Any]:

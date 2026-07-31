@@ -107,13 +107,17 @@ data-designer-retrieval-sdg generate \
     --dataset-name my_retrieval_run \
     --buffer-size 200 \
     --resume if_possible \
-    --num-pairs 10
+    --num-pairs 7
 ```
 
 Generation writes DataDesigner artifacts under `--artifact-path` and exports a
 single JSONL file to `--output-dir`. The default profile uses
 `nvidia/nemotron-3-ultra-550b-a55b` for generation and
 `nvidia/nemotron-3-embed-1b` for embedding deduplication.
+
+`--query-counts` and `--reasoning-counts` are exact orthogonal
+distributions, and each must sum to `--num-pairs`. Pass entries as
+`NAME=COUNT` when changing the default of seven pairs.
 
 ### Convert to training format
 
@@ -156,7 +160,7 @@ generation = run_generation(
         artifact_path=Path("./artifacts"),
         dataset_name="my_retrieval_run",
         pipeline=GenerationPipelineConfig(
-            num_pairs=10,
+            num_pairs=7,
             min_hops=1,
             max_hops=3,
         ),

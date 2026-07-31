@@ -35,6 +35,7 @@ def fake_run_generation(config: object) -> GenerationResult:
         dataset_path=Path("/artifacts/my_run_resolved"),
         dataset_name="my_run_resolved",
         num_records=3,
+        requested_num_records=3,
         producer_version="0.1.0",
     )
 
@@ -146,7 +147,7 @@ def test_generate_uses_native_resume_and_exports_jsonl(monkeypatch: pytest.Monke
     assert config.num_records == 3
     assert config.dataset_name == "my_run"
     assert config.output_dir == tmp_path / "out"
-    assert config.pipeline.num_pairs == 10
+    assert config.pipeline.num_pairs == 7
     assert config.pipeline.embed_model == "nvidia/nemotron-3-embed-1b"
 
 
@@ -162,7 +163,55 @@ def test_preview_delegates_to_public_generation_api(monkeypatch: pytest.MonkeyPa
     config = PREVIEW_CONFIGS[0]
     assert config.num_records == 3
     assert config.buffer_size == 37
-    assert config.pipeline.num_pairs == 10
+    assert config.pipeline.num_pairs == 7
+
+
+def test_generate_accepts_matching_custom_question_distributions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    RUN_CONFIGS.clear()
+    monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
+    monkeypatch.setattr(cli, "build_model_providers", fake_build_model_providers)
+    monkeypatch.setattr(cli, "run_generation", fake_run_generation)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        generate_argv(
+            tmp_path,
+            extra_args=[
+                "--num-pairs",
+                "3",
+                "--query-counts",
+                "multi_hop=1",
+                "structural=1",
+                "contextual=1",
+                "--reasoning-counts",
+                "factual=1",
+                "relational=1",
+                "inferential=1",
+                "temporal=0",
+                "procedural=0",
+                "causal=0",
+                "visual=0",
+            ],
+        ),
+    )
+
+    cli.main()
+
+    config = RUN_CONFIGS[0]
+    assert config.pipeline.num_pairs == 3
+    assert config.pipeline.query_counts == {"multi_hop": 1, "structural": 1, "contextual": 1}
+    assert config.pipeline.reasoning_counts == {
+        "factual": 1,
+        "relational": 1,
+        "inferential": 1,
+        "temporal": 0,
+        "procedural": 0,
+        "causal": 0,
+        "visual": 0,
+    }
 
 
 def test_print_model_config_does_not_expose_provider_api_key(capsys: pytest.CaptureFixture[str]) -> None:

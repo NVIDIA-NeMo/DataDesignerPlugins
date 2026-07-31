@@ -44,6 +44,20 @@ from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 logger = logging.getLogger(__name__)
 
 
+def _parse_count_entry(value: str) -> tuple[str, int]:
+    """Parse one ``NAME=COUNT`` question-distribution entry."""
+    name, separator, raw_count = value.partition("=")
+    if not separator or not name or not raw_count:
+        raise argparse.ArgumentTypeError("expected NAME=COUNT")
+    try:
+        count = int(raw_count)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"count must be an integer, got {raw_count!r}") from exc
+    if count < 0:
+        raise argparse.ArgumentTypeError("count must be non-negative")
+    return name, count
+
+
 def _build_seed_source(args: argparse.Namespace) -> DocumentChunkerSeedSource:
     """Construct a :class:`DocumentChunkerSeedSource` from CLI arguments."""
     return DocumentChunkerSeedSource(
@@ -94,6 +108,22 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Max artifacts per type",
     )
     p.add_argument("--num-pairs", type=int, default=defaults.num_pairs, help="QA pairs per document")
+    p.add_argument(
+        "--query-counts",
+        nargs="+",
+        type=_parse_count_entry,
+        default=list(defaults.query_counts.items()),
+        metavar="NAME=COUNT",
+        help="Exact query-type counts; values must sum to --num-pairs",
+    )
+    p.add_argument(
+        "--reasoning-counts",
+        nargs="+",
+        type=_parse_count_entry,
+        default=list(defaults.reasoning_counts.items()),
+        metavar="NAME=COUNT",
+        help="Exact reasoning-type counts; values must sum to --num-pairs",
+    )
     p.add_argument("--min-hops", type=int, default=defaults.min_hops, help="Min hops for multi-hop questions")
     p.add_argument("--max-hops", type=int, default=defaults.max_hops, help="Max hops for multi-hop questions")
     p.add_argument(
@@ -205,8 +235,10 @@ def _pipeline_config(args: argparse.Namespace) -> GenerationPipelineConfig:
     return GenerationPipelineConfig(
         max_artifacts_per_type=args.max_artifacts_per_type,
         num_pairs=args.num_pairs,
+        query_counts=dict(args.query_counts),
         min_hops=args.min_hops,
         max_hops=args.max_hops,
+        reasoning_counts=dict(args.reasoning_counts),
         min_complexity=args.min_complexity,
         similarity_threshold=args.similarity_threshold,
         max_parallel_requests_for_gen=args.max_parallel_requests_for_gen,

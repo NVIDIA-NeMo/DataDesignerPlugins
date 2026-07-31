@@ -28,7 +28,7 @@ def test_generation_config_models_are_exported_from_package_root() -> None:
 def test_generation_pipeline_config_has_canonical_defaults() -> None:
     config = GenerationPipelineConfig()
 
-    assert config.num_pairs == 10
+    assert config.num_pairs == 7
     assert config.min_hops == 1
     assert config.max_hops == 3
     assert config.min_complexity == 2
@@ -53,6 +53,64 @@ def test_generation_configs_reject_unknown_fields_and_schema_versions(tmp_path: 
 def test_generation_pipeline_config_rejects_invalid_hop_range() -> None:
     with pytest.raises(ValidationError, match="min_hops must be less than or equal to max_hops"):
         GenerationPipelineConfig(min_hops=4, max_hops=3)
+
+
+@pytest.mark.parametrize("min_complexity", [0, 6])
+def test_generation_pipeline_config_rejects_complexity_outside_prompt_scale(min_complexity: int) -> None:
+    with pytest.raises(ValidationError):
+        GenerationPipelineConfig(min_complexity=min_complexity)
+
+
+@pytest.mark.parametrize(
+    ("field", "counts"),
+    [
+        ("query_counts", {"multi-hop": 3, "structural": 2, "contextual": 2}),
+        (
+            "reasoning_counts",
+            {
+                "factual": 1,
+                "relational": 1,
+                "inferential": 1,
+                "temporal": 1,
+                "procedural": 1,
+                "causal": 1,
+                "spatial": 1,
+            },
+        ),
+    ],
+)
+def test_generation_pipeline_config_rejects_unknown_distribution_keys(
+    field: str,
+    counts: dict[str, int],
+) -> None:
+    with pytest.raises(ValidationError, match=f"{field} keys must match the expected set"):
+        GenerationPipelineConfig.model_validate({field: counts})
+
+
+@pytest.mark.parametrize(
+    ("field", "counts"),
+    [
+        ("query_counts", {"multi_hop": 2, "structural": 2, "contextual": 2}),
+        (
+            "reasoning_counts",
+            {
+                "factual": 2,
+                "relational": 1,
+                "inferential": 1,
+                "temporal": 1,
+                "procedural": 1,
+                "causal": 1,
+                "visual": 1,
+            },
+        ),
+    ],
+)
+def test_generation_pipeline_config_requires_distributions_to_sum_to_num_pairs(
+    field: str,
+    counts: dict[str, int],
+) -> None:
+    with pytest.raises(ValidationError, match=f"{field} must sum to num_pairs"):
+        GenerationPipelineConfig.model_validate({field: counts})
 
 
 def test_generation_run_config_serialization_redacts_credentials(tmp_path: Path) -> None:
