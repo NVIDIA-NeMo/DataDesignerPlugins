@@ -17,10 +17,7 @@ from data_designer.engine.storage.artifact_storage import ResumeMode
 from data_designer.interface import DataDesigner
 
 from data_designer_retrieval_sdg.pipeline import build_model_providers, build_qa_generation_pipeline
-from data_designer_retrieval_sdg.run_artifacts import (
-    finalize_generation_run_artifacts,
-    write_generation_run_artifacts,
-)
+from data_designer_retrieval_sdg.run_artifacts import write_generation_run_artifacts
 from data_designer_retrieval_sdg.run_config import ConfigSource, GenerationRunConfig
 from data_designer_retrieval_sdg.seed_reader import DocumentChunkerSeedReader
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
@@ -38,8 +35,6 @@ class GenerationResult:
     producer_version: str
     resolved_config_path: Path | None = None
     provenance_path: Path | None = None
-    config_fingerprint: str | None = None
-    input_fingerprint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -139,16 +134,6 @@ def run_generation(
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     producer_version = _producer_version()
-    run_artifacts = write_generation_run_artifacts(
-        config,
-        dataset_name=dataset_name,
-        num_records=num_records,
-        producer_version=producer_version,
-        sources=config_sources,
-        override_paths=override_paths,
-        environment_variables=environment_variables,
-    )
-
     data_designer = DataDesigner(artifact_path=config.artifact_path, model_providers=config.model_providers)
     data_designer.set_run_config(dd.RunConfig(disable_early_shutdown=True, buffer_size=config.buffer_size))
 
@@ -165,27 +150,33 @@ def run_generation(
         resume=ResumeMode(config.resume),
     )
     resolved_dataset_name = result.artifact_storage.resolved_dataset_name
-    run_artifacts = finalize_generation_run_artifacts(
-        run_artifacts,
-        config,
-        resolved_dataset_name=resolved_dataset_name,
-    )
-
     output_path = config.output_dir / f"{resolved_dataset_name}.jsonl"
     result.export(output_path, format="jsonl")
     actual_num_records = result.count_records()
+    dataset_path = Path(result.artifact_storage.base_dataset_path)
+    run_artifacts = write_generation_run_artifacts(
+        config,
+        requested_dataset_name=dataset_name,
+        resolved_dataset_name=resolved_dataset_name,
+        dataset_path=dataset_path,
+        output_path=output_path,
+        requested_num_records=num_records,
+        actual_num_records=actual_num_records,
+        producer_version=producer_version,
+        sources=config_sources,
+        override_paths=override_paths,
+        environment_variables=environment_variables,
+    )
 
     return GenerationResult(
         output_path=output_path,
-        dataset_path=Path(result.artifact_storage.base_dataset_path),
+        dataset_path=dataset_path,
         dataset_name=resolved_dataset_name,
         num_records=actual_num_records,
         requested_num_records=num_records,
         producer_version=producer_version,
         resolved_config_path=run_artifacts.resolved_config_path,
         provenance_path=run_artifacts.provenance_path,
-        config_fingerprint=run_artifacts.config_fingerprint,
-        input_fingerprint=run_artifacts.input_fingerprint,
     )
 
 

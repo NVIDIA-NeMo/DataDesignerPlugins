@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import data_designer_retrieval_sdg.convert as conversion_module
 from data_designer_retrieval_sdg.convert import (
     UnionFind,
     build_corpus_and_mappings,
@@ -368,5 +369,27 @@ def test_run_conversion_with_config_writes_run_metadata(tmp_path: Path) -> None:
     assert result.provenance_path == tmp_path / "converted" / ".retrieval_sdg_run" / "config_provenance.json"
     assert result.resolved_config_path.exists()
     assert result.provenance_path.exists()
-    assert result.config_fingerprint
-    assert result.input_fingerprint
+
+
+def test_run_conversion_with_config_does_not_write_metadata_when_conversion_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "generated.jsonl"
+    input_path.write_text("{}\n", encoding="utf-8")
+    output_dir = tmp_path / "converted"
+
+    def fail_conversion(**_: object) -> conversion_module.ConversionResult:
+        raise RuntimeError("conversion failed")
+
+    monkeypatch.setattr(conversion_module, "run_conversion", fail_conversion)
+    with pytest.raises(RuntimeError, match="conversion failed"):
+        conversion_module.run_conversion_with_config(
+            ConversionRunConfig(
+                input_path=input_path,
+                corpus_id="my_corpus",
+                output_dir=output_dir,
+            )
+        )
+
+    assert not (output_dir / ".retrieval_sdg_run").exists()

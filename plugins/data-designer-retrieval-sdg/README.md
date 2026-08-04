@@ -39,21 +39,15 @@ data-designer-retrieval-sdg generate \
     --resume always
 ```
 
-Use `--resume if_possible` to resume when artifacts are available. Before either
-resume mode reaches DataDesigner, the plugin verifies that the source corpus and
-all data-producing settings match the saved run. A mismatch is refused with an
-instruction to use a new dataset name.
+Use `--resume if_possible` to resume when compatible artifacts are available and
+start fresh otherwise. DataDesigner owns checkpoint discovery, configuration
+compatibility, partial-result cleanup, and the behavior of every resume mode. The
+plugin does not maintain a second resume state or inspect corpus bytes.
 
-Artifacts created before this metadata contract cannot be safely fingerprinted,
-so resume is refused when a dataset directory exists without matching plugin
-provenance.
-
-`--buffer-size` controls DataDesigner's checkpoint/write granularity. It is
-recorded in the resolved config but excluded from the plugin's data fingerprint;
-DataDesigner may still impose its own checkpoint compatibility constraints. In
-DataDesigner 0.6.1, `create()` still profiles the completed dataset before
-returning, so `--buffer-size` is not a hard cap on final peak memory for very
-large runs.
+`--buffer-size` controls DataDesigner's checkpoint/write granularity and remains
+part of the resolved config. In DataDesigner 0.6.1, `create()` still profiles the
+completed dataset before returning, so `--buffer-size` is not a hard cap on final
+peak memory for very large runs.
 
 ## Installation
 
@@ -188,14 +182,17 @@ single JSONL file to `--output-dir`. The packaged default uses
 distributions, and each must sum to `--num-pairs`. Pass entries as
 `NAME=COUNT` when changing the default of seven pairs.
 
-Before the first model request, generation writes:
+After DataDesigner generation and JSONL export both complete, the plugin writes:
 
 - `<artifact-path>/.retrieval_sdg_runs/<dataset-name>/resolved_config.yaml`
 - `<artifact-path>/.retrieval_sdg_runs/<dataset-name>/config_provenance.json`
 
-The resolved YAML is complete and redacted. Provenance includes plugin version,
-config file names and hashes, explicit override paths, environment variable
-names, and fingerprints of the data-producing config and selected source bytes.
+The directory uses DataDesigner's resolved dataset name, including any suffix it
+adds for a fresh run. The resolved YAML is complete and redacted. Provenance
+includes plugin version, config file names and hashes, explicit override paths,
+environment variable names, exact output paths, and requested and generated
+record counts. Failed attempts do not create plugin metadata; DataDesigner's own
+artifacts remain the authority for resuming them.
 
 ### Convert to training format
 
@@ -214,10 +211,10 @@ because DataDesigner now owns checkpointing through `--buffer-size` and
 DataDesigner's final profiling step until DataDesigner exposes a no-materialize
 create/export path.
 
-Typed conversion runs also write `resolved_config.yaml` and
-`config_provenance.json` under `<output-dir>/.retrieval_sdg_run/`. The input
-fingerprint covers the exact JSONL, JSON, or parquet files selected by the
-conversion format-discovery rules.
+After a typed conversion succeeds, it also writes `resolved_config.yaml` and
+`config_provenance.json` under `<output-dir>/.retrieval_sdg_run/`. Provenance
+records the exact generated paths and output counts. Failed conversions do not
+leave plugin metadata that could be mistaken for a completed run.
 
 ### Use as a library
 
@@ -252,8 +249,8 @@ assert conversion.train_file is not None
 
 The generation result contains the exact exported JSONL path, resolved Data
 Designer dataset path and name, record count, producer version, run metadata
-paths, and fingerprints. Conversion returns the generated train, validation,
-corpus, evaluation, and run metadata paths plus example counts.
+paths. Conversion returns the generated train, validation, corpus, evaluation,
+and run metadata paths plus example counts.
 `GenerationRunConfig`, `GenerationPipelineConfig`, and `ConversionRunConfig`
 reject unknown fields so recipe adapters cannot silently pass misspelled
 settings. Their redacted serialization replaces provider credentials and

@@ -46,8 +46,6 @@ class ConversionResult:
     evaluation_queries: int
     resolved_config_path: Path | None = None
     provenance_path: Path | None = None
-    config_fingerprint: str | None = None
-    input_fingerprint: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -961,20 +959,18 @@ def run_conversion_with_config(
     output_dir = _resolve_conversion_output_dir(
         str(config.input_path), str(config.output_dir) if config.output_dir else None, config.eval_only
     )
+    result = run_conversion(**config.model_copy(update={"output_dir": output_dir}).to_conversion_kwargs())
     run_artifacts = write_conversion_run_artifacts(
         config,
-        output_dir=output_dir,
+        result=result,
         producer_version=_producer_version(),
         sources=config_sources,
         override_paths=override_paths,
     )
-    result = run_conversion(**config.model_copy(update={"output_dir": output_dir}).to_conversion_kwargs())
     return replace(
         result,
         resolved_config_path=run_artifacts.resolved_config_path,
         provenance_path=run_artifacts.provenance_path,
-        config_fingerprint=run_artifacts.config_fingerprint,
-        input_fingerprint=run_artifacts.input_fingerprint,
     )
 
 
