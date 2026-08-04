@@ -165,6 +165,43 @@ def test_generate_uses_native_resume_and_exports_jsonl(monkeypatch: pytest.Monke
     assert RUN_KWARGS[0]["config_sources"][0].location.endswith("configs/generation/default.yaml")
 
 
+def test_generate_respects_num_records_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    RUN_CONFIGS.clear()
+    monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
+    monkeypatch.setattr(cli, "build_model_providers", fake_build_model_providers)
+    monkeypatch.setattr(cli, "run_generation", fake_run_generation)
+    monkeypatch.setattr(sys, "argv", generate_argv(tmp_path, extra_args=["--num-records", "2"]))
+
+    cli.main()
+
+    assert RUN_CONFIGS[0].num_records == 2
+    output = capsys.readouterr().out
+    assert "Discovered 3 text files" in output
+    assert "Selected the first 2 seed records" in output
+    assert "Records to process: 2" in output
+
+
+def test_generate_rejects_num_records_above_available(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
+    monkeypatch.setattr(cli, "build_model_providers", fake_build_model_providers)
+    monkeypatch.setattr(cli, "run_generation", lambda *_args, **_kwargs: pytest.fail("generation must not start"))
+    monkeypatch.setattr(sys, "argv", generate_argv(tmp_path, extra_args=["--num-records", "4"]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
+    assert "num_records=4 exceeds the 3 available seed records" in capsys.readouterr().err
+
+
 def test_preview_delegates_to_public_generation_api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     PREVIEW_CONFIGS.clear()
     monkeypatch.setattr(cli, "_count_seed_records", fake_count_seed_records)
@@ -310,7 +347,10 @@ def test_generate_print_resolved_config_uses_documented_precedence(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     config_path = tmp_path / "generation.yaml"
-    config_path.write_text("seed_source:\n  multi_doc: true\npipeline:\n  min_complexity: 1\n", encoding="utf-8")
+    config_path.write_text(
+        "seed_source:\n  multi_doc: true\nnum_records: 2\npipeline:\n  min_complexity: 1\n",
+        encoding="utf-8",
+    )
     argv = generate_argv(
         tmp_path,
         extra_args=[
@@ -318,9 +358,13 @@ def test_generate_print_resolved_config_uses_documented_precedence(
             str(config_path),
             "--min-complexity",
             "2",
+            "--num-records",
+            "3",
             "--no-multi-doc",
             "--set",
             "pipeline.min_complexity=3",
+            "--set",
+            "num_records=1",
             "--print-resolved-config",
         ],
     )
@@ -335,7 +379,7 @@ def test_generate_print_resolved_config_uses_documented_precedence(
     assert resolved["dataset_name"] == "my_run"
     assert resolved["buffer_size"] == 37
     assert resolved["seed_source"]["multi_doc"] is False
-    assert resolved["num_records"] is None
+    assert resolved["num_records"] == 1
 
 
 def test_generate_print_resolved_config_redacts_provider_secret(

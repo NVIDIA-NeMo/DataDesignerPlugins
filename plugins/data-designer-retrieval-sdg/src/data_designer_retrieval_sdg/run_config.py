@@ -192,7 +192,11 @@ class GenerationRunConfig(RunConfigBase):
     resume: ResumeMode = Field(default=ResumeMode.NEVER, validate_default=True)
     model_providers: list[dd.ModelProvider] | None = None
     pipeline: GenerationPipelineConfig = Field(default_factory=GenerationPipelineConfig)
-    num_records: int | None = Field(default=None, ge=1)
+    num_records: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum seed records to process; null processes all available records",
+    )
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
 

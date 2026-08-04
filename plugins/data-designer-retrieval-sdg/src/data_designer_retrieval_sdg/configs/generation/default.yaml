@@ -54,5 +54,6 @@ pipeline:
   quality_judge_provider: nvidia
   embed_model: nvidia/nemotron-3-embed-1b
   embed_provider: nvidia
+# null processes all discovered seed records.
 num_records: null
 log_level: INFO

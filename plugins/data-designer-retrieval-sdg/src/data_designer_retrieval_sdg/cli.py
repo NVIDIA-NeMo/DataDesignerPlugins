@@ -95,6 +95,12 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--sentences-per-chunk", type=int, default=_SUPPRESS)
     parser.add_argument("--num-sections", type=int, default=_SUPPRESS)
     parser.add_argument("--num-files", type=int, default=_SUPPRESS)
+    parser.add_argument(
+        "--num-records",
+        type=int,
+        default=_SUPPRESS,
+        help="Maximum seed records to process; defaults to all discovered records",
+    )
     parser.add_argument("--max-artifacts-per-type", type=int, default=_SUPPRESS)
     parser.add_argument("--num-pairs", type=int, default=_SUPPRESS)
     parser.add_argument(
@@ -211,6 +217,7 @@ def _generation_cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
         "dataset_name",
         "buffer_size",
         "resume",
+        "num_records",
         "log_level",
     ):
         _assign_if_present(args, overrides, argument)
@@ -340,15 +347,25 @@ def _run_generate(args: argparse.Namespace) -> None:
 
     _configure_logging(config.log_level)
     try:
-        total_records = _count_seed_records(config.seed_source)
+        available_records = _count_seed_records(config.seed_source)
     except SeedReaderError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
+    requested_records = config.num_records if config.num_records is not None else available_records
+    if requested_records > available_records:
+        print(
+            f"Error: num_records={requested_records} exceeds the {available_records} available seed records",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
     row_type = "bundles" if config.seed_source.multi_doc else "text files"
-    print(f"Discovered {total_records} {row_type} under {config.seed_source.path}")
+    print(f"Discovered {available_records} {row_type} under {config.seed_source.path}")
+    if requested_records < available_records:
+        print(f"Selected the first {requested_records} seed records")
     _print_model_config(config.pipeline, custom_providers)
-    effective_config = config.model_copy(update={"num_records": total_records})
+    effective_config = config.model_copy(update={"num_records": requested_records})
 
     if args.preview:
         print("\nPreviewing generation...")
@@ -358,7 +375,7 @@ def _run_generate(args: argparse.Namespace) -> None:
             logger.warning("Preview error: %s", exc)
         return
 
-    print(f"\nTotal records: {total_records}")
+    print(f"\nRecords to process: {requested_records}")
     print(f"Buffer size: {effective_config.buffer_size}")
     print(f"Resume mode: {ResumeMode(effective_config.resume).value}")
     print(f"Dataset name: {effective_config.dataset_name}")

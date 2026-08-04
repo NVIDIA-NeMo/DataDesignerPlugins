@@ -107,8 +107,8 @@ uv run data-designer-retrieval-sdg generate --help
 ## Run configuration
 
 The package contains one complete generation default and one complete conversion
-default. No separate model profile is required. Print either effective default
-without starting a run:
+default. No separate model profile is required. Print either declarative resolved
+configuration without scanning inputs or starting a run:
 
 ```bash
 data-designer-retrieval-sdg generate --print-resolved-config
@@ -137,6 +137,7 @@ output_dir: ./generated_output
 artifact_path: ./artifacts
 dataset_name: my_retrieval_run
 resume: if_possible
+num_records: 1000
 pipeline:
   num_pairs: 7
 ```
@@ -157,6 +158,12 @@ model_providers:
 The environment variable names are recorded as provenance, while credential
 values and authorization headers are redacted.
 
+`num_records` limits the first N seed records processed by Data Designer; `null`
+processes all available records. This differs from `seed_source.num_files`, which
+limits raw files before optional multi-document bundling. `--print-resolved-config`
+shows the configured value without scanning the corpus. The persisted run snapshot
+replaces `null` with the discovered record count used by that run.
+
 ## Quick start
 
 ### Generate QA pairs
@@ -168,6 +175,7 @@ data-designer-retrieval-sdg generate \
     --dataset-name my_retrieval_run \
     --buffer-size 200 \
     --resume if_possible \
+    --num-records 1000 \
     --num-pairs 7
 ```
 
