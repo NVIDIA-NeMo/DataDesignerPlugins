@@ -109,16 +109,22 @@ data-designer-retrieval-sdg generate --print-resolved-config
 data-designer-retrieval-sdg convert --print-resolved-config
 ```
 
-Layer a YAML or JSON file over the packaged default with `--config`. Ordinary
-CLI flags override that file, and repeatable `--set key=value` entries have final
-precedence:
+Layer a YAML or JSON file over the packaged default with `--config`. Explicit
+CLI flags have final precedence. Pydantic Settings generates typed flags for
+every config field, including dotted flags for nested values; familiar flat
+aliases remain available for common settings:
 
 ```bash
 data-designer-retrieval-sdg generate \
     --config ./generation.yaml \
     --min-complexity 3 \
-    --set pipeline.similarity_threshold=0.92
+    --pipeline.similarity-threshold 0.92
 ```
+
+The effective order is packaged default, user config file, then explicit CLI
+values. There is no separate untyped `--set` override language. Complex values
+use JSON when passed through their generated flag, for example
+`--pipeline.query-counts '{"multi_hop":3,"structural":2,"contextual":2}'`.
 
 A generation file can be intentionally small because omitted values remain
 visible through `--print-resolved-config`:
@@ -151,6 +157,10 @@ model_providers:
 
 The environment variable names are recorded as provenance, while credential
 values and authorization headers are redacted.
+
+Provider definitions follow the same layering rule. A provider from the user
+config can be updated by the legacy `--custom-provider-*` shorthand when the
+alias matches; fields not supplied on the CLI are preserved.
 
 `num_records` limits the first N seed records processed by Data Designer; `null`
 processes all available records. This differs from `seed_source.num_files`, which

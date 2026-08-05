@@ -361,10 +361,6 @@ def test_generate_print_resolved_config_uses_documented_precedence(
             "--num-records",
             "3",
             "--no-multi-doc",
-            "--set",
-            "pipeline.min_complexity=3",
-            "--set",
-            "num_records=1",
             "--print-resolved-config",
         ],
     )
@@ -375,11 +371,11 @@ def test_generate_print_resolved_config_uses_documented_precedence(
     cli.main()
 
     resolved = yaml.safe_load(capsys.readouterr().out)
-    assert resolved["pipeline"]["min_complexity"] == 3
+    assert resolved["pipeline"]["min_complexity"] == 2
     assert resolved["dataset_name"] == "my_run"
     assert resolved["buffer_size"] == 37
     assert resolved["seed_source"]["multi_doc"] is False
-    assert resolved["num_records"] == 1
+    assert resolved["num_records"] == 3
 
 
 def test_generate_print_resolved_config_redacts_provider_secret(
@@ -417,7 +413,7 @@ model_providers:
     assert "api_key: <redacted>" in output
 
 
-def test_convert_print_resolved_config_uses_file_cli_and_set(
+def test_convert_print_resolved_config_uses_file_and_cli(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -445,8 +441,6 @@ def test_convert_print_resolved_config_uses_file_cli_and_set(
             "--seed",
             "7",
             "--no-eval-only",
-            "--set",
-            "seed=8",
             "--print-resolved-config",
         ],
     )
@@ -456,8 +450,91 @@ def test_convert_print_resolved_config_uses_file_cli_and_set(
     resolved = yaml.safe_load(capsys.readouterr().out)
     assert resolved["input_path"] == str(tmp_path / "records.jsonl")
     assert resolved["corpus_id"] == "configured"
-    assert resolved["seed"] == 8
+    assert resolved["seed"] == 7
     assert resolved["eval_only"] is False
+
+
+def test_convert_preserves_positional_and_multi_value_legacy_forms(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    positional_input = tmp_path / "positional.jsonl"
+    explicit_input = tmp_path / "explicit.jsonl"
+    group_paths = [tmp_path / "groups-a.json", tmp_path / "groups-b.json"]
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "data-designer-retrieval-sdg",
+            "convert",
+            str(positional_input),
+            "--input-path",
+            str(explicit_input),
+            "--corpus-id",
+            "configured",
+            "--groups-json",
+            *(str(path) for path in group_paths),
+            "--print-resolved-config",
+        ],
+    )
+
+    cli.main()
+
+    resolved = yaml.safe_load(capsys.readouterr().out)
+    assert resolved["input_path"] == str(explicit_input)
+    assert resolved["groups_json"] == [str(path) for path in group_paths]
+
+
+def test_generate_cli_provider_overrides_matching_config_alias(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "generation.yaml"
+    config_path.write_text(
+        """
+model_providers:
+  - name: custom
+    endpoint: https://old.example.invalid/v1
+    provider_type: openai
+    api_key: CUSTOM_API_KEY
+""".lstrip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "data-designer-retrieval-sdg",
+            "generate",
+            "--config",
+            str(config_path),
+            "--custom-provider-name",
+            "custom",
+            "--custom-provider-endpoint",
+            "https://new.example.invalid/v1",
+            "--print-resolved-config",
+        ],
+    )
+
+    cli.main()
+
+    resolved = yaml.safe_load(capsys.readouterr().out)
+    provider = next(item for item in resolved["model_providers"] if item["name"] == "custom")
+    assert provider["endpoint"] == "https://new.example.invalid/v1"
+    assert provider["provider_type"] == "openai"
+    assert provider["api_key"] == "<redacted>"
+
+
+@pytest.mark.parametrize("command", ["generate", "convert"])
+def test_commands_reject_removed_set_override(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
+    monkeypatch.setattr(sys, "argv", ["data-designer-retrieval-sdg", command, "--set", "seed=1"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
 
 
 @pytest.mark.parametrize("command", ["generate", "convert"])

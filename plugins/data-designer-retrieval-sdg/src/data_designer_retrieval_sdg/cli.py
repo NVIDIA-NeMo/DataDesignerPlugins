@@ -15,6 +15,7 @@ import data_designer.config as dd
 from data_designer.engine.resources.seed_reader import SeedReaderError
 from data_designer.engine.storage.artifact_storage import ResumeMode
 from data_designer.logging import LoggerConfig, LoggingConfig, OutputConfig, configure_logging
+from pydantic_settings import CliSettingsSource
 
 from data_designer_retrieval_sdg.convert import run_conversion_with_config
 from data_designer_retrieval_sdg.generation import (
@@ -25,15 +26,53 @@ from data_designer_retrieval_sdg.generation import (
 )
 from data_designer_retrieval_sdg.pipeline import build_model_providers
 from data_designer_retrieval_sdg.run_config import (
+    ConversionRunConfig,
+    GenerationRunConfig,
     LoadedRunConfig,
     config_source_from_path,
     dump_resolved_config,
     load_conversion_config,
     load_generation_config,
+    resolve_generation_provider_environment,
 )
 
 logger = logging.getLogger(__name__)
 _SUPPRESS = argparse.SUPPRESS
+
+_GENERATION_CLI_SHORTCUTS = {
+    "seed-source.path": "input-dir",
+    "seed-source.file-pattern": "file-pattern",
+    "seed-source.recursive": "recursive",
+    "seed-source.min-text-length": "min-text-length",
+    "seed-source.sentences-per-chunk": "sentences-per-chunk",
+    "seed-source.num-sections": "num-sections",
+    "seed-source.num-files": "num-files",
+    "seed-source.multi-doc": "multi-doc",
+    "seed-source.bundle-size": "bundle-size",
+    "seed-source.bundle-strategy": "bundle-strategy",
+    "seed-source.max-docs-per-bundle": "max-docs-per-bundle",
+    "seed-source.multi-doc-manifest": "multi-doc-manifest",
+    "pipeline.max-artifacts-per-type": "max-artifacts-per-type",
+    "pipeline.num-pairs": "num-pairs",
+    "pipeline.min-hops": "min-hops",
+    "pipeline.max-hops": "max-hops",
+    "pipeline.min-complexity": "min-complexity",
+    "pipeline.similarity-threshold": "similarity-threshold",
+    "pipeline.max-parallel-requests-for-gen": "max-parallel-requests-for-gen",
+    "pipeline.artifact-extraction-model": "artifact-extraction-model",
+    "pipeline.artifact-extraction-provider": "artifact-extraction-provider",
+    "pipeline.qa-generation-model": "qa-generation-model",
+    "pipeline.qa-generation-provider": "qa-generation-provider",
+    "pipeline.quality-judge-model": "quality-judge-model",
+    "pipeline.quality-judge-provider": "quality-judge-provider",
+    "pipeline.embed-model": "embed-model",
+    "pipeline.embed-provider": "embed-provider",
+    "custom-provider.endpoint": "custom-provider-endpoint",
+    "custom-provider.name": "custom-provider-name",
+    "custom-provider.provider-type": "custom-provider-type",
+    "custom-provider.api-key": "custom-provider-api-key",
+    "resume": "r",
+}
 
 
 def _parse_count_entry(value: str) -> tuple[str, int]:
@@ -51,16 +90,8 @@ def _parse_count_entry(value: str) -> tuple[str, int]:
 
 
 def _add_config_arguments(parser: argparse.ArgumentParser) -> None:
-    """Add file loading and final-override flags shared by both commands."""
+    """Add run-config controls shared by both commands."""
     parser.add_argument("--config", type=Path, help="User YAML/JSON config layered over the packaged default")
-    parser.add_argument(
-        "--set",
-        dest="set_overrides",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
-        help="Final dotted config override; repeat as needed",
-    )
     parser.add_argument(
         "--print-resolved-config",
         action="store_true",
@@ -75,36 +106,28 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Generate synthetic QA pairs from a directory of text files",
     )
     _add_config_arguments(parser)
+    parser.add_argument("--preview", action="store_true", help="Preview without full generation")
 
-    parser.add_argument("--input-dir", type=Path, default=_SUPPRESS, help="Directory containing text files")
-    parser.add_argument("--output-dir", type=Path, default=_SUPPRESS, help="Directory for generated JSONL")
-    parser.add_argument("--file-pattern", default=_SUPPRESS, help="Filename glob applied to basenames")
-    parser.add_argument(
-        "--recursive",
-        action=argparse.BooleanOptionalAction,
-        default=_SUPPRESS,
-        help="Enable or disable recursive search",
+    cli_settings_source = CliSettingsSource(
+        GenerationRunConfig,
+        root_parser=parser,
+        cli_kebab_case=True,
+        cli_implicit_flags=True,
+        cli_shortcuts=_GENERATION_CLI_SHORTCUTS,
     )
+
+    # These established forms accept multiple values after one flag. Pydantic's
+    # canonical nested flags remain available for JSON/list input.
     parser.add_argument(
         "--file-extensions",
+        dest="legacy_file_extensions",
         nargs="+",
         default=_SUPPRESS,
         help="Allowed extensions; use an empty string to match extensionless files",
     )
-    parser.add_argument("--min-text-length", type=int, default=_SUPPRESS)
-    parser.add_argument("--sentences-per-chunk", type=int, default=_SUPPRESS)
-    parser.add_argument("--num-sections", type=int, default=_SUPPRESS)
-    parser.add_argument("--num-files", type=int, default=_SUPPRESS)
-    parser.add_argument(
-        "--num-records",
-        type=int,
-        default=_SUPPRESS,
-        help="Maximum seed records to process; defaults to all discovered records",
-    )
-    parser.add_argument("--max-artifacts-per-type", type=int, default=_SUPPRESS)
-    parser.add_argument("--num-pairs", type=int, default=_SUPPRESS)
     parser.add_argument(
         "--query-counts",
+        dest="legacy_query_counts",
         nargs="+",
         type=_parse_count_entry,
         default=_SUPPRESS,
@@ -113,178 +136,68 @@ def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument(
         "--reasoning-counts",
+        dest="legacy_reasoning_counts",
         nargs="+",
         type=_parse_count_entry,
         default=_SUPPRESS,
         metavar="NAME=COUNT",
         help="Exact reasoning-type counts; values must sum to --num-pairs",
     )
-    parser.add_argument("--min-hops", type=int, default=_SUPPRESS)
-    parser.add_argument("--max-hops", type=int, default=_SUPPRESS)
-    parser.add_argument("--min-complexity", type=int, default=_SUPPRESS)
-    parser.add_argument("--similarity-threshold", type=float, default=_SUPPRESS)
-    parser.add_argument("--preview", action="store_true", help="Preview without full generation")
-    parser.add_argument("--artifact-path", type=Path, default=_SUPPRESS)
-    parser.add_argument("--dataset-name", default=_SUPPRESS)
-    parser.add_argument("--buffer-size", type=int, default=_SUPPRESS)
-    parser.add_argument(
-        "--resume",
-        "-r",
-        choices=[mode.value for mode in ResumeMode],
-        default=_SUPPRESS,
-    )
-
-    group = parser.add_argument_group("multi-document bundling")
-    group.add_argument("--multi-doc", action=argparse.BooleanOptionalAction, default=_SUPPRESS)
-    group.add_argument("--bundle-size", type=int, default=_SUPPRESS)
-    group.add_argument(
-        "--bundle-strategy",
-        choices=["sequential", "doc_balanced", "interleaved"],
-        default=_SUPPRESS,
-    )
-    group.add_argument("--max-docs-per-bundle", type=int, default=_SUPPRESS)
-    group.add_argument("--multi-doc-manifest", type=Path, default=_SUPPRESS)
-
-    group = parser.add_argument_group("logging")
-    group.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default=_SUPPRESS)
-
-    group = parser.add_argument_group("model configuration")
-    group.add_argument("--artifact-extraction-model", default=_SUPPRESS)
-    group.add_argument("--artifact-extraction-provider", default=_SUPPRESS)
-    group.add_argument("--qa-generation-model", default=_SUPPRESS)
-    group.add_argument("--qa-generation-provider", default=_SUPPRESS)
-    group.add_argument("--quality-judge-model", default=_SUPPRESS)
-    group.add_argument("--quality-judge-provider", default=_SUPPRESS)
-    group.add_argument("--embed-model", default=_SUPPRESS)
-    group.add_argument("--embed-provider", default=_SUPPRESS)
-    group.add_argument("--max-parallel-requests-for-gen", type=int, default=_SUPPRESS)
-
-    group = parser.add_argument_group("custom provider")
-    group.add_argument("--custom-provider-endpoint", default=_SUPPRESS)
-    group.add_argument("--custom-provider-name", default=_SUPPRESS)
-    group.add_argument("--custom-provider-type", default=_SUPPRESS)
-    group.add_argument("--custom-provider-api-key", default=_SUPPRESS)
-    group.add_argument("--model-providers-file", type=Path, default=_SUPPRESS)
-
-    parser.set_defaults(func=_run_generate)
+    parser.set_defaults(func=_run_generate, cli_settings_source=cli_settings_source)
 
 
-def _assign_if_present(
-    args: argparse.Namespace,
-    target: dict[str, Any],
-    argument: str,
-    *,
-    config_key: str | None = None,
-    transform: Any = None,
-) -> None:
-    """Copy an explicitly supplied CLI argument into one override mapping."""
-    if not hasattr(args, argument):
-        return
-    value = getattr(args, argument)
-    if transform is not None:
-        value = transform(value)
-    target[config_key or argument] = value
-
-
-def _generation_cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
-    """Translate only explicitly supplied legacy generation flags."""
+def _generation_legacy_overrides(args: argparse.Namespace) -> dict[str, Any]:
+    """Translate only legacy multi-value generation arguments."""
     overrides: dict[str, Any] = {}
     seed_source: dict[str, Any] = {}
     pipeline: dict[str, Any] = {}
-
-    _assign_if_present(args, seed_source, "input_dir", config_key="path", transform=str)
-    for argument in (
-        "file_pattern",
-        "recursive",
-        "file_extensions",
-        "min_text_length",
-        "sentences_per_chunk",
-        "num_sections",
-        "num_files",
-        "multi_doc",
-        "bundle_size",
-        "bundle_strategy",
-        "max_docs_per_bundle",
-    ):
-        _assign_if_present(args, seed_source, argument)
-    _assign_if_present(args, seed_source, "multi_doc_manifest", transform=str)
+    if hasattr(args, "legacy_file_extensions"):
+        seed_source["file_extensions"] = args.legacy_file_extensions
+    if hasattr(args, "legacy_query_counts"):
+        pipeline["query_counts"] = dict(args.legacy_query_counts)
+    if hasattr(args, "legacy_reasoning_counts"):
+        pipeline["reasoning_counts"] = dict(args.legacy_reasoning_counts)
     if seed_source:
         overrides["seed_source"] = seed_source
-
-    for argument in (
-        "output_dir",
-        "artifact_path",
-        "dataset_name",
-        "buffer_size",
-        "resume",
-        "num_records",
-        "log_level",
-    ):
-        _assign_if_present(args, overrides, argument)
-
-    for argument in (
-        "max_artifacts_per_type",
-        "num_pairs",
-        "min_hops",
-        "max_hops",
-        "min_complexity",
-        "similarity_threshold",
-        "max_parallel_requests_for_gen",
-        "artifact_extraction_model",
-        "artifact_extraction_provider",
-        "qa_generation_model",
-        "qa_generation_provider",
-        "quality_judge_model",
-        "quality_judge_provider",
-        "embed_model",
-        "embed_provider",
-    ):
-        _assign_if_present(args, pipeline, argument)
-    _assign_if_present(args, pipeline, "query_counts", transform=dict)
-    _assign_if_present(args, pipeline, "reasoning_counts", transform=dict)
     if pipeline:
         overrides["pipeline"] = pipeline
     return overrides
 
 
 def _load_generation_from_args(args: argparse.Namespace) -> tuple[LoadedRunConfig, list[dd.ModelProvider]]:
-    """Resolve generation files, ordinary flags, dotted overrides, and providers."""
+    """Resolve generation files, typed CLI values, and provider shorthand."""
     loaded = load_generation_config(
         args.config,
-        cli_overrides=_generation_cli_overrides(args),
-        set_overrides=args.set_overrides,
+        cli_overrides=_generation_legacy_overrides(args),
+        cli_args=args,
+        cli_settings_source=args.cli_settings_source,
     )
-    provider_file = getattr(args, "model_providers_file", None)
-    provider_flags_present = any(
-        hasattr(args, argument)
-        for argument in (
-            "custom_provider_endpoint",
-            "custom_provider_name",
-            "custom_provider_type",
-            "custom_provider_api_key",
-            "model_providers_file",
-        )
-    )
+    config = loaded.config
+    custom_provider = config.custom_provider
     model_providers, custom_providers = build_model_providers(
-        model_providers=loaded.config.model_providers,
-        custom_provider_endpoint=getattr(args, "custom_provider_endpoint", None),
-        custom_provider_name=getattr(args, "custom_provider_name", "custom"),
-        custom_provider_type=getattr(args, "custom_provider_type", "openai"),
-        custom_provider_api_key=getattr(args, "custom_provider_api_key", None),
-        model_providers_file=provider_file,
+        model_providers=config.model_providers,
+        custom_provider_endpoint=custom_provider.endpoint if custom_provider is not None else None,
+        custom_provider_name=custom_provider.name if custom_provider is not None else "custom",
+        custom_provider_type=custom_provider.provider_type if custom_provider is not None else "openai",
+        custom_provider_api_key=custom_provider.api_key if custom_provider is not None else None,
+        custom_provider_fields=set(custom_provider.model_fields_set) if custom_provider is not None else None,
+        model_providers_file=config.model_providers_file,
     )
+
     sources = list(loaded.sources)
-    override_paths = list(loaded.override_paths)
-    if provider_file is not None:
-        sources.append(config_source_from_path(provider_file))
-    if provider_flags_present:
-        override_paths.append("model_providers")
+    if config.model_providers_file is not None:
+        sources.append(config_source_from_path(config.model_providers_file))
+
+    config, provider_environment_variables = resolve_generation_provider_environment(
+        config.model_copy(update={"model_providers": model_providers})
+    )
+    environment_variables = tuple(dict.fromkeys((*loaded.environment_variables, *provider_environment_variables)))
     return (
         LoadedRunConfig(
-            config=loaded.config.model_copy(update={"model_providers": model_providers}),
+            config=config,
             sources=tuple(sources),
-            override_paths=tuple(dict.fromkeys(override_paths)),
-            environment_variables=loaded.environment_variables,
+            override_paths=loaded.override_paths,
+            environment_variables=environment_variables,
         ),
         custom_providers,
     )
@@ -320,17 +233,10 @@ def _print_model_config(config: Any, custom_providers: list[dd.ModelProvider]) -
 
 def _run_generate(args: argparse.Namespace) -> None:
     """Execute generation from one fully resolved typed config."""
-    explicit_seed_path = (
-        args.config is not None
-        or hasattr(args, "input_dir")
-        or any(expression.startswith("seed_source.path=") for expression in args.set_overrides)
-    )
-    if not args.print_resolved_config and not explicit_seed_path:
-        print("Error: provide --config, --input-dir, or --set seed_source.path=... for generation", file=sys.stderr)
-        raise SystemExit(2)
-
     try:
         loaded, custom_providers = _load_generation_from_args(args)
+        if not args.print_resolved_config and args.config is None and "seed_source.path" not in loaded.override_paths:
+            raise ValueError("provide --config, --input-dir, or --seed-source.path for generation")
         dataset_name = _resolve_dataset_name(
             loaded.config.seed_source,
             loaded.config.artifact_path,
@@ -397,66 +303,53 @@ def _add_convert_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "convert",
         help="Convert SDG output to retriever training/evaluation formats",
+        conflict_handler="resolve",
     )
     _add_config_arguments(parser)
+    cli_settings_source = CliSettingsSource(
+        ConversionRunConfig,
+        root_parser=parser,
+        cli_kebab_case=True,
+        cli_implicit_flags=True,
+    )
     parser.add_argument(
-        "input_path",
+        "legacy_input_path",
         nargs="?",
         default=_SUPPRESS,
+        metavar="input_path",
         help="Generated JSONL/JSON/parquet file or an unambiguous directory",
     )
-    parser.add_argument("--corpus-id", default=_SUPPRESS)
-    parser.add_argument("--output-dir", type=Path, default=_SUPPRESS)
-    parser.add_argument("--eval-only", action=argparse.BooleanOptionalAction, default=_SUPPRESS)
-    parser.add_argument("--train-ratio", type=float, default=_SUPPRESS)
-    parser.add_argument("--val-ratio", type=float, default=_SUPPRESS)
-    parser.add_argument("--seed", type=int, default=_SUPPRESS)
-    parser.add_argument("--quality-threshold", type=float, default=_SUPPRESS)
-    parser.add_argument("--max-pos-docs", type=int, default=_SUPPRESS)
-    parser.add_argument("--use-group-id-in-eval", action=argparse.BooleanOptionalAction, default=_SUPPRESS)
-    parser.add_argument("--split-strategy", choices=["random", "dedupped", "cluster"], default=_SUPPRESS)
-    parser.add_argument("--groups-json", nargs="+", default=_SUPPRESS)
-    parser.set_defaults(func=_run_convert)
+    parser.add_argument(
+        "--groups-json",
+        dest="legacy_groups_json",
+        nargs="+",
+        default=_SUPPRESS,
+        help="Dedup group JSON paths",
+    )
+    parser.set_defaults(func=_run_convert, cli_settings_source=cli_settings_source)
 
 
-def _conversion_cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
-    """Translate only explicitly supplied conversion CLI values."""
+def _conversion_legacy_overrides(args: argparse.Namespace) -> dict[str, Any]:
+    """Translate positional input and multi-value group paths."""
     overrides: dict[str, Any] = {}
-    for argument in (
-        "input_path",
-        "corpus_id",
-        "output_dir",
-        "eval_only",
-        "train_ratio",
-        "val_ratio",
-        "seed",
-        "quality_threshold",
-        "max_pos_docs",
-        "use_group_id_in_eval",
-        "split_strategy",
-        "groups_json",
-    ):
-        _assign_if_present(args, overrides, argument)
+    if hasattr(args, "legacy_input_path"):
+        overrides["input_path"] = args.legacy_input_path
+    if hasattr(args, "legacy_groups_json"):
+        overrides["groups_json"] = args.legacy_groups_json
     return overrides
 
 
 def _run_convert(args: argparse.Namespace) -> None:
     """Execute conversion from one fully resolved typed config."""
-    explicit_input_path = (
-        args.config is not None
-        or hasattr(args, "input_path")
-        or any(expression.startswith("input_path=") for expression in args.set_overrides)
-    )
-    if not args.print_resolved_config and not explicit_input_path:
-        print("Error: provide --config, input_path, or --set input_path=... for conversion", file=sys.stderr)
-        raise SystemExit(2)
-
     try:
         loaded = load_conversion_config(
             args.config,
-            cli_overrides=_conversion_cli_overrides(args),
-            set_overrides=args.set_overrides,
+            cli_overrides=_conversion_legacy_overrides(args),
+            cli_args=args,
+            cli_settings_source=args.cli_settings_source,
         )
+        if not args.print_resolved_config and args.config is None and "input_path" not in loaded.override_paths:
+            raise ValueError("provide --config, input_path, or --input-path for conversion")
     except (OSError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc

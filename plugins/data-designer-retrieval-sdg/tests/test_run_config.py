@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import data_designer.config as dd
 import pytest
 import yaml
 from pydantic import ValidationError
+from pydantic_settings import CliSettingsSource
 
 from data_designer_retrieval_sdg import (
     ConversionRunConfig as PublicConversionRunConfig,
@@ -181,7 +183,7 @@ def test_packaged_defaults_are_complete_and_validate() -> None:
     assert conversion.sources[0].location.endswith("configs/conversion/default.yaml")
 
 
-def test_generation_config_precedence_is_default_file_cli_then_set(tmp_path: Path) -> None:
+def test_generation_config_precedence_is_default_file_then_cli(tmp_path: Path) -> None:
     (tmp_path / "docs").mkdir()
     config_path = tmp_path / "generation.yaml"
     config_path.write_text(
@@ -194,10 +196,18 @@ def test_generation_config_precedence_is_default_file_cli_then_set(tmp_path: Pat
         encoding="utf-8",
     )
 
+    parser = argparse.ArgumentParser()
+    cli_settings_source = CliSettingsSource(
+        GenerationRunConfig,
+        root_parser=parser,
+        cli_kebab_case=True,
+    )
+    cli_args = parser.parse_args(["--pipeline.min-complexity", "3", "--buffer-size", "32"])
     loaded = load_generation_config(
         config_path,
-        cli_overrides={"pipeline": {"min_complexity": 2}, "buffer_size": 32},
-        set_overrides=["pipeline.min_complexity=3", "seed_source.multi_doc=true"],
+        cli_overrides={"pipeline": {"min_complexity": 2}, "seed_source": {"multi_doc": True}},
+        cli_args=cli_args,
+        cli_settings_source=cli_settings_source,
     )
 
     assert loaded.config.pipeline.min_complexity == 3
@@ -208,21 +218,18 @@ def test_generation_config_precedence_is_default_file_cli_then_set(tmp_path: Pat
         "package:data_designer_retrieval_sdg/configs/generation/default.yaml",
         str(config_path.resolve()),
     ]
-    assert loaded.override_paths == ("pipeline.min_complexity", "buffer_size", "seed_source.multi_doc")
+    assert loaded.override_paths == ("pipeline.min_complexity", "seed_source.multi_doc", "buffer_size")
 
 
-def test_file_loader_rejects_unknown_fields_and_invalid_set_paths(tmp_path: Path) -> None:
+def test_file_loader_rejects_unknown_fields_in_files_and_programmatic_overrides(tmp_path: Path) -> None:
     config_path = tmp_path / "invalid.yaml"
     config_path.write_text("pipeline:\n  num_pair: 10\n", encoding="utf-8")
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
         load_generation_config(config_path)
 
-    with pytest.raises(ValueError, match="expected key=value"):
-        load_generation_config(set_overrides=["pipeline.num_pairs"])
-
     with pytest.raises(ValidationError, match="extra_forbidden"):
-        load_generation_config(set_overrides=["pipeline.unknown=1"])
+        load_generation_config(cli_overrides={"pipeline": {"unknown": 1}})
 
 
 def test_explicit_provider_environment_references_are_recorded(

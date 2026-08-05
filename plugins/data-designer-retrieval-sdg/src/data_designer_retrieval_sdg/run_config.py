@@ -9,6 +9,7 @@ import copy
 import hashlib
 import os
 import re
+from argparse import Namespace
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -17,8 +18,8 @@ from typing import Annotated, Any, Generic, Literal, Mapping, TypeVar
 import data_designer.config as dd
 import yaml
 from data_designer.config.base import ConfigBase
-from data_designer.engine.storage.artifact_storage import ResumeMode
 from pydantic import ConfigDict, Field, model_validator
+from pydantic_settings import CliApp, CliSettingsSource, CliSuppress
 
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
@@ -180,6 +181,17 @@ class GenerationPipelineConfig(ConfigBase):
         return self.model_dump(mode="python")
 
 
+class InlineModelProviderConfig(ConfigBase):
+    """Legacy single-provider shorthand accepted by generation config and CLI."""
+
+    model_config = ConfigDict(frozen=True)
+
+    endpoint: str = Field(min_length=1)
+    name: str = Field(default="custom", min_length=1)
+    provider_type: str = Field(default="openai", min_length=1)
+    api_key: str | None = None
+
+
 class GenerationRunConfig(RunConfigBase):
     """Complete typed input for one resumable retrieval generation run."""
 
@@ -189,8 +201,10 @@ class GenerationRunConfig(RunConfigBase):
     artifact_path: Path = DEFAULT_ARTIFACT_PATH
     dataset_name: str | None = None
     buffer_size: int = Field(default=DEFAULT_BUFFER_SIZE, ge=1)
-    resume: ResumeMode = Field(default=ResumeMode.NEVER, validate_default=True)
+    resume: Literal["never", "always", "if_possible"] = "never"
     model_providers: list[dd.ModelProvider] | None = None
+    custom_provider: InlineModelProviderConfig | None = Field(default=None, exclude=True)
+    model_providers_file: Path | None = Field(default=None, exclude=True)
     pipeline: GenerationPipelineConfig = Field(default_factory=GenerationPipelineConfig)
     num_records: int | None = Field(
         default=None,
@@ -215,7 +229,7 @@ class ConversionRunConfig(RunConfigBase):
     max_pos_docs: int = Field(default=5, ge=1)
     use_group_id_in_eval: bool = False
     split_strategy: Literal["random", "dedupped", "cluster"] = "random"
-    groups_json: list[Path] | None = None
+    groups_json: CliSuppress[list[Path] | None] = None
 
     @model_validator(mode="after")
     def validate_split_ratios(self) -> ConversionRunConfig:
@@ -304,62 +318,55 @@ def _leaf_paths(value: Mapping[str, Any], prefix: str = "") -> list[str]:
     return paths
 
 
-def _parse_set_override(expression: str) -> tuple[list[str], Any]:
-    """Parse one ``key=value`` override using YAML scalar/list semantics."""
-    if "=" not in expression:
-        raise ValueError(f"Invalid --set override {expression!r}; expected key=value")
-    dotted_path, raw_value = expression.split("=", 1)
-    parts = dotted_path.split(".")
-    if not dotted_path or any(not part for part in parts):
-        raise ValueError(f"Invalid --set path {dotted_path!r}")
-    try:
-        value = "" if raw_value == "" else yaml.safe_load(raw_value)
-    except yaml.YAMLError as exc:
-        raise ValueError(f"Invalid YAML value in --set {expression!r}: {exc}") from exc
-    return parts, value
-
-
-def _set_dotted_value(document: dict[str, Any], parts: list[str], value: Any) -> None:
-    """Set a dotted path, creating intermediate mappings when necessary."""
-    cursor = document
-    for part in parts[:-1]:
-        nested = cursor.get(part)
-        if nested is None:
-            nested = {}
-            cursor[part] = nested
-        if not isinstance(nested, dict):
-            joined = ".".join(parts)
-            raise ValueError(f"Cannot set {joined!r}; {part!r} is not a mapping")
-        cursor = nested
-    cursor[parts[-1]] = value
-
-
-def _resolve_provider_environment(document: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """Resolve explicit provider ``${VAR}`` references without exposing credentials."""
-    resolved = copy.deepcopy(document)
+def _resolve_provider_environment(
+    provider: dd.ModelProvider | InlineModelProviderConfig,
+) -> tuple[dd.ModelProvider | InlineModelProviderConfig, list[str]]:
+    """Resolve explicit ``${VAR}`` references in one typed provider."""
+    updates: dict[str, str] = {}
     environment_variables: list[str] = []
-    providers = resolved.get("model_providers")
-    if not isinstance(providers, list):
-        return resolved, environment_variables
-
     pattern = re.compile(r"^\$\{([A-Z_][A-Z0-9_]*)\}$")
-    for provider in providers:
-        if not isinstance(provider, dict):
+    for key in ("endpoint", "api_key"):
+        value = getattr(provider, key)
+        match = pattern.fullmatch(value) if isinstance(value, str) else None
+        if match is None:
             continue
-        for key in ("endpoint", "api_key"):
-            value = provider.get(key)
-            match = pattern.fullmatch(value) if isinstance(value, str) else None
-            if match is None:
-                continue
-            environment_variable = match.group(1)
-            if environment_variable not in os.environ:
-                raise ValueError(
-                    f"Configuration references unset environment variable {environment_variable!r} "
-                    f"for model_providers.{key}"
-                )
-            provider[key] = environment_variable if key == "api_key" else os.environ[environment_variable]
-            environment_variables.append(environment_variable)
-    return resolved, environment_variables
+        environment_variable = match.group(1)
+        if environment_variable not in os.environ:
+            raise ValueError(
+                f"Configuration references unset environment variable {environment_variable!r} "
+                f"for model_providers.{key}"
+            )
+        updates[key] = environment_variable if key == "api_key" else os.environ[environment_variable]
+        environment_variables.append(environment_variable)
+    return provider.model_copy(update=updates), environment_variables
+
+
+def resolve_generation_provider_environment(
+    config: GenerationRunConfig,
+) -> tuple[GenerationRunConfig, tuple[str, ...]]:
+    """Resolve provider environment references and return their variable names."""
+    providers: list[dd.ModelProvider] | None = None
+    environment_variables: list[str] = []
+    if config.model_providers is not None:
+        providers = []
+        for provider in config.model_providers:
+            resolved_provider, provider_variables = _resolve_provider_environment(provider)
+            providers.append(resolved_provider)
+            environment_variables.extend(provider_variables)
+
+    custom_provider = config.custom_provider
+    if custom_provider is not None:
+        resolved_custom_provider, provider_variables = _resolve_provider_environment(custom_provider)
+        custom_provider = resolved_custom_provider
+        environment_variables.extend(provider_variables)
+
+    resolved = config.model_copy(
+        update={
+            "model_providers": providers,
+            "custom_provider": custom_provider,
+        }
+    )
+    return resolved, tuple(dict.fromkeys(environment_variables))
 
 
 def _load_run_config(
@@ -368,9 +375,10 @@ def _load_run_config(
     *,
     config_path: str | Path | None,
     cli_overrides: Mapping[str, Any] | None,
-    set_overrides: list[str] | tuple[str, ...],
+    cli_args: Namespace | dict[str, Any] | None,
+    cli_settings_source: CliSettingsSource[Any] | None,
 ) -> LoadedRunConfig[RunConfigT]:
-    """Resolve defaults, a user file, CLI flags, and dotted overrides."""
+    """Resolve packaged defaults, a user file, and typed CLI values."""
     resolved, default_source = _load_packaged_mapping(default_path)
     sources = [default_source]
     override_paths: list[str] = []
@@ -384,17 +392,30 @@ def _load_run_config(
         resolved = _deep_merge(resolved, cli_overrides)
         override_paths.extend(_leaf_paths(cli_overrides))
 
-    for expression in set_overrides:
-        parts, value = _parse_set_override(expression)
-        _set_dotted_value(resolved, parts, value)
-        override_paths.append(".".join(parts))
+    if cli_settings_source is None:
+        if cli_args is not None:
+            raise ValueError("cli_args requires cli_settings_source")
+        config = model.model_validate(resolved)
+    else:
+        if cli_args is None:
+            raise ValueError("cli_settings_source requires cli_args")
+        cli_values = cli_settings_source(parsed_args=cli_args)()
+        override_paths.extend(_leaf_paths(cli_values))
+        config = CliApp.run(
+            model,
+            cli_args=cli_args,
+            cli_settings_source=cli_settings_source,
+            **resolved,
+        )
 
-    resolved, environment_variables = _resolve_provider_environment(resolved)
+    environment_variables: tuple[str, ...] = ()
+    if isinstance(config, GenerationRunConfig):
+        config, environment_variables = resolve_generation_provider_environment(config)
     return LoadedRunConfig(
-        config=model.model_validate(resolved),
+        config=config,
         sources=tuple(sources),
         override_paths=tuple(dict.fromkeys(override_paths)),
-        environment_variables=tuple(dict.fromkeys(environment_variables)),
+        environment_variables=environment_variables,
     )
 
 
@@ -402,7 +423,8 @@ def load_generation_config(
     config_path: str | Path | None = None,
     *,
     cli_overrides: Mapping[str, Any] | None = None,
-    set_overrides: list[str] | tuple[str, ...] = (),
+    cli_args: Namespace | dict[str, Any] | None = None,
+    cli_settings_source: CliSettingsSource[Any] | None = None,
 ) -> LoadedRunConfig[GenerationRunConfig]:
     """Load and validate one generation config using documented precedence."""
     return _load_run_config(
@@ -410,7 +432,8 @@ def load_generation_config(
         DEFAULT_GENERATION_CONFIG,
         config_path=config_path,
         cli_overrides=cli_overrides,
-        set_overrides=set_overrides,
+        cli_args=cli_args,
+        cli_settings_source=cli_settings_source,
     )
 
 
@@ -418,7 +441,8 @@ def load_conversion_config(
     config_path: str | Path | None = None,
     *,
     cli_overrides: Mapping[str, Any] | None = None,
-    set_overrides: list[str] | tuple[str, ...] = (),
+    cli_args: Namespace | dict[str, Any] | None = None,
+    cli_settings_source: CliSettingsSource[Any] | None = None,
 ) -> LoadedRunConfig[ConversionRunConfig]:
     """Load and validate one conversion config using documented precedence."""
     return _load_run_config(
@@ -426,7 +450,8 @@ def load_conversion_config(
         DEFAULT_CONVERSION_CONFIG,
         config_path=config_path,
         cli_overrides=cli_overrides,
-        set_overrides=set_overrides,
+        cli_args=cli_args,
+        cli_settings_source=cli_settings_source,
     )
 
 

@@ -7,6 +7,7 @@ import inspect
 import json
 from pathlib import Path
 
+import data_designer.config as dd
 import pytest
 
 from data_designer_retrieval_sdg.pipeline import (
@@ -76,7 +77,7 @@ def test_provider_builder_combines_distinct_aliases(tmp_path: Path) -> None:
     )
 
 
-def test_provider_builder_rejects_conflicting_aliases(tmp_path: Path) -> None:
+def test_inline_provider_overrides_matching_provider_file_alias(tmp_path: Path) -> None:
     providers_file = tmp_path / "providers.json"
     providers_file.write_text(
         json.dumps(
@@ -92,10 +93,49 @@ def test_provider_builder_rejects_conflicting_aliases(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="Conflicting model provider alias 'nvidia'"):
-        build_model_providers(
-            custom_provider_endpoint="https://second.example.invalid/v1",
-            custom_provider_name="nvidia",
-            custom_provider_api_key="NVIDIA_API_KEY",
-            model_providers_file=providers_file,
-        )
+    _, custom = build_model_providers(
+        custom_provider_endpoint="https://second.example.invalid/v1",
+        custom_provider_name="nvidia",
+        custom_provider_api_key="NVIDIA_API_KEY",
+        model_providers_file=providers_file,
+    )
+
+    provider = next(item for item in custom if item.name == "nvidia")
+    assert provider.endpoint == "https://second.example.invalid/v1"
+
+
+def test_partial_inline_provider_override_preserves_unspecified_fields() -> None:
+    configured = dd.ModelProvider(
+        name="custom",
+        endpoint="https://old.example.invalid/v1",
+        provider_type="openai",
+        api_key="CUSTOM_API_KEY",
+    )
+
+    _, custom = build_model_providers(
+        model_providers=[configured],
+        custom_provider_endpoint="https://new.example.invalid/v1",
+        custom_provider_name="custom",
+        custom_provider_fields={"endpoint", "name"},
+    )
+
+    provider = next(item for item in custom if item.name == "custom")
+    assert provider.endpoint == "https://new.example.invalid/v1"
+    assert provider.provider_type == "openai"
+    assert provider.api_key == "CUSTOM_API_KEY"
+
+
+def test_provider_builder_rejects_conflicting_aliases_within_one_file(tmp_path: Path) -> None:
+    providers_file = tmp_path / "providers.json"
+    providers_file.write_text(
+        json.dumps(
+            [
+                {"name": "local", "endpoint": "https://first.example.invalid/v1"},
+                {"name": "local", "endpoint": "https://second.example.invalid/v1"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Conflicting model provider alias 'local' within"):
+        build_model_providers(model_providers_file=providers_file)

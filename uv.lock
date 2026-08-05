@@ -485,6 +485,7 @@ dependencies = [
     { name = "data-designer" },
     { name = "nltk" },
     { name = "pyarrow" },
+    { name = "pydantic-settings" },
     { name = "pyyaml" },
 ]
 
@@ -493,6 +494,7 @@ requires-dist = [
     { name = "data-designer", specifier = ">=0.6.1" },
     { name = "nltk", specifier = ">=3.9.2,<3.10" },
     { name = "pyarrow", specifier = ">=14.0" },
+    { name = "pydantic-settings", specifier = ">=2.14,<3" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
