@@ -23,8 +23,10 @@ from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
 
 def _generation_config(tmp_path: Path) -> GenerationRunConfig:
+    docs_path = tmp_path / "docs"
+    docs_path.mkdir()
     return GenerationRunConfig(
-        seed_source=DocumentChunkerSeedSource(path=str(tmp_path / "docs"), file_extensions=[".txt"]),
+        seed_source=DocumentChunkerSeedSource(path=str(docs_path), file_extensions=[".txt"]),
         output_dir=tmp_path / "generated",
         artifact_path=tmp_path / "artifacts",
         dataset_name="retrieval",

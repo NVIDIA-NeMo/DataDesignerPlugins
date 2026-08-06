@@ -155,8 +155,9 @@ model_providers:
     api_key: ${NVIDIA_API_KEY}
 ```
 
-The environment variable names are recorded as provenance, while credential
-values and authorization headers are redacted.
+The environment variable names are recorded as provenance. All custom provider
+header values are redacted. Custom provider body values are also redacted except
+for the string-valued plugin settings `input_type` and `truncate`.
 
 Provider definitions follow the same layering rule. A provider from the user
 config can be updated by the legacy `--custom-provider-*` shorthand when the
@@ -238,10 +239,7 @@ from data_designer_retrieval_sdg import (
     run_generation,
 )
 
-loaded = load_generation_config(
-    Path("./generation.yaml"),
-    set_overrides=["pipeline.min_complexity=3"],
-)
+loaded = load_generation_config(Path("./generation.yaml"))
 generation = run_generation(
     loaded.config,
     config_sources=loaded.sources,
@@ -263,8 +261,8 @@ paths. Conversion returns the generated train, validation, corpus, evaluation,
 and run metadata paths plus example counts.
 `GenerationRunConfig`, `GenerationPipelineConfig`, and `ConversionRunConfig`
 reject unknown fields so recipe adapters cannot silently pass misspelled
-settings. Their redacted serialization replaces provider credentials and
-authorization headers.
+settings. Their redacted serialization replaces provider credentials, every
+custom header value, and non-allowlisted custom body values.
 
 ## Plugin configuration examples
 

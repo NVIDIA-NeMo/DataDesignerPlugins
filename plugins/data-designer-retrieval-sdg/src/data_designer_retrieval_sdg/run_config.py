@@ -46,6 +46,11 @@ DEFAULT_REASONING_COUNTS: dict[str, int] = {
 }
 DEFAULT_GENERATION_CONFIG = "configs/generation/default.yaml"
 DEFAULT_CONVERSION_CONFIG = "configs/conversion/default.yaml"
+_REDACTED_VALUE = "<redacted>"
+_SAFE_EXTRA_BODY_FIELD_TYPES: dict[str, type[Any]] = {
+    "input_type": str,
+    "truncate": str,
+}
 
 NonNegativeInt = Annotated[int, Field(ge=0)]
 _QUERY_COUNT_KEYS = frozenset(DEFAULT_QUERY_COUNTS)
@@ -97,15 +102,48 @@ def _is_sensitive_key(key: str) -> bool:
     return normalized in exact_sensitive_keys or normalized.endswith(sensitive_suffixes)
 
 
+def _redact_header_values(value: Any) -> Any:
+    """Redact every custom provider header value while preserving its name."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return _REDACTED_VALUE
+    return {str(header): _REDACTED_VALUE for header in value}
+
+
+def _redact_extra_body_values(value: Any) -> Any:
+    """Retain only known-safe custom provider body fields and value types."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return _REDACTED_VALUE
+
+    redacted: dict[str, Any] = {}
+    for key, nested_value in value.items():
+        serialized_key = str(key)
+        expected_type = _SAFE_EXTRA_BODY_FIELD_TYPES.get(serialized_key)
+        redacted[serialized_key] = (
+            _redact_sensitive_values(nested_value)
+            if expected_type is not None and isinstance(nested_value, expected_type)
+            else _REDACTED_VALUE
+        )
+    return redacted
+
+
 def _redact_sensitive_values(value: Any) -> Any:
     """Return a recursively redacted copy of serialized configuration data."""
     if isinstance(value, dict):
         redacted: dict[str, Any] = {}
         for key, nested_value in value.items():
-            if _is_sensitive_key(str(key)) and nested_value is not None:
-                redacted[str(key)] = "<redacted>"
+            serialized_key = str(key)
+            if serialized_key == "extra_headers":
+                redacted[serialized_key] = _redact_header_values(nested_value)
+            elif serialized_key == "extra_body":
+                redacted[serialized_key] = _redact_extra_body_values(nested_value)
+            elif _is_sensitive_key(serialized_key) and nested_value is not None:
+                redacted[serialized_key] = _REDACTED_VALUE
             else:
-                redacted[str(key)] = _redact_sensitive_values(nested_value)
+                redacted[serialized_key] = _redact_sensitive_values(nested_value)
         return redacted
     if isinstance(value, list):
         return [_redact_sensitive_values(item) for item in value]

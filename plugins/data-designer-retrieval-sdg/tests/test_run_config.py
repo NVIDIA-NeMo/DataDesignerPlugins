@@ -138,9 +138,13 @@ def test_generation_run_config_serialization_redacts_credentials(tmp_path: Path)
                 api_key="provider-secret",
                 extra_headers={
                     "Authorization": "Bearer header-secret",
-                    "X-Request-Id": "visible-request-id",
+                    "X-Request-Id": "request-secret",
+                    "X-Auth-Token": "custom-header-secret",
+                    "Cookie": "session=cookie-secret",
                 },
                 extra_body={
+                    "input_type": "query",
+                    "truncate": "NONE",
                     "access_token": "body-secret",
                     "api_key_env": "CUSTOM_API_KEY",
                     "max_tokens": 1024,
@@ -155,13 +159,40 @@ def test_generation_run_config_serialization_redacts_credentials(tmp_path: Path)
 
     assert provider["api_key"] == "<redacted>"
     assert provider["extra_headers"]["Authorization"] == "<redacted>"
-    assert provider["extra_headers"]["X-Request-Id"] == "visible-request-id"
+    assert provider["extra_headers"]["X-Request-Id"] == "<redacted>"
+    assert provider["extra_headers"]["X-Auth-Token"] == "<redacted>"
+    assert provider["extra_headers"]["Cookie"] == "<redacted>"
+    assert provider["extra_body"]["input_type"] == "query"
+    assert provider["extra_body"]["truncate"] == "NONE"
     assert provider["extra_body"]["access_token"] == "<redacted>"
-    assert provider["extra_body"]["api_key_env"] == "CUSTOM_API_KEY"
-    assert provider["extra_body"]["max_tokens"] == 1024
+    assert provider["extra_body"]["api_key_env"] == "<redacted>"
+    assert provider["extra_body"]["max_tokens"] == "<redacted>"
     assert "provider-secret" not in serialized
     assert "header-secret" not in serialized
+    assert "request-secret" not in serialized
+    assert "custom-header-secret" not in serialized
+    assert "cookie-secret" not in serialized
     assert "body-secret" not in serialized
+
+
+def test_extra_body_allowlist_requires_expected_value_types(tmp_path: Path) -> None:
+    config = GenerationRunConfig(
+        seed_source=DocumentChunkerSeedSource(path=str(tmp_path)),
+        output_dir=tmp_path / "output",
+        model_providers=[
+            dd.ModelProvider(
+                name="custom",
+                endpoint="https://example.invalid/v1",
+                provider_type="openai",
+                extra_body={"input_type": {"credential": "nested-secret"}},
+            )
+        ],
+    )
+
+    provider = config.to_redacted_dict()["model_providers"][0]
+
+    assert provider["extra_body"]["input_type"] == "<redacted>"
+    assert "nested-secret" not in json.dumps(provider)
 
 
 def test_packaged_defaults_are_complete_and_validate() -> None:
