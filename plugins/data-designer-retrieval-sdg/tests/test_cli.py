@@ -162,7 +162,7 @@ def test_generate_uses_native_resume_and_exports_jsonl(monkeypatch: pytest.Monke
         "buffer_size",
         "resume",
     )
-    assert RUN_KWARGS[0]["config_sources"][0].location.endswith("configs/generation/default.yaml")
+    assert RUN_KWARGS[0]["config_sources"] == ()
 
 
 def test_generate_respects_num_records_cap(
@@ -535,6 +535,45 @@ def test_commands_reject_removed_set_override(monkeypatch: pytest.MonkeyPatch, c
         cli.main()
 
     assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_defaults"),
+    [
+        (
+            "generate",
+            (
+                "(default: generated)",
+                "(default: ['.txt', '.md', '.text'])",
+                "(default: 50)",
+                "(default: nvidia/nemotron-3-ultra-550b-a55b)",
+            ),
+        ),
+        (
+            "convert",
+            (
+                "(default: generated/retrieval_sdg.jsonl)",
+                "(default: retrieval_sdg)",
+                "(default: 0.8)",
+            ),
+        ),
+    ],
+)
+def test_command_help_reflects_pydantic_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    expected_defaults: tuple[str, ...],
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["data-designer-retrieval-sdg", command, "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    for expected in expected_defaults:
+        assert expected in output
 
 
 @pytest.mark.parametrize("command", ["generate", "convert"])

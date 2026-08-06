@@ -11,7 +11,6 @@ import os
 import re
 from argparse import Namespace
 from dataclasses import dataclass
-from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, Mapping, TypeVar
 
@@ -44,8 +43,6 @@ DEFAULT_REASONING_COUNTS: dict[str, int] = {
     "causal": 1,
     "visual": 1,
 }
-DEFAULT_GENERATION_CONFIG = "configs/generation/default.yaml"
-DEFAULT_CONVERSION_CONFIG = "configs/conversion/default.yaml"
 _REDACTED_VALUE = "<redacted>"
 _SAFE_EXTRA_BODY_FIELD_TYPES: dict[str, type[Any]] = {
     "input_type": str,
@@ -189,10 +186,10 @@ class GenerationPipelineConfig(ConfigBase):
 
     max_artifacts_per_type: int = Field(default=DEFAULT_MAX_ARTIFACTS_PER_TYPE, ge=1)
     num_pairs: int = Field(default=DEFAULT_NUM_PAIRS, ge=1)
-    query_counts: dict[str, NonNegativeInt] = Field(default_factory=lambda: dict(DEFAULT_QUERY_COUNTS))
+    query_counts: dict[str, NonNegativeInt] = Field(default=DEFAULT_QUERY_COUNTS)
     min_hops: int = Field(default=DEFAULT_MIN_HOPS, ge=1)
     max_hops: int = Field(default=DEFAULT_MAX_HOPS, ge=1)
-    reasoning_counts: dict[str, NonNegativeInt] = Field(default_factory=lambda: dict(DEFAULT_REASONING_COUNTS))
+    reasoning_counts: dict[str, NonNegativeInt] = Field(default=DEFAULT_REASONING_COUNTS)
     min_complexity: int = Field(default=DEFAULT_MIN_COMPLEXITY, ge=1, le=5)
     similarity_threshold: float = Field(default=DEFAULT_SIMILARITY_THRESHOLD, ge=0.0, le=1.0)
     max_parallel_requests_for_gen: int | None = Field(default=None, ge=1)
@@ -234,8 +231,12 @@ class GenerationRunConfig(RunConfigBase):
     """Complete typed input for one resumable retrieval generation run."""
 
     schema_version: Literal[1] = 1
-    seed_source: DocumentChunkerSeedSource
-    output_dir: Path
+    seed_source: DocumentChunkerSeedSource = DocumentChunkerSeedSource(
+        path=".",
+        file_extensions=[".txt", ".md", ".text"],
+        min_text_length=50,
+    )
+    output_dir: Path = Path("./generated")
     artifact_path: Path = DEFAULT_ARTIFACT_PATH
     dataset_name: str | None = None
     buffer_size: int = Field(default=DEFAULT_BUFFER_SIZE, ge=1)
@@ -256,8 +257,8 @@ class ConversionRunConfig(RunConfigBase):
     """Complete typed input for one retrieval data conversion run."""
 
     schema_version: Literal[1] = 1
-    input_path: Path
-    corpus_id: str = Field(min_length=1)
+    input_path: Path = Path("./generated/retrieval_sdg.jsonl")
+    corpus_id: str = Field(default="retrieval_sdg", min_length=1)
     output_dir: Path | None = None
     eval_only: bool = False
     train_ratio: float = Field(default=0.8, ge=0.0, le=1.0)
@@ -315,14 +316,6 @@ def _load_mapping(raw: bytes, location: str) -> dict[str, Any]:
     if not isinstance(loaded, dict):
         raise ValueError(f"Configuration {location} must contain a mapping at its root")
     return loaded
-
-
-def _load_packaged_mapping(relative_path: str) -> tuple[dict[str, Any], ConfigSource]:
-    """Load one packaged default and record its content hash."""
-    resource = files("data_designer_retrieval_sdg").joinpath(relative_path)
-    raw = resource.read_bytes()
-    location = f"package:data_designer_retrieval_sdg/{relative_path}"
-    return _load_mapping(raw, location), ConfigSource(location=location, sha256=_sha256(raw))
 
 
 def _load_user_mapping(path: Path) -> tuple[dict[str, Any], ConfigSource]:
@@ -409,16 +402,15 @@ def resolve_generation_provider_environment(
 
 def _load_run_config(
     model: type[RunConfigT],
-    default_path: str,
     *,
     config_path: str | Path | None,
     cli_overrides: Mapping[str, Any] | None,
     cli_args: Namespace | dict[str, Any] | None,
     cli_settings_source: CliSettingsSource[Any] | None,
 ) -> LoadedRunConfig[RunConfigT]:
-    """Resolve packaged defaults, a user file, and typed CLI values."""
-    resolved, default_source = _load_packaged_mapping(default_path)
-    sources = [default_source]
+    """Resolve Pydantic defaults, a user file, and typed CLI values."""
+    resolved = model.model_validate({}).model_dump(mode="python")
+    sources: list[ConfigSource] = []
     override_paths: list[str] = []
 
     if config_path is not None:
@@ -467,7 +459,6 @@ def load_generation_config(
     """Load and validate one generation config using documented precedence."""
     return _load_run_config(
         GenerationRunConfig,
-        DEFAULT_GENERATION_CONFIG,
         config_path=config_path,
         cli_overrides=cli_overrides,
         cli_args=cli_args,
@@ -485,7 +476,6 @@ def load_conversion_config(
     """Load and validate one conversion config using documented precedence."""
     return _load_run_config(
         ConversionRunConfig,
-        DEFAULT_CONVERSION_CONFIG,
         config_path=config_path,
         cli_overrides=cli_overrides,
         cli_args=cli_args,

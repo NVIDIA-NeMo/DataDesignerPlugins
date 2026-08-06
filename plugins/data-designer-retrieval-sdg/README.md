@@ -100,16 +100,16 @@ uv run data-designer-retrieval-sdg generate --help
 
 ## Run configuration
 
-The package contains one complete generation default and one complete conversion
-default. No separate model profile is required. Print either declarative resolved
-configuration without scanning inputs or starting a run:
+The Pydantic run models contain one complete generation default and one complete
+conversion default. No separate model profile is required. Print either
+declarative resolved configuration without scanning inputs or starting a run:
 
 ```bash
 data-designer-retrieval-sdg generate --print-resolved-config
 data-designer-retrieval-sdg convert --print-resolved-config
 ```
 
-Layer a YAML or JSON file over the packaged default with `--config`. Explicit
+Layer a YAML or JSON file over the model defaults with `--config`. Explicit
 CLI flags have final precedence. Pydantic Settings generates typed flags for
 every config field, including dotted flags for nested values; familiar flat
 aliases remain available for common settings:
@@ -121,7 +121,7 @@ data-designer-retrieval-sdg generate \
     --pipeline.similarity-threshold 0.92
 ```
 
-The effective order is packaged default, user config file, then explicit CLI
+The effective order is Pydantic model defaults, user config file, then explicit CLI
 values. There is no separate untyped `--set` override language. Complex values
 use JSON when passed through their generated flag, for example
 `--pipeline.query-counts '{"multi_hop":3,"structural":2,"contextual":2}'`.
@@ -185,7 +185,7 @@ data-designer-retrieval-sdg generate \
 ```
 
 Generation writes DataDesigner artifacts under `--artifact-path` and exports a
-single JSONL file to `--output-dir`. The packaged default uses
+single JSONL file to `--output-dir`. The model defaults use
 `nvidia/nemotron-3-ultra-550b-a55b` for generation and
 `nvidia/nemotron-3-embed-1b` for embedding deduplication.
 

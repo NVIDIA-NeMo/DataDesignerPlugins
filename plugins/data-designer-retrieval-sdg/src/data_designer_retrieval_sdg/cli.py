@@ -91,7 +91,7 @@ def _parse_count_entry(value: str) -> tuple[str, int]:
 
 def _add_config_arguments(parser: argparse.ArgumentParser) -> None:
     """Add run-config controls shared by both commands."""
-    parser.add_argument("--config", type=Path, help="User YAML/JSON config layered over the packaged default")
+    parser.add_argument("--config", type=Path, help="User YAML/JSON config layered over the model defaults")
     parser.add_argument(
         "--print-resolved-config",
         action="store_true",

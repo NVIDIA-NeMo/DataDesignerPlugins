@@ -195,7 +195,7 @@ def test_extra_body_allowlist_requires_expected_value_types(tmp_path: Path) -> N
     assert "nested-secret" not in json.dumps(provider)
 
 
-def test_packaged_defaults_are_complete_and_validate() -> None:
+def test_pydantic_defaults_are_complete_and_validate() -> None:
     generation = load_generation_config()
     conversion = load_conversion_config()
 
@@ -204,17 +204,16 @@ def test_packaged_defaults_are_complete_and_validate() -> None:
     assert generation.config.output_dir == Path("generated")
     assert generation.config.pipeline.num_pairs == 7
     assert generation.config.pipeline.embed_model == "nvidia/nemotron-3-embed-1b"
-    assert generation.sources[0].location.endswith("configs/generation/default.yaml")
-    assert len(generation.sources[0].sha256) == 64
+    assert generation.sources == ()
     assert generation.override_paths == ()
 
     assert conversion.config.input_path == Path("generated/retrieval_sdg.jsonl")
     assert conversion.config.corpus_id == "retrieval_sdg"
     assert conversion.config.split_strategy == "random"
-    assert conversion.sources[0].location.endswith("configs/conversion/default.yaml")
+    assert conversion.sources == ()
 
 
-def test_generation_config_precedence_is_default_file_then_cli(tmp_path: Path) -> None:
+def test_generation_config_precedence_is_model_then_file_then_programmatic_then_cli(tmp_path: Path) -> None:
     (tmp_path / "docs").mkdir()
     config_path = tmp_path / "generation.yaml"
     config_path.write_text(
@@ -245,10 +244,7 @@ def test_generation_config_precedence_is_default_file_then_cli(tmp_path: Path) -
     assert loaded.config.pipeline.min_hops == 2
     assert loaded.config.buffer_size == 32
     assert loaded.config.seed_source.multi_doc is True
-    assert [source.location for source in loaded.sources] == [
-        "package:data_designer_retrieval_sdg/configs/generation/default.yaml",
-        str(config_path.resolve()),
-    ]
+    assert [source.location for source in loaded.sources] == [str(config_path.resolve())]
     assert loaded.override_paths == ("pipeline.min_complexity", "seed_source.multi_doc", "buffer_size")
 
 
