@@ -86,6 +86,7 @@ def test_run_generation_returns_stable_artifact_contract(monkeypatch: pytest.Mon
     build_calls: list[dict[str, object]] = []
     docs = tmp_path / "docs"
     docs.mkdir()
+    (docs / "source.txt").write_text("A source document.", encoding="utf-8")
 
     monkeypatch.setattr(generation, "DataDesigner", FakeDataDesigner)
     monkeypatch.setattr(generation, "_count_seed_records", lambda _: 3)
@@ -134,6 +135,42 @@ def test_run_generation_returns_stable_artifact_contract(monkeypatch: pytest.Mon
     assert result.num_records == 2
     assert result.requested_num_records == 3
     assert result.producer_version == "0.1.0"
+    assert (
+        result.resolved_config_path
+        == tmp_path / "artifacts" / ".retrieval_sdg_runs" / "retrieval_resolved" / "resolved_config.yaml"
+    )
+    assert result.provenance_path == (
+        tmp_path / "artifacts" / ".retrieval_sdg_runs" / "retrieval_resolved" / "config_provenance.json"
+    )
+
+
+def test_run_generation_does_not_write_plugin_metadata_when_generation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FailingDataDesigner(FakeDataDesigner):
+        def create(self, *args: object, **kwargs: object) -> FakeCreateResult:
+            raise RuntimeError("generation failed")
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "source.txt").write_text("A source document.", encoding="utf-8")
+    monkeypatch.setattr(generation, "DataDesigner", FailingDataDesigner)
+    monkeypatch.setattr(generation, "_count_seed_records", lambda _: 1)
+    monkeypatch.setattr(generation, "build_qa_generation_pipeline", lambda **_: {"builder": "qa"})
+
+    with pytest.raises(RuntimeError, match="generation failed"):
+        generation.run_generation(
+            GenerationRunConfig(
+                seed_source=DocumentChunkerSeedSource(path=str(docs)),
+                output_dir=tmp_path / "output",
+                artifact_path=tmp_path / "artifacts",
+                dataset_name="retrieval",
+                model_providers=[],
+            )
+        )
+
+    assert not (tmp_path / "artifacts" / ".retrieval_sdg_runs").exists()
 
 
 def test_run_generation_creates_output_directory_before_generation(

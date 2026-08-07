@@ -39,13 +39,15 @@ data-designer-retrieval-sdg generate \
     --resume always
 ```
 
-Use `--resume if_possible` to resume only when the saved config matches and
-otherwise start a fresh run.
+Use `--resume if_possible` to resume when compatible artifacts are available and
+start fresh otherwise. DataDesigner owns checkpoint discovery, configuration
+compatibility, partial-result cleanup, and the behavior of every resume mode. The
+plugin does not maintain a second resume state or inspect corpus bytes.
 
-`--buffer-size` controls DataDesigner's checkpoint/write granularity and must
-match across resumed runs. In DataDesigner 0.6.1, `create()` still profiles the
-completed dataset before returning, so `--buffer-size` is not a hard cap on
-final peak memory for very large runs.
+`--buffer-size` controls DataDesigner's checkpoint/write granularity and remains
+part of the resolved config. In DataDesigner 0.6.1, `create()` still profiles the
+completed dataset before returning, so `--buffer-size` is not a hard cap on final
+peak memory for very large runs.
 
 ## Installation
 
@@ -96,6 +98,77 @@ Or prefix any command with `uv run`:
 uv run data-designer-retrieval-sdg generate --help
 ```
 
+## Run configuration
+
+The Pydantic run models contain one complete generation default and one complete
+conversion default. No separate model profile is required. Print either
+declarative resolved configuration without scanning inputs or starting a run:
+
+```bash
+data-designer-retrieval-sdg generate --print-resolved-config
+data-designer-retrieval-sdg convert --print-resolved-config
+```
+
+Layer a YAML or JSON file over the model defaults with `--config`. Explicit
+CLI flags have final precedence. Pydantic Settings generates typed flags for
+every config field, including dotted flags for nested values; familiar flat
+aliases remain available for common settings:
+
+```bash
+data-designer-retrieval-sdg generate \
+    --config ./generation.yaml \
+    --min-complexity 3 \
+    --pipeline.similarity-threshold 0.92
+```
+
+The effective order is Pydantic model defaults, user config file, then explicit CLI
+values. There is no separate untyped `--set` override language. Complex values
+use JSON when passed through their generated flag, for example
+`--pipeline.query-counts '{"multi_hop":3,"structural":2,"contextual":2}'`.
+
+A generation file can be intentionally small because omitted values remain
+visible through `--print-resolved-config`:
+
+```yaml
+schema_version: 1
+seed_source:
+  path: ./my_documents
+output_dir: ./generated_output
+artifact_path: ./artifacts
+dataset_name: my_retrieval_run
+resume: if_possible
+num_records: 1000
+pipeline:
+  num_pairs: 7
+```
+
+Relative paths are interpreted from the process working directory. Unknown
+fields, unsupported schema versions, and invalid values fail validation. For an
+explicit environment-backed provider endpoint or credential, use an exact
+`${VARIABLE_NAME}` reference in the config:
+
+```yaml
+model_providers:
+  - name: nvidia
+    provider_type: openai
+    endpoint: ${NVIDIA_API_BASE_URL}
+    api_key: ${NVIDIA_API_KEY}
+```
+
+The environment variable names are recorded as provenance. All custom provider
+header values are redacted. Custom provider body values are also redacted except
+for the string-valued plugin settings `input_type` and `truncate`.
+
+Provider definitions follow the same layering rule. A provider from the user
+config can be updated by the legacy `--custom-provider-*` shorthand when the
+alias matches; fields not supplied on the CLI are preserved.
+
+`num_records` limits the first N seed records processed by Data Designer; `null`
+processes all available records. This differs from `seed_source.num_files`, which
+limits raw files before optional multi-document bundling. `--print-resolved-config`
+shows the configured value without scanning the corpus. The persisted run snapshot
+replaces `null` with the discovered record count used by that run.
+
 ## Quick start
 
 ### Generate QA pairs
@@ -107,17 +180,30 @@ data-designer-retrieval-sdg generate \
     --dataset-name my_retrieval_run \
     --buffer-size 200 \
     --resume if_possible \
+    --num-records 1000 \
     --num-pairs 7
 ```
 
 Generation writes DataDesigner artifacts under `--artifact-path` and exports a
-single JSONL file to `--output-dir`. The default profile uses
+single JSONL file to `--output-dir`. The model defaults use
 `nvidia/nemotron-3-ultra-550b-a55b` for generation and
 `nvidia/nemotron-3-embed-1b` for embedding deduplication.
 
 `--query-counts` and `--reasoning-counts` are exact orthogonal
 distributions, and each must sum to `--num-pairs`. Pass entries as
 `NAME=COUNT` when changing the default of seven pairs.
+
+After DataDesigner generation and JSONL export both complete, the plugin writes:
+
+- `<artifact-path>/.retrieval_sdg_runs/<dataset-name>/resolved_config.yaml`
+- `<artifact-path>/.retrieval_sdg_runs/<dataset-name>/config_provenance.json`
+
+The directory uses DataDesigner's resolved dataset name, including any suffix it
+adds for a fresh run. The resolved YAML is complete and redacted. Provenance
+includes plugin version, config file names and hashes, explicit override paths,
+environment variable names, exact output paths, and requested and generated
+record counts. Failed attempts do not create plugin metadata; DataDesigner's own
+artifacts remain the authority for resuming them.
 
 ### Convert to training format
 
@@ -136,50 +222,47 @@ because DataDesigner now owns checkpointing through `--buffer-size` and
 DataDesigner's final profiling step until DataDesigner exposes a no-materialize
 create/export path.
 
+After a typed conversion succeeds, it also writes `resolved_config.yaml` and
+`config_provenance.json` under `<output-dir>/.retrieval_sdg_run/`. Provenance
+records the exact generated paths and output counts. Failed conversions do not
+leave plugin metadata that could be mistaken for a completed run.
+
 ### Use as a library
 
 ```python
 from pathlib import Path
 
 from data_designer_retrieval_sdg import (
-    DocumentChunkerSeedSource,
-    GenerationPipelineConfig,
-    GenerationRunConfig,
-    run_conversion,
+    ConversionRunConfig,
+    load_generation_config,
+    run_conversion_with_config,
     run_generation,
 )
 
-seed_source = DocumentChunkerSeedSource(
-    path="./docs",
-    file_extensions=[".txt", ".md"],
-)
+loaded = load_generation_config(Path("./generation.yaml"))
 generation = run_generation(
-    GenerationRunConfig(
-        seed_source=seed_source,
-        output_dir=Path("./generated"),
-        artifact_path=Path("./artifacts"),
-        dataset_name="my_retrieval_run",
-        pipeline=GenerationPipelineConfig(
-            num_pairs=7,
-            min_hops=1,
-            max_hops=3,
-        ),
-    )
+    loaded.config,
+    config_sources=loaded.sources,
+    override_paths=loaded.override_paths,
+    environment_variables=loaded.environment_variables,
 )
-conversion = run_conversion(
-    input_path=str(generation.output_path),
-    corpus_id="my_corpus",
+conversion = run_conversion_with_config(
+    ConversionRunConfig(
+        input_path=generation.output_path,
+        corpus_id="my_corpus",
+    )
 )
 assert conversion.train_file is not None
 ```
 
 The generation result contains the exact exported JSONL path, resolved Data
-Designer dataset path and name, record count, and producer version. Conversion
-returns the generated train, validation, corpus, and evaluation paths plus
-example counts. `GenerationRunConfig` and `GenerationPipelineConfig` reject
-unknown fields so recipe adapters cannot silently pass misspelled settings.
-`GenerationRunConfig.to_redacted_dict()` returns every effective Python API
-setting while replacing provider credentials and authorization headers.
+Designer dataset path and name, record count, producer version, run metadata
+paths. Conversion returns the generated train, validation, corpus, evaluation,
+and run metadata paths plus example counts.
+`GenerationRunConfig`, `GenerationPipelineConfig`, and `ConversionRunConfig`
+reject unknown fields so recipe adapters cannot silently pass misspelled
+settings. Their redacted serialization replaces provider credentials, every
+custom header value, and non-allowlisted custom body values.
 
 ## Plugin configuration examples
 

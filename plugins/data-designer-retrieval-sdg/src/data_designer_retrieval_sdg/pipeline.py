@@ -132,21 +132,26 @@ def build_model_providers(
     custom_provider_name: str = "custom",
     custom_provider_type: str = "openai",
     custom_provider_api_key: str | None = None,
+    custom_provider_fields: set[str] | None = None,
     model_providers_file: Path | None = None,
+    model_providers: list[dd.ModelProvider] | None = None,
 ) -> tuple[list[dd.ModelProvider] | None, list[dd.ModelProvider]]:
     """Build a list of custom ``ModelProvider`` objects from CLI flags / config.
 
     Inline flags define a single provider; the config file can define
-    multiple. Distinct aliases compose, while conflicting definitions for
-    the same alias are rejected. Custom providers are merged with Data
-    Designer defaults so that built-in providers remain available.
+    multiple. Later sources override an earlier provider with the same alias:
+    run config, provider file, then inline provider. Custom providers are
+    merged with Data Designer defaults so that built-in providers remain
+    available.
 
     Args:
         custom_provider_endpoint: Base URL for an inline custom provider.
         custom_provider_name: Name for the inline provider.
         custom_provider_type: API format (default ``"openai"``).
         custom_provider_api_key: API key or env-var name.
+        custom_provider_fields: Inline fields explicitly supplied by the user.
         model_providers_file: Path to a YAML/JSON file with provider entries.
+        model_providers: Providers already loaded from a run configuration.
 
     Returns:
         Tuple of ``(all_providers, custom_only_providers)``.  ``all_providers``
@@ -156,14 +161,17 @@ def build_model_providers(
 
     custom_by_name: dict[str, dd.ModelProvider] = {}
 
-    def add_provider(provider: dd.ModelProvider, source: str) -> None:
+    def add_provider(provider: dd.ModelProvider, source: str, *, replace: bool = False) -> None:
         existing = custom_by_name.get(provider.name)
-        if existing is not None and existing.model_dump() != provider.model_dump():
+        if existing is not None and existing.model_dump() != provider.model_dump() and not replace:
             raise ValueError(
                 f"Conflicting model provider alias {provider.name!r} from {source}; "
                 "use distinct aliases or make the endpoint, provider type, and credential identical."
             )
         custom_by_name[provider.name] = provider
+
+    for provider in model_providers or []:
+        add_provider(provider, "run configuration")
 
     if model_providers_file is not None:
         raw = model_providers_file.read_text(encoding="utf-8")
@@ -174,18 +182,35 @@ def build_model_providers(
 
         if not isinstance(entries, list):
             raise ValueError(f"model-providers-file must contain a YAML/JSON list, got {type(entries).__name__}")
+        file_providers: dict[str, dd.ModelProvider] = {}
         for entry in entries:
-            add_provider(dd.ModelProvider(**entry), str(model_providers_file))
+            provider = dd.ModelProvider(**entry)
+            existing = file_providers.get(provider.name)
+            if existing is not None and existing.model_dump() != provider.model_dump():
+                raise ValueError(f"Conflicting model provider alias {provider.name!r} within {model_providers_file}")
+            file_providers[provider.name] = provider
+        for provider in file_providers.values():
+            add_provider(provider, str(model_providers_file), replace=True)
 
     if custom_provider_endpoint is not None:
+        inline_values = {
+            "name": custom_provider_name,
+            "endpoint": custom_provider_endpoint,
+            "provider_type": custom_provider_type,
+            "api_key": custom_provider_api_key,
+        }
+        existing = custom_by_name.get(custom_provider_name)
+        if existing is not None and custom_provider_fields is not None:
+            merged_values = existing.model_dump()
+            for field in custom_provider_fields - {"name"}:
+                merged_values[field] = inline_values[field]
+            inline_provider = dd.ModelProvider(**merged_values)
+        else:
+            inline_provider = dd.ModelProvider(**inline_values)
         add_provider(
-            dd.ModelProvider(
-                name=custom_provider_name,
-                endpoint=custom_provider_endpoint,
-                provider_type=custom_provider_type,
-                api_key=custom_provider_api_key,
-            ),
+            inline_provider,
             "inline provider configuration",
+            replace=True,
         )
 
     custom = list(custom_by_name.values())

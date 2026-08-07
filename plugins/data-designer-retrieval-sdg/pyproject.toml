@@ -8,7 +8,8 @@ description = "Retriever SDG toolkit: registers the embedding-dedup column gener
 requires-python = ">=3.10"
 dependencies = [
     "data-designer>=0.6.1",
-    "nltk>=3.9.2",
+    "nltk>=3.9.2,<3.10",
+    "pydantic-settings>=2.14,<3",
     "pyyaml>=6.0",
     "pyarrow>=14.0",
 ]
