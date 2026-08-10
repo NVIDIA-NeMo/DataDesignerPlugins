@@ -479,7 +479,7 @@ dev = [
 
 [[package]]
 name = "data-designer-retrieval-sdg"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "plugins/data-designer-retrieval-sdg" }
 dependencies = [
     { name = "data-designer" },
