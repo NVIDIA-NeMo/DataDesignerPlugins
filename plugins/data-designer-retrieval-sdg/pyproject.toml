@@ -7,8 +7,8 @@ version = "0.2.0"
 description = "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
 requires-python = ">=3.10"
 dependencies = [
-    "data-designer>=0.8.0",
-    # Data Designer 0.8 permits older releases that are excluded by the
+    "data-designer>=0.9.0",
+    # Data Designer permits older transitive releases that are excluded by the
     # workspace security constraints. Publish the same floors for consumers.
     "mcp>=1.29.0,<2",
     "nltk>=3.10.2,<3.11",

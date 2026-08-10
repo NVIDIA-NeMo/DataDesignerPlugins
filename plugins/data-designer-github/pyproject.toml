@@ -9,7 +9,7 @@ requires-python = ">=3.10"
 dependencies = [
     # Security floors for transitive dependencies installed with DataDesigner.
     "cryptography>=48.0.1,<50",
-    "data-designer>=0.8.0",
+    "data-designer>=0.9.0",
     "idna>=3.18",
     "mcp>=1.29.0,<2",
     "pillow>=12.3.0",

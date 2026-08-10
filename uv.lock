@@ -387,11 +387,12 @@ wheels = [
 
 [[package]]
 name = "data-designer"
-version = "0.8.0"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "data-designer-config" },
     { name = "data-designer-engine" },
+    { name = "huggingface-hub" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-prometheus" },
     { name = "opentelemetry-sdk" },
@@ -400,19 +401,22 @@ dependencies = [
     { name = "prometheus-client" },
     { name = "prompt-toolkit" },
     { name = "pyarrow" },
+    { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "rich" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/98/d8/ad3669a7353d58715f92423ffdefbcb2b128e0fc5c9c22732858a3858839/data_designer-0.8.0.tar.gz", hash = "sha256:d8d79fcff242547151df805fb6f633460ecd36397b941b4da2ec84dcc708f937", size = 231443, upload-time = "2026-07-15T20:04:54.145Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/b6/27e8c112c5801500c7e7ccd70f0751376e6b6fb427c2e7b6256bb1d24e31/data_designer-0.9.0.tar.gz", hash = "sha256:11339a7c6188159cd4b065216964417a6f19863ef91e2c49c46fcb227719616b", size = 234004, upload-time = "2026-08-10T18:52:09.63Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1f/27/d82b43a19143a357ae811ee54342f703642da4f0625f4303dc4afd124c43/data_designer-0.8.0-py3-none-any.whl", hash = "sha256:8b3505ea5efb503c3e2b78c261dc82a1912c4d2529b4d24366a00e0808ebbeba", size = 158403, upload-time = "2026-07-15T20:04:52.901Z" },
+    { url = "https://files.pythonhosted.org/packages/27/22/56d08785bb036e0b93268d83f9927957de8e959aa23cdfeaa3d1eea3fa86/data_designer-0.9.0-py3-none-any.whl", hash = "sha256:28cc355d979632674e2577df287a3622da37e6a505fe88aa7819242fc4d4ac78", size = 158442, upload-time = "2026-08-10T18:52:08.513Z" },
 ]
 
 [[package]]
 name = "data-designer-config"
-version = "0.8.0"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "httpx" },
     { name = "idna" },
     { name = "jinja2" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -420,7 +424,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pillow" },
     { name = "pyarrow" },
-    { name = "pydantic", extra = ["email"] },
+    { name = "pydantic" },
     { name = "pygments" },
     { name = "python-json-logger" },
     { name = "pyyaml" },
@@ -428,14 +432,14 @@ dependencies = [
     { name = "rich" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e2/a1/92972c7912232c3a90c8086b3995f4b99774ac687697c37e58a774ebefd9/data_designer_config-0.8.0.tar.gz", hash = "sha256:5cc22555ba0575880b6dd00e8ec57602f0b9e8ad52d8941169a624e4eef13db8", size = 150922, upload-time = "2026-07-15T20:04:46.569Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/7a/a47c4957aafa8dba39ff82cc78051f635f65866a47cd01a3b2c4b2787fa0/data_designer_config-0.9.0.tar.gz", hash = "sha256:dd51d5cb005f7656fae54d2745d77e12a03cb17adc4d2d24f2f1ae16c1457479", size = 150932, upload-time = "2026-08-10T18:52:02.944Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/7d/61d81ab2e04ab165ecfaf58fbd7132017be7f941813fe544aa00b34f198b/data_designer_config-0.8.0-py3-none-any.whl", hash = "sha256:a062cbc3334534435380e61ac9abc751943057adbb3177950008df854f892faf", size = 128517, upload-time = "2026-07-15T20:04:45.221Z" },
+    { url = "https://files.pythonhosted.org/packages/24/2b/d909f19d098b6fcf1a033c468de36904352b84e3518a567c91d0f56b6203/data_designer_config-0.9.0-py3-none-any.whl", hash = "sha256:e9f7abd856d0a363094b4016fb0fd51c02a7d19b3e2472c2d67d9418baca35ea", size = 128526, upload-time = "2026-08-10T18:52:01.799Z" },
 ]
 
 [[package]]
 name = "data-designer-engine"
-version = "0.8.0"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyascii" },
@@ -473,9 +477,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "wcwidth" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/84/9e/1fe9ce34c6648deed6d3134a1ea0a00bea11f6223179099858ee4a491067/data_designer_engine-0.8.0.tar.gz", hash = "sha256:7544c92b641e1ce490e8c6a01880d84dd76a81ee686852be8477d990630218e0", size = 910694, upload-time = "2026-07-15T20:04:50.634Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/65/a9bb62514b0a8c9ab1dd51d43dc71ad463c782d311b7eab3ebb09652e349/data_designer_engine-0.9.0.tar.gz", hash = "sha256:fda48fc29eba8da25c94d8404ddf2f44c7318478dacc8a1ac768ef7732ff8047", size = 918434, upload-time = "2026-08-10T18:52:06.67Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/0f/ad5b773f6e3c58973cdf936f832670463a29a40dbc6e989f27c450bb83f5/data_designer_engine-0.8.0-py3-none-any.whl", hash = "sha256:4c4a51d1a3dee18e1b96b1d8aa20117e939854cfab9f9798aa4370e8a39d6734", size = 703183, upload-time = "2026-07-15T20:04:49.039Z" },
+    { url = "https://files.pythonhosted.org/packages/49/46/a467f480d7904615a00b09b1396ced30b98accf7badc395be3a19ae2b0bc/data_designer_engine-0.9.0-py3-none-any.whl", hash = "sha256:32cc4006f6ff19a4297451d4f34cbe62d508fce4b07c5402d40e3a98401f493c", size = 706028, upload-time = "2026-08-10T18:52:04.876Z" },
 ]
 
 [[package]]
@@ -496,7 +500,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=48.0.1,<50" },
-    { name = "data-designer", specifier = ">=0.8.0" },
+    { name = "data-designer", specifier = ">=0.9.0" },
     { name = "idna", specifier = ">=3.18" },
     { name = "mcp", specifier = ">=1.29.0,<2" },
     { name = "pillow", specifier = ">=12.3.0" },
@@ -544,7 +548,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "data-designer", specifier = ">=0.8.0" },
+    { name = "data-designer", specifier = ">=0.9.0" },
     { name = "mcp", specifier = ">=1.29.0,<2" },
     { name = "nltk", specifier = ">=3.10.2,<3.11" },
     { name = "pyarrow", specifier = ">=24.0.0,<25" },
@@ -613,15 +617,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dnspython"
-version = "2.8.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8c/8b/57666417c0f90f08bcafa776861060426765fdb422eb10212086fb811d26/dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f", size = 368251, upload-time = "2025-09-07T18:58:00.022Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/5a/18ad964b0086c6e62e2e7500f7edc89e3faa45033c71c1893d34eed2b2de/dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af", size = 331094, upload-time = "2025-09-07T18:57:58.071Z" },
-]
-
-[[package]]
 name = "docutils"
 version = "0.22.4"
 source = { registry = "https://pypi.org/simple" }
@@ -683,19 +678,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/65/31/30c7b420d45a5bbe5b75bde3507fd172e9d3454e251992f77fa977139c75/dumb_pypi-1.15.0.tar.gz", hash = "sha256:9509047c9c7e0ea1a035c982abfcdec4e23c2d187df5812c2a9cb52782439f75", size = 18397, upload-time = "2023-10-03T17:08:17.884Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0a/2b/ccb283f0c92adead4803ee80ba359ee43f730003907132ba12c12842074e/dumb_pypi-1.15.0-py2.py3-none-any.whl", hash = "sha256:050e0ea9b72cf8d229331601df90173b196452df74e2a9dfa44476f6f8afc52a", size = 16429, upload-time = "2023-10-03T17:08:16.154Z" },
-]
-
-[[package]]
-name = "email-validator"
-version = "2.3.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dnspython" },
-    { name = "idna" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/22/900cb125c76b7aaa450ce02fd727f452243f2e91a61af068b40adba60ea9/email_validator-2.3.0.tar.gz", hash = "sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426", size = 51238, upload-time = "2025-08-26T13:09:06.831Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/15/545e2b6cf2e3be84bc1ed85613edd75b8aea69807a71c26f4ca6a9258e82/email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4", size = 35604, upload-time = "2025-08-26T13:09:05.858Z" },
 ]
 
 [[package]]
@@ -1970,11 +1952,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d9/e4/40d09941a2cebcb20609b86a559817d5b9291c49dd6f8c87e5feffbe703a/pydantic-2.13.3.tar.gz", hash = "sha256:af09e9d1d09f4e7fe37145c1f577e1d61ceb9a41924bf0094a36506285d0a84d", size = 844068, upload-time = "2026-04-20T14:46:43.632Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f3/0a/fd7d723f8f8153418fb40cf9c940e82004fce7e987026b08a68a36dd3fe7/pydantic-2.13.3-py3-none-any.whl", hash = "sha256:6db14ac8dfc9a1e57f87ea2c0de670c251240f43cb0c30a5130e9720dc612927", size = 471981, upload-time = "2026-04-20T14:46:41.402Z" },
-]
-
-[package.optional-dependencies]
-email = [
-    { name = "email-validator" },
 ]
 
 [[package]]
