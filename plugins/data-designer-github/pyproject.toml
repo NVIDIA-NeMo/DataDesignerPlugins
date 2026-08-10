@@ -7,7 +7,15 @@ version = "0.1.0"
 description = "GitHub and local git repository seed reader for Data Designer"
 requires-python = ">=3.10"
 dependencies = [
-    "data-designer>=0.5.7",
+    # Security floors for transitive dependencies installed with DataDesigner.
+    "cryptography>=48.0.1,<50",
+    "data-designer>=0.8.0",
+    "idna>=3.18",
+    "mcp>=1.29.0,<2",
+    "pillow>=12.3.0",
+    "pyjwt>=2.13.0",
+    "python-multipart>=0.0.32",
+    "starlette>=1.4.1",
 ]
 license = "Apache-2.0"
 readme = "README.md"

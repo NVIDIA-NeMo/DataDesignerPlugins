@@ -7,11 +7,11 @@ version = "0.2.0"
 description = "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
 requires-python = ">=3.10"
 dependencies = [
-    "data-designer>=0.6.1",
-    "nltk>=3.9.2,<3.10",
+    "data-designer>=0.8.0",
+    "nltk>=3.10.2,<3.11",
     "pydantic-settings>=2.14,<3",
     "pyyaml>=6.0",
-    "pyarrow>=14.0",
+    "pyarrow>=24.0.0,<25",
 ]
 license = "Apache-2.0"
 readme = "README.md"

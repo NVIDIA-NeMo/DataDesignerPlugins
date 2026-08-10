@@ -21,8 +21,15 @@ members = [
 package = false
 required-version = ">=0.7.10"
 constraint-dependencies = [
-    "idna>=3.12",
-    "python-multipart>=0.0.29",
+    "cryptography>=48.0.1,<50",
+    "idna>=3.18",
+    "mcp>=1.29.0,<2",
+    "nltk>=3.10.2,<3.11",
+    "pillow>=12.3.0",
+    "pyarrow>=24.0.0,<25",
+    "pyjwt>=2.13.0",
+    "python-multipart>=0.0.32",
+    "starlette>=1.4.1",
     "urllib3>=2.7.0",
 ]
 
