@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Column configuration for the embedding-dedup plugin."""
+"""Configuration models for retriever SDG Data Designer plugins."""
 
 from __future__ import annotations
 
 from typing import Literal
 
-from data_designer.config.base import SingleColumnConfig
+from data_designer.config.base import ProcessorConfig, SingleColumnConfig
 
 
 class EmbeddingDedupColumnConfig(SingleColumnConfig):
@@ -57,3 +57,23 @@ class EmbeddingDedupColumnConfig(SingleColumnConfig):
     def get_column_emoji(self) -> str:
         """Emoji displayed in logs for this column type."""
         return "🔍"
+
+
+class QAEvaluationNormalizerConfig(ProcessorConfig):
+    """Normalize QA evaluation scores before each batch is checkpointed.
+
+    Structured LLM responses can encode an integral overall score as either
+    ``9`` or ``9.0``. Arrow infers those values as different physical types
+    when they occur in separate row groups. This processor validates the
+    response through the pipeline's Pydantic model so every overall score is
+    serialized as a float before Data Designer writes Parquet.
+
+    Attributes:
+        column_name: Structured QA evaluation column to normalize.
+        processor_type: Fixed literal identifying this processor type.
+    Inherited Attributes:
+        name (required): Unique name of the processor.
+    """
+
+    column_name: str = "qa_evaluations"
+    processor_type: Literal["qa-evaluation-normalizer"] = "qa-evaluation-normalizer"

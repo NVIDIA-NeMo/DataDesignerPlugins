@@ -3,13 +3,16 @@
 
 """Data Designer plugin registrations exported by this package.
 
-Two ``data_designer.plugins`` entry points are wired here:
+Three ``data_designer.plugins`` entry points are wired here:
 
 - :data:`embedding_dedup_plugin` -- generic embedding-cosine-similarity
   deduplication column generator (``column_type="embedding-dedup"``).
 - :data:`document_chunker_plugin` -- filesystem seed reader that loads
   text files, chunks them by sentence, and emits structured sections
   (``seed_type="document-chunker"``).
+- :data:`qa_evaluation_normalizer_plugin` -- post-batch processor that
+  stabilizes QA evaluation score types before Parquet checkpointing
+  (``processor_type="qa-evaluation-normalizer"``).
 """
 
 from data_designer.plugins.plugin import Plugin, PluginType
@@ -24,4 +27,10 @@ document_chunker_plugin = Plugin(
     config_qualified_name="data_designer_retrieval_sdg.seed_source.DocumentChunkerSeedSource",
     impl_qualified_name="data_designer_retrieval_sdg.seed_reader.DocumentChunkerSeedReader",
     plugin_type=PluginType.SEED_READER,
+)
+
+qa_evaluation_normalizer_plugin = Plugin(
+    config_qualified_name="data_designer_retrieval_sdg.config.QAEvaluationNormalizerConfig",
+    impl_qualified_name="data_designer_retrieval_sdg.evaluation_normalizer.QAEvaluationNormalizer",
+    plugin_type=PluginType.PROCESSOR,
 )

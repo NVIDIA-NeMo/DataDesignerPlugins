@@ -4,7 +4,7 @@
 [project]
 name = "data-designer-retrieval-sdg"
 version = "0.2.0"
-description = "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
+description = "Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
 requires-python = ">=3.10"
 dependencies = [
     "data-designer>=0.9.0",
@@ -31,6 +31,7 @@ classifiers = [
 [project.entry-points."data_designer.plugins"]
 embedding-dedup = "data_designer_retrieval_sdg.plugins:embedding_dedup_plugin"
 document-chunker = "data_designer_retrieval_sdg.plugins:document_chunker_plugin"
+qa-evaluation-normalizer = "data_designer_retrieval_sdg.plugins:qa_evaluation_normalizer_plugin"
 
 [project.scripts]
 data-designer-retrieval-sdg = "data_designer_retrieval_sdg.cli:main"

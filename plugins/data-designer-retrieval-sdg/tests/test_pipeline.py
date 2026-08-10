@@ -17,6 +17,7 @@ from data_designer_retrieval_sdg.pipeline import (
     build_qa_generation_pipeline,
 )
 from data_designer_retrieval_sdg.run_config import GenerationPipelineConfig
+from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
 
 def test_defaults_match_canonical_nemotron_models() -> None:
@@ -46,6 +47,16 @@ def test_pipeline_builder_defaults_match_typed_config() -> None:
         "embed_provider",
     ):
         assert parameters[field_name].default == getattr(config, field_name)
+
+
+def test_pipeline_normalizes_qa_evaluation_scores_before_checkpointing() -> None:
+    builder = build_qa_generation_pipeline(
+        seed_source=DocumentChunkerSeedSource(path="."),
+    )
+
+    processor = builder.build().processors[0]
+    assert processor.processor_type == "qa-evaluation-normalizer"
+    assert processor.column_name == "qa_evaluations"
 
 
 def test_provider_builder_combines_distinct_aliases(tmp_path: Path) -> None:
