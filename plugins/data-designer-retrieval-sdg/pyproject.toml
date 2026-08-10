@@ -8,10 +8,14 @@ description = "Retriever SDG toolkit: registers the embedding-dedup column gener
 requires-python = ">=3.10"
 dependencies = [
     "data-designer>=0.8.0",
+    # Data Designer 0.8 permits older releases that are excluded by the
+    # workspace security constraints. Publish the same floors for consumers.
+    "mcp>=1.29.0,<2",
     "nltk>=3.10.2,<3.11",
     "pydantic-settings>=2.14,<3",
     "pyyaml>=6.0",
     "pyarrow>=24.0.0,<25",
+    "starlette>=1.4.1,<2",
 ]
 license = "Apache-2.0"
 readme = "README.md"

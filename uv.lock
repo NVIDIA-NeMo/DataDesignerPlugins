@@ -534,19 +534,23 @@ version = "0.2.0"
 source = { editable = "plugins/data-designer-retrieval-sdg" }
 dependencies = [
     { name = "data-designer" },
+    { name = "mcp" },
     { name = "nltk" },
     { name = "pyarrow" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
+    { name = "starlette" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "data-designer", specifier = ">=0.8.0" },
+    { name = "mcp", specifier = ">=1.29.0,<2" },
     { name = "nltk", specifier = ">=3.10.2,<3.11" },
     { name = "pyarrow", specifier = ">=24.0.0,<25" },
     { name = "pydantic-settings", specifier = ">=2.14,<3" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "starlette", specifier = ">=1.4.1,<2" },
 ]
 
 [[package]]
