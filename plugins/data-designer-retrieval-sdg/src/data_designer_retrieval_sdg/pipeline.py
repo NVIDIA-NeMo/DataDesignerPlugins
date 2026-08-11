@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 import data_designer.config as dd
-from data_designer.config.default_model_settings import get_default_providers
+from data_designer.config.default_model_settings import get_builtin_model_providers, get_default_providers
 
 from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 from data_designer_retrieval_sdg.models import (
@@ -218,7 +218,13 @@ def build_model_providers(
         return None, []
 
     custom_names = {p.name for p in custom}
-    defaults = [p for p in get_default_providers() if p.name not in custom_names]
+    try:
+        default_providers = get_default_providers()
+    except FileNotFoundError:
+        # Data Designer seeds the user-level provider file when its interface is
+        # constructed; provider resolution runs earlier in this pipeline.
+        default_providers = get_builtin_model_providers()
+    defaults = [p for p in default_providers if p.name not in custom_names]
     return defaults + custom, custom
 
 
