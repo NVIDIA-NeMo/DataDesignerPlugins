@@ -2,14 +2,14 @@
 
 # data-designer-retrieval-sdg
 
-Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion
+Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion
 
 This page is generated from package metadata because the plugin has not added
 custom documentation under `plugins/data-designer-retrieval-sdg/docs/` yet.
 
 ## Metadata
 
-- Version: `0.1.0`
+- Version: `0.2.0`
 - Entry points: `document-chunker`, `embedding-dedup`
 
 ## Installation

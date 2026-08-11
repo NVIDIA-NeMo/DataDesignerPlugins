@@ -45,9 +45,9 @@ compatibility, partial-result cleanup, and the behavior of every resume mode. Th
 plugin does not maintain a second resume state or inspect corpus bytes.
 
 `--buffer-size` controls DataDesigner's checkpoint/write granularity and remains
-part of the resolved config. In DataDesigner 0.6.1, `create()` still profiles the
-completed dataset before returning, so `--buffer-size` is not a hard cap on final
-peak memory for very large runs.
+part of the resolved config. DataDesigner still profiles the completed dataset
+before returning, so `--buffer-size` is not a hard cap on final peak memory for
+very large runs.
 
 ## Installation
 

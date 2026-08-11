@@ -3,15 +3,19 @@
 
 [project]
 name = "data-designer-retrieval-sdg"
-version = "0.1.0"
-description = "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
+version = "0.2.0"
+description = "Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
 requires-python = ">=3.10"
 dependencies = [
-    "data-designer>=0.9.0",
+    "data-designer>=0.9.1",
+    # Data Designer permits older transitive releases that are excluded by the
+    # workspace security constraints. Publish the same floors for consumers.
+    "mcp>=1.29.0,<2",
     "nltk>=3.10.2,<3.11",
     "pydantic-settings>=2.14,<3",
     "pyyaml>=6.0",
     "pyarrow>=24.0.0,<25",
+    "starlette>=1.4.1,<2",
 ]
 license = "Apache-2.0"
 readme = "README.md"

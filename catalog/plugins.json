@@ -35,7 +35,7 @@
     },
     {
       "name": "data-designer-retrieval-sdg",
-      "description": "Retriever SDG toolkit: registers the embedding-dedup column generator and document-chunker seed reader, plus a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion",
+      "description": "Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion",
       "install": {
         "requirement": "data-designer-retrieval-sdg",
         "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
@@ -45,8 +45,8 @@
           "specifier": ">=3.10"
         },
         "data_designer": {
-          "requirement": "data-designer>=0.9.0",
-          "specifier": ">=0.9.0",
+          "requirement": "data-designer>=0.9.1",
+          "specifier": ">=0.9.1",
           "marker": null
         }
       },
