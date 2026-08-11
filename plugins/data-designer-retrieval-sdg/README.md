@@ -1,7 +1,7 @@
 # data-designer-retrieval-sdg
 
 Data Designer toolkit for **retriever synthetic data generation**. The
-package registers three `data_designer.plugins` entry points, ships a
+package registers two `data_designer.plugins` entry points, ships a
 ready-made multi-step QA generation pipeline, and exposes a CLI that
 generates QA pairs and converts them into training formats compatible
 with [Automodel](https://github.com/NVIDIA-NeMo/Automodel) retriever
@@ -9,16 +9,15 @@ finetuning.
 
 ## Plugins
 
-A single package contributes three plugins to DataDesigner's registries
+A single package contributes two plugins to DataDesigner's registries
 via `[project.entry-points."data_designer.plugins"]`:
 
 | Slug | Type | Purpose |
 |------|------|---------|
 | `embedding-dedup` | column generator | Generic cosine-similarity dedup of any list-valued column. Implements native `agenerate()` for the async engine. |
 | `document-chunker` | seed reader | Sentence-chunks a directory of text files and emits structured sections, with optional multi-document bundling. |
-| `qa-evaluation-normalizer` | processor | Normalizes overall QA evaluation scores before each Parquet checkpoint so integral and fractional model outputs remain schema-compatible. |
 
-All three are registered automatically through Python entry points when the
+Both are registered automatically through Python entry points when the
 package is installed (see [Installation](#installation)).
 
 ## Native async and resumable generation
@@ -283,27 +282,6 @@ config_builder.add_column(
     )
 )
 ```
-
-### `qa-evaluation-normalizer` processor
-
-The packaged QA generation pipeline adds this processor automatically. Custom
-pipelines that use the same evaluation schema can add it explicitly:
-
-```python
-from data_designer_retrieval_sdg.config import QAEvaluationNormalizerConfig
-
-config_builder.add_processor(
-    QAEvaluationNormalizerConfig(
-        name="normalize_qa_evaluation_scores",
-        column_name="qa_evaluations",
-    )
-)
-```
-
-The processor runs immediately before each row group is checkpointed. It
-normalizes integral overall scores such as `9` to `9.0` while preserving
-fractional scores such as `9.5`, preventing incompatible Parquet schemas across
-row groups.
 
 ### `document-chunker` seed reader
 

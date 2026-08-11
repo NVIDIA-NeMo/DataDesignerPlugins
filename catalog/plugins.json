@@ -45,8 +45,8 @@
           "specifier": ">=3.10"
         },
         "data_designer": {
-          "requirement": "data-designer>=0.9.0",
-          "specifier": ">=0.9.0",
+          "requirement": "data-designer>=0.9.1",
+          "specifier": ">=0.9.1",
           "marker": null
         }
       },
@@ -70,15 +70,6 @@
             "group": "data_designer.plugins",
             "name": "embedding-dedup",
             "value": "data_designer_retrieval_sdg.plugins:embedding_dedup_plugin"
-          }
-        },
-        {
-          "name": "qa-evaluation-normalizer",
-          "plugin_type": "processor",
-          "entry_point": {
-            "group": "data_designer.plugins",
-            "name": "qa-evaluation-normalizer",
-            "value": "data_designer_retrieval_sdg.plugins:qa_evaluation_normalizer_plugin"
           }
         }
       ]

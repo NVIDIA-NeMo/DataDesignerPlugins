@@ -24,7 +24,7 @@ Browse available Data Designer plugins by what they add to your data generation 
     <span class="plugin-doc-card__description">Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion</span>
     <span class="plugin-doc-card__section">
       <span class="plugin-doc-card__label">Entry points</span>
-      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">document-chunker</span><span class="plugin-doc-chip">embedding-dedup</span><span class="plugin-doc-chip">qa-evaluation-normalizer</span></span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">document-chunker</span><span class="plugin-doc-chip">embedding-dedup</span></span>
     </span>
   </a>
   <a class="plugin-doc-card" href="data-designer-template/" aria-label="Open data-designer-template documentation">

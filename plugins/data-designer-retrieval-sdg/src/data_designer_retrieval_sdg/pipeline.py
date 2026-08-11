@@ -19,7 +19,7 @@ from pathlib import Path
 import data_designer.config as dd
 from data_designer.config.default_model_settings import get_default_providers
 
-from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig, QAEvaluationNormalizerConfig
+from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 from data_designer_retrieval_sdg.models import (
     DocumentArtifacts,
     QAPairEvaluations,
@@ -361,13 +361,6 @@ def build_qa_generation_pipeline(
             prompt=QA_EVALUATION_USER_PROMPT,
             output_format=QAPairEvaluations,
             model_alias=role_aliases["quality_judge"],
-        )
-    )
-
-    config_builder.add_processor(
-        QAEvaluationNormalizerConfig(
-            name="normalize_qa_evaluation_scores",
-            column_name="qa_evaluations",
         )
     )
 
