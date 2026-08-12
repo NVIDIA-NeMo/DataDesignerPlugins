@@ -128,7 +128,7 @@ validate-release:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi
 	@if [ ! -d "$(PLUGIN_DIR)" ]; then echo "ERROR: $(PLUGIN_DIR) not found"; exit 1; fi
 	@PLUGIN_VERSION=$$(uv run python -c "import tomllib; print(tomllib.load(open('$(PLUGIN_DIR)/pyproject.toml','rb'))['project']['version'])"); \
-	uv run ddp check-release "$(PLUGIN)" "$$PLUGIN_VERSION"
+	uv run --package ddp ddp check-release "$(PLUGIN)" "$$PLUGIN_VERSION"
 
 test-plugin:
 	@if [ -z "$(PLUGIN)" ]; then echo "ERROR: Set PLUGIN=<name>"; exit 1; fi

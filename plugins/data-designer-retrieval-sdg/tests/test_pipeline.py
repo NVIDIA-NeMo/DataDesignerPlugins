@@ -10,6 +10,7 @@ from pathlib import Path
 import data_designer.config as dd
 import pytest
 
+import data_designer_retrieval_sdg.pipeline as pipeline_module
 from data_designer_retrieval_sdg.pipeline import (
     DEFAULT_CHAT_MODEL,
     DEFAULT_EMBED_MODEL,
@@ -75,6 +76,29 @@ def test_provider_builder_combines_distinct_aliases(tmp_path: Path) -> None:
     assert next(provider for provider in custom if provider.name == "nvidia").endpoint == (
         "https://gateway.example.invalid/v1"
     )
+
+
+def test_provider_builder_uses_builtins_before_default_file_is_initialized(monkeypatch: pytest.MonkeyPatch) -> None:
+    builtin = dd.ModelProvider(
+        name="builtin",
+        endpoint="https://builtin.example.invalid/v1",
+        provider_type="openai",
+    )
+
+    def missing_default_file() -> list[dd.ModelProvider]:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(pipeline_module, "get_default_providers", missing_default_file)
+    monkeypatch.setattr(pipeline_module, "get_builtin_model_providers", lambda: [builtin])
+
+    all_providers, custom = build_model_providers(
+        custom_provider_endpoint="https://custom.example.invalid/v1",
+        custom_provider_name="custom",
+    )
+
+    assert all_providers is not None
+    assert [provider.name for provider in all_providers] == ["builtin", "custom"]
+    assert [provider.name for provider in custom] == ["custom"]
 
 
 def test_inline_provider_overrides_matching_provider_file_alias(tmp_path: Path) -> None:
