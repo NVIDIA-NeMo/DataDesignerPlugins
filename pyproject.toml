@@ -86,6 +86,6 @@ testpaths = ["plugins"]
 dev = [
     "dumb-pypi>=1.15.0",
     "pytest>=8.0.0",
-    "twine>=6.0.0",
+    "twine>=7.0.0",
     "zensical>=0.0.40",
 ]
