@@ -141,6 +141,7 @@ test-plugin:
 
 build-plugin: validate-release
 	uv build "$(PLUGIN_DIR)" --out-dir dist/
+	uv run twine check dist/*
 
 check-release-state:
 	@test -z "$$(git status --porcelain)" || { echo "ERROR: release worktree must be clean"; git status --short; exit 1; }
