@@ -71,7 +71,7 @@ def test_generation_pipeline_config_rejects_invalid_hop_range() -> None:
 
 @pytest.mark.parametrize("min_complexity", [0, 6])
 def test_generation_pipeline_config_rejects_complexity_outside_prompt_scale(min_complexity: int) -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="min_complexity"):
         GenerationPipelineConfig(min_complexity=min_complexity)
 
 
