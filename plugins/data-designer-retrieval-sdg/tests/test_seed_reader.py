@@ -113,9 +113,10 @@ def test_multi_doc_bundles(tmp_path: Path) -> None:
     output_df = reader._get_output_dataframe()
 
     assert len(output_df) == 2
+    bundle_source_id_length = 16  # fixed-length hash prefix for bundle source_id
     for _, row in output_df.iterrows():
         assert row["is_multi_doc"] is True
-        assert len(row["source_id"]) == 16
+        assert len(row["source_id"]) == bundle_source_id_length
         assert len(row["bundle_members"]) == 2
         assert row["bundle_id"], "multi-doc rows must carry a non-empty bundle_id"
         assert "=== Document Boundary ===" in row["text"]
