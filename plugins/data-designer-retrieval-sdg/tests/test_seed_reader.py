@@ -13,6 +13,11 @@ from data_designer_retrieval_sdg.seed_reader import DocumentChunkerSeedReader
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
 
+
+# The bundle source_id is currently generated as a fixed-length identifier.
+EXPECTED_BUNDLE_SOURCE_ID_LENGTH = 16
+
+
 def _attached_reader(source: DocumentChunkerSeedSource) -> DocumentChunkerSeedReader:
     reader = DocumentChunkerSeedReader()
     reader.attach(source, PlaintextResolver())
@@ -115,7 +120,7 @@ def test_multi_doc_bundles(tmp_path: Path) -> None:
     assert len(output_df) == 2
     for _, row in output_df.iterrows():
         assert row["is_multi_doc"] is True
-        assert len(row["source_id"]) == 16
+        assert len(row["source_id"]) == EXPECTED_BUNDLE_SOURCE_ID_LENGTH
         assert len(row["bundle_members"]) == 2
         assert row["bundle_id"], "multi-doc rows must carry a non-empty bundle_id"
         assert "=== Document Boundary ===" in row["text"]
