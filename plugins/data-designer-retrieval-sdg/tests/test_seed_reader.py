@@ -44,7 +44,7 @@ def test_single_doc_manifest_and_hydration(tmp_path: Path) -> None:
     assert len(output_df) == 3
 
     first = output_df.iloc[0].to_dict()
-    assert first["is_multi_doc"] is False
+    assert first["is_multi_doc"] == False
     assert isinstance(first["file_name"], list)
     assert len(first["file_name"]) == 1
     assert first["source_id"] == first["file_name"][0]
@@ -114,7 +114,7 @@ def test_multi_doc_bundles(tmp_path: Path) -> None:
 
     assert len(output_df) == 2
     for _, row in output_df.iterrows():
-        assert row["is_multi_doc"] is True
+        assert row["is_multi_doc"] == True
         assert len(row["source_id"]) == 16
         assert len(row["bundle_members"]) == 2
         assert row["bundle_id"], "multi-doc rows must carry a non-empty bundle_id"
