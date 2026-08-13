@@ -340,6 +340,8 @@ def text_to_sentence_chunks(
         ``sentence_count``, ``word_count``, ``chunk_id``,
         ``doc_chunk_index``, and optionally ``doc_id`` / ``doc_path``.
     """
+    if sentences_per_chunk <= 0:
+        raise ValueError(f"sentences_per_chunk must be positive, got {sentences_per_chunk}")
     ensure_nltk_punkt()
 
     paragraphs = re.split(r"\n\s*\n+", text)
