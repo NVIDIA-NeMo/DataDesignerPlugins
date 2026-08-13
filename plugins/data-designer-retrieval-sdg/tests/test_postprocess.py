@@ -87,3 +87,5 @@ def test_filter_skips_mismatched() -> None:
     filtered_df, skipped = filter_qa_pairs_by_quality(df, quality_threshold=5.0)
     assert len(filtered_df) == 0
     assert len(skipped) == 1
+    assert skipped[0]["question"] == "Q1"
+    assert skipped[0]["answer"] == "A1"
