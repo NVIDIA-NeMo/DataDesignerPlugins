@@ -41,15 +41,17 @@ def test_generation_config_models_are_exported_from_package_root() -> None:
 
 def test_generation_pipeline_config_has_canonical_defaults() -> None:
     config = GenerationPipelineConfig()
+    chat_model = "nvidia/nemotron-3-ultra-550b-a55b"
+    embed_model = "nvidia/nemotron-3-embed-1b"
 
     assert config.num_pairs == 7
     assert config.min_hops == 1
     assert config.max_hops == 3
     assert config.min_complexity == 2
-    assert config.artifact_extraction_model == "nvidia/nemotron-3-ultra-550b-a55b"
-    assert config.qa_generation_model == "nvidia/nemotron-3-ultra-550b-a55b"
-    assert config.quality_judge_model == "nvidia/nemotron-3-ultra-550b-a55b"
-    assert config.embed_model == "nvidia/nemotron-3-embed-1b"
+    assert config.artifact_extraction_model == chat_model
+    assert config.qa_generation_model == chat_model
+    assert config.quality_judge_model == chat_model
+    assert config.embed_model == embed_model
 
 
 def test_generation_configs_reject_unknown_fields_and_schema_versions(tmp_path: Path) -> None:
