@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-import data_designer.config as dd
+import data_designer.config as data_designer_config
 import pytest
 import yaml
 from pydantic import ValidationError
@@ -132,7 +132,7 @@ def test_generation_run_config_serialization_redacts_credentials(tmp_path: Path)
         seed_source=DocumentChunkerSeedSource(path=str(tmp_path)),
         output_dir=tmp_path / "output",
         model_providers=[
-            dd.ModelProvider(
+            data_designer_config.ModelProvider(
                 name="custom",
                 endpoint="https://example.invalid/v1",
                 api_key="provider-secret",
@@ -180,7 +180,7 @@ def test_extra_body_allowlist_requires_expected_value_types(tmp_path: Path) -> N
         seed_source=DocumentChunkerSeedSource(path=str(tmp_path)),
         output_dir=tmp_path / "output",
         model_providers=[
-            dd.ModelProvider(
+            data_designer_config.ModelProvider(
                 name="custom",
                 endpoint="https://example.invalid/v1",
                 provider_type="openai",
