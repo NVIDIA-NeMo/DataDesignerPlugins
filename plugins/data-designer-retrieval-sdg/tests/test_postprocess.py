@@ -71,7 +71,8 @@ def test_filter_by_quality() -> None:
     assert len(filtered_df) == 1
     assert filtered_df.iloc[0]["question"] == "Q1"
     assert filtered_df.iloc[0]["source_id"] == "nested/a.txt"
-    assert skipped == []
+    assert len(skipped) == 1
+    assert any(s.get("question") == "Q2" for s in skipped)
 
 
 def test_filter_skips_mismatched() -> None:
