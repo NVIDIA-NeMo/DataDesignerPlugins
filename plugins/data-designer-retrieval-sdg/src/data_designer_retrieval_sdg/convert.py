@@ -822,7 +822,7 @@ def generate_eval_set(
 
     with open(corpus_path, "w", encoding="utf-8") as corpus_file:
         for text, hash_id in corpus.items():
-            beir_id = f"d{corpus_id_counter}"
+            beir_id = hash_id if use_group_id_in_eval else f"d{corpus_id_counter}"
             text_to_beir_id[text] = beir_id
 
             corpus_entry: dict = {"_id": beir_id, "metadata": {}, "text": text, "title": ""}
