@@ -206,8 +206,15 @@ def format_section_chunks(section_chunks: list[dict], section_number: int) -> st
     return ""
 
 
+def _validate_positive_int(name: str, value: int) -> None:
+    """Raise ValueError if ``value`` is not a positive integer."""
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer, got {value}")
+
+
 def chunks_to_sections_sequential(chunks: list[dict], num_sections: int = 1) -> list[str]:
     """Split chunks sequentially into ``num_sections`` formatted sections."""
+    _validate_positive_int("num_sections", num_sections)
     total = len(chunks)
     if total == 0:
         return []
@@ -227,6 +234,7 @@ def chunks_to_sections_sequential(chunks: list[dict], num_sections: int = 1) -> 
 
 def chunks_to_sections_doc_balanced(chunks: list[dict], num_sections: int = 1) -> list[str]:
     """Split chunks so each section has proportional doc representation."""
+    _validate_positive_int("num_sections", num_sections)
     if not chunks:
         return []
 
@@ -259,6 +267,7 @@ def chunks_to_sections_doc_balanced(chunks: list[dict], num_sections: int = 1) -
 
 def chunks_to_sections_interleaved(chunks: list[dict], num_sections: int = 1) -> list[str]:
     """Split chunks with round-robin interleaving across documents."""
+    _validate_positive_int("num_sections", num_sections)
     if not chunks:
         return []
 
@@ -303,6 +312,7 @@ def chunks_to_sections_structured(
     strategy: Literal["sequential", "doc_balanced", "interleaved"] = "sequential",
 ) -> list[str]:
     """Split chunks into sections using the specified strategy."""
+    _validate_positive_int("num_sections", num_sections)
     if strategy == "doc_balanced":
         return chunks_to_sections_doc_balanced(chunks, num_sections)
     if strategy == "interleaved":
@@ -340,6 +350,7 @@ def text_to_sentence_chunks(
         ``sentence_count``, ``word_count``, ``chunk_id``,
         ``doc_chunk_index``, and optionally ``doc_id`` / ``doc_path``.
     """
+    _validate_positive_int("sentences_per_chunk", sentences_per_chunk)
     ensure_nltk_punkt()
 
     paragraphs = re.split(r"\n\s*\n+", text)
