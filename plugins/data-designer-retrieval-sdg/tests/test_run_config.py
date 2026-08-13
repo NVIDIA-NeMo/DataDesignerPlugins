@@ -52,10 +52,12 @@ def test_generation_pipeline_config_has_canonical_defaults() -> None:
     assert config.embed_model == "nvidia/nemotron-3-embed-1b"
 
 
-def test_generation_configs_reject_unknown_fields_and_schema_versions(tmp_path: Path) -> None:
+def test_generation_pipeline_config_rejects_unknown_fields() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
         GenerationPipelineConfig.model_validate({"num_pair": 10})
 
+
+def test_generation_run_config_rejects_unknown_schema_version(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="literal_error"):
         GenerationRunConfig(
             schema_version=2,
