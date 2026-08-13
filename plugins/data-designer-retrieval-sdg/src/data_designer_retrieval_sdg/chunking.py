@@ -137,6 +137,9 @@ def build_bundles(
     Raises:
         ValueError: If any bundle exceeds ``max_docs_per_bundle``.
     """
+    if bundle_size <= 0:
+        raise ValueError(f"bundle_size must be positive, got {bundle_size}")
+
     if not file_paths:
         return []
 
