@@ -323,17 +323,8 @@ def test_generate_rejects_removed_batch_flags(
     tmp_path: Path,
     removed_flag: str,
 ) -> None:
-    argv = [
-        "data-designer-retrieval-sdg",
-        "generate",
-        "--input-dir",
-        str(tmp_path),
-        "--output-dir",
-        str(tmp_path / "out"),
-        removed_flag,
-        "1",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(cli, "run_generation", lambda *_args, **_kwargs: pytest.fail("generation must not start"))
+    monkeypatch.setattr(sys, "argv", generate_argv(tmp_path, extra_args=[removed_flag, "1"]))
 
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
