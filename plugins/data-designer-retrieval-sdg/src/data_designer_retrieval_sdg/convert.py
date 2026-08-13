@@ -637,7 +637,6 @@ def create_group_aware_split(
     for ft in singleton_file_tuples:
         units.append((f"singleton_{ft}", [ft], file_tuple_counts[ft]))
 
-    random.shuffle(units)
     units.sort(key=lambda x: -x[2])
 
     total_qa = sum(u[2] for u in units)
