@@ -2,8 +2,13 @@
 
 <!-- Brief description of what this PR changes. -->
 
+## Linked Issue
+
+<!-- External contributors must open an issue and receive maintainer confirmation before opening a PR. Use "Fixes #NNN" or "Closes #NNN" below. See CONTRIBUTING.md. -->
+
 ## Checklist
 
+- [ ] Linked to the approved issue this PR addresses (`Fixes #NNN` or `Closes #NNN`), or I am a repository collaborator performing routine maintenance
 - [ ] Follows the template structure (`config.py`, `impl.py`, `plugin.py`) if adding a plugin
 - [ ] `assert_valid_plugin(plugin)` passes
 - [ ] Unit tests included and passing (`make test-plugin PLUGIN=<name>`)

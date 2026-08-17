@@ -128,6 +128,10 @@ Before a package's first release, register it once with
 
 See [docs/releasing.md](docs/releasing.md) for the full release guide.
 
+## Contributing
+
+Community contributions are welcome. External contributors must open an issue and receive maintainer confirmation before opening a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
