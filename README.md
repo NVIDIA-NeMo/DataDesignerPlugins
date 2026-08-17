@@ -130,7 +130,7 @@ See [docs/releasing.md](docs/releasing.md) for the full release guide.
 
 ## Contributing
 
-Community contributions are welcome. External contributors must open an issue and receive maintainer confirmation before opening a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
+Community contributions are welcome. External contributors must open an issue and wait for the `triaged` label before beginning implementation or opening a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
 ## License
 
