@@ -316,6 +316,44 @@ def test_generate_eval_set(tmp_path: Path) -> None:
     assert count == 1
 
 
+@pytest.mark.parametrize("use_group_id_in_eval", [False, True])
+def test_generate_eval_set_qrels_reference_corpus_ids(
+    tmp_path: Path,
+    use_group_id_in_eval: bool,
+) -> None:
+    corpus = {
+        "first document": get_corpus_id("first document"),
+        "second document": get_corpus_id("second document"),
+    }
+    chunk_mapping = {
+        ("src.txt", 1): "first document",
+        ("src.txt", 2): "second document",
+    }
+    eval_df = pd.DataFrame([{"file_name": ["src.txt"], "question": "Q?", "segment_ids": [1, 2]}])
+
+    generate_eval_set(
+        corpus,
+        chunk_mapping,
+        eval_df,
+        str(tmp_path),
+        eval_only=True,
+        use_group_id_in_eval=use_group_id_in_eval,
+    )
+
+    corpus_entries = [json.loads(line) for line in (tmp_path / "corpus.jsonl").read_text().splitlines()]
+    corpus_ids = {entry["_id"] for entry in corpus_entries}
+    qrels_lines = (tmp_path / "qrels" / "test.tsv").read_text().splitlines()[1:]
+    qrels_ids = {line.split("\t")[1] for line in qrels_lines}
+    expected_ids = set(corpus.values()) if use_group_id_in_eval else {"d0", "d1"}
+
+    assert corpus_ids == expected_ids
+    assert qrels_ids == expected_ids
+    if use_group_id_in_eval:
+        assert {entry["group_id"] for entry in corpus_entries} == expected_ids
+    else:
+        assert all("group_id" not in entry for entry in corpus_entries)
+
+
 def test_run_conversion_returns_generated_paths_and_counts(tmp_path: Path) -> None:
     input_path = tmp_path / "generated.jsonl"
     record = {
