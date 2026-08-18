@@ -38,4 +38,15 @@ Browse available Data Designer plugins by what they add to your data generation 
       <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">text-transform</span></span>
     </span>
   </a>
+  <a class="plugin-doc-card" href="data-designer-visual-search/" aria-label="Open data-designer-visual-search documentation">
+    <span class="plugin-doc-card__header">
+      <span class="plugin-doc-card__title">data-designer-visual-search</span>
+      <span class="plugin-doc-card__version">v0.1.0</span>
+    </span>
+    <span class="plugin-doc-card__description">Visual search column with local image crop, transform, and color-edit tools</span>
+    <span class="plugin-doc-card__section">
+      <span class="plugin-doc-card__label">Column types</span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">visual-search</span></span>
+    </span>
+  </a>
 </div>

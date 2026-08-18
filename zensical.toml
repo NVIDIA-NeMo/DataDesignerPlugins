@@ -32,6 +32,11 @@ nav = [
       {"Overview" = "plugins/data-designer-template/index.md"},
       {"Usage" = "plugins/data-designer-template/usage.md"},
     ]},
+    {"data-designer-visual-search" = [
+      {"Overview" = "plugins/data-designer-visual-search/index.md"},
+      {"Practical Examples" = "plugins/data-designer-visual-search/examples.md"},
+      {"Usage" = "plugins/data-designer-visual-search/usage.md"},
+    ]},
     # END GENERATED PLUGIN DOCS NAV
   ]},
 ]
