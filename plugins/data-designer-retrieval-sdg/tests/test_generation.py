@@ -183,7 +183,7 @@ def test_run_generation_creates_output_directory_before_generation(
     monkeypatch.setattr(
         generation,
         "DataDesigner",
-        lambda **_: pytest.fail("DataDesigner must not be constructed before output directory validation"),
+        lambda *args, **kwargs: pytest.fail("DataDesigner must not be constructed before output directory validation"),
     )
 
     with pytest.raises(FileExistsError):
