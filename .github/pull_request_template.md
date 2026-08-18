@@ -8,7 +8,7 @@
 
 ## Checklist
 
-- [ ] Linked to the triaged issue this PR addresses (`Fixes #NNN` or `Closes #NNN`), or I am a repository collaborator performing routine maintenance
+- [ ] Linked to the triaged issue this PR addresses (`Fixes #NNN` or `Closes #NNN`), or I am a repository collaborator performing routine maintenance or already-planned work
 - [ ] Follows the template structure (`config.py`, `impl.py`, `plugin.py`) if adding a plugin
 - [ ] `assert_valid_plugin(plugin)` passes
 - [ ] Unit tests included and passing (`make test-plugin PLUGIN=<name>`)
