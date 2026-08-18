@@ -190,6 +190,8 @@ def load_positive_docs_with_modality(
         Tuple of ``(positive_docs_df, doc_to_modality_final)``.
     """
     qrels_df = pd.read_csv(test_tsv_path, sep="\t")
+    if "corpus-id" not in qrels_df.columns and "corpus-id " in qrels_df.columns:
+        qrels_df = qrels_df.rename(columns={"corpus-id ": "corpus-id"})
 
     with open(split_json_path, encoding="utf-8") as f:
         splits = json.load(f)
