@@ -355,9 +355,7 @@ def text_to_sentence_chunks(
 
     for i in range(0, len(sentences), sentences_per_chunk):
         chunk_sentences = sentences[i : i + sentences_per_chunk]
-        chunk_text = ". ".join(chunk_sentences)
-        if chunk_text and not chunk_text.endswith("."):
-            chunk_text += "."
+        chunk_text = " ".join(chunk_sentences).strip()
 
         chunk_words = chunk_text.split()
         start_word_pos = word_position
