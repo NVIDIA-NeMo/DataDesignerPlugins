@@ -193,6 +193,8 @@ def load_positive_docs_with_modality(
         Tuple of ``(positive_docs_df, doc_to_modality_final)``.
     """
     qrels_df = pd.read_csv(test_tsv_path, sep="\t")
+    if "corpus-id" not in qrels_df.columns and "corpus-id " in qrels_df.columns:
+        qrels_df = qrels_df.rename(columns={"corpus-id ": "corpus-id"})
 
     with open(split_json_path, encoding="utf-8") as f:
         splits = json.load(f)
@@ -205,7 +207,7 @@ def load_positive_docs_with_modality(
     doc_to_modality: dict[str, set[str]] = defaultdict(set)
     for _, row in qrels_df.iterrows():
         query_id = row["query-id"]
-        corpus_id = row["corpus-id "]  # trailing space in column name
+        corpus_id = row["corpus-id"]
         if query_id in query_to_modality:
             doc_to_modality[corpus_id].add(query_to_modality[query_id])
 
@@ -215,7 +217,7 @@ def load_positive_docs_with_modality(
             doc_to_modality_final[doc_id] = next(iter(modalities))
         else:
             modality_counts: dict[str, int] = defaultdict(int)
-            for _, r in qrels_df[qrels_df["corpus-id "] == doc_id].iterrows():
+            for _, r in qrels_df[qrels_df["corpus-id"] == doc_id].iterrows():
                 qid = r["query-id"]
                 if qid in query_to_modality:
                     modality_counts[query_to_modality[qid]] += 1
