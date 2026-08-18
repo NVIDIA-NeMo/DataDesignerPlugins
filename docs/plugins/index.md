@@ -5,6 +5,17 @@
 Browse available Data Designer plugins by what they add to your data generation workflow.
 
 <div class="plugin-doc-grid">
+  <a class="plugin-doc-card" href="data-designer-docx/" aria-label="Open data-designer-docx documentation">
+    <span class="plugin-doc-card__header">
+      <span class="plugin-doc-card__title">data-designer-docx</span>
+      <span class="plugin-doc-card__version">v0.1.0</span>
+    </span>
+    <span class="plugin-doc-card__description">Data Designer processor plugin that renders generated rows as Microsoft Word documents</span>
+    <span class="plugin-doc-card__section">
+      <span class="plugin-doc-card__label">Entry points</span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">docx</span></span>
+    </span>
+  </a>
   <a class="plugin-doc-card" href="data-designer-github/" aria-label="Open data-designer-github documentation">
     <span class="plugin-doc-card__header">
       <span class="plugin-doc-card__title">data-designer-github</span>
