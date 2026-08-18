@@ -912,10 +912,7 @@ def generate_eval_set(
             for segment_id in segment_ids:
                 key = (file_identifier, segment_id)
                 text = chunk_mapping[key]
-                if use_group_id_in_eval:
-                    doc_id = corpus[text]
-                else:
-                    doc_id = text_to_beir_id[text]
+                doc_id = text_to_beir_id[text]
                 qrels_file.write(f"{query_id}\t{doc_id}\t1\n")
                 qrels_count += 1
 
