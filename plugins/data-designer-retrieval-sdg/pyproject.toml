@@ -3,7 +3,7 @@
 
 [project]
 name = "data-designer-retrieval-sdg"
-version = "0.2.0"
+version = "0.2.1"
 description = "Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
 requires-python = ">=3.10"
 dependencies = [
