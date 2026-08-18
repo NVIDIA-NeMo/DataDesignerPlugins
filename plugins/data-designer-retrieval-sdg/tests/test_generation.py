@@ -195,13 +195,14 @@ def test_run_generation_creates_output_directory_before_generation(
         )
 
 
-def test_run_generation_rejects_nonpositive_buffer_size(tmp_path: Path) -> None:
+@pytest.mark.parametrize("buffer_size", [0, -1])
+def test_run_generation_rejects_nonpositive_buffer_size(tmp_path: Path, buffer_size: int) -> None:
     with pytest.raises(ValueError, match="buffer_size"):
         generation.run_generation(
             GenerationRunConfig(
                 seed_source=DocumentChunkerSeedSource(path=str(tmp_path)),
                 output_dir=tmp_path / "output",
-                buffer_size=0,
+                buffer_size=buffer_size,
             )
         )
 
