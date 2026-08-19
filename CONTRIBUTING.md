@@ -11,7 +11,7 @@ External contributors are expected to open a GitHub issue before opening a pull 
 3. Wait for a maintainer to apply the `triaged` label before beginning implementation.
 4. Link the pull request to the open, triaged issue with `Fixes #NNN` or `Closes #NNN`.
 
-Pull requests from external contributors should link to an open, triaged issue. The linked-issue workflow reports when this policy is not met; repository rules must separately require `Linked Issue Check / check` for that result to block merging. Repository collaborators may open pull requests directly for routine maintenance and already-planned work.
+Pull requests from external contributors should link to an open, triaged issue. The linked-issue workflow reports when this policy is not met and rechecks when the selected issue gains or loses the `triaged` label, is closed, or is reopened; repository rules must separately require `Linked Issue Check / check` for that result to block merging. Repository collaborators may open pull requests directly for routine maintenance and already-planned work.
 
 ## Preparing Your Change
 
