@@ -128,6 +128,10 @@ Before a package's first release, register it once with
 
 See [docs/releasing.md](docs/releasing.md) for the full release guide.
 
+## Contributing
+
+Community contributions are welcome. External contributors are expected to open an issue and wait for the `triaged` label before beginning implementation or opening a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and enforcement details.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
