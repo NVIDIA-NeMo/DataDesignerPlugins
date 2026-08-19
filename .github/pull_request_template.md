@@ -4,11 +4,11 @@
 
 ## Linked Issue
 
-<!-- External contributors must link a triaged issue. Use "Fixes #NNN" or "Closes #NNN" below. See CONTRIBUTING.md. -->
+<!-- External contributors should link an open, triaged issue. Use "Fixes #NNN" or "Closes #NNN" below. See CONTRIBUTING.md. -->
 
 ## Checklist
 
-- [ ] Linked to the triaged issue this PR addresses (`Fixes #NNN` or `Closes #NNN`), or I am a repository collaborator performing routine maintenance or already-planned work
+- [ ] Linked to the open, triaged issue this PR addresses (`Fixes #NNN` or `Closes #NNN`), or I am a repository collaborator performing routine maintenance or already-planned work
 - [ ] Follows the template structure (`config.py`, `impl.py`, `plugin.py`) if adding a plugin
 - [ ] `assert_valid_plugin(plugin)` passes
 - [ ] Unit tests included and passing (`make test-plugin PLUGIN=<name>`)

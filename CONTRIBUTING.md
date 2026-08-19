@@ -4,14 +4,14 @@ Thank you for your interest in contributing to the NeMo Data Designer plugin cat
 
 ## Before You Open a Pull Request
 
-External contributors must open a GitHub issue before opening a pull request. Maintainers apply the [`triaged`](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/labels/triaged) label when an issue has been reviewed, approved, and is ready to be worked on.
+External contributors are expected to open a GitHub issue before opening a pull request. Maintainers apply the [`triaged`](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/labels/triaged) label when an open issue has been reviewed, approved, and is ready to be worked on.
 
 1. Search the [existing issues](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/issues) for related work.
 2. If no relevant issue exists, [open an issue](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/issues/new) describing the problem, proposed change, and affected plugin or repository component.
 3. Wait for a maintainer to apply the `triaged` label before beginning implementation.
-4. Link the pull request to the triaged issue with `Fixes #NNN` or `Closes #NNN`.
+4. Link the pull request to the open, triaged issue with `Fixes #NNN` or `Closes #NNN`.
 
-Pull requests from external contributors must link to a triaged issue. Repository collaborators may open pull requests directly for routine maintenance and already-planned work.
+Pull requests from external contributors should link to an open, triaged issue. The linked-issue workflow reports when this policy is not met; repository rules must separately require `Linked Issue Check / check` for that result to block merging. Repository collaborators may open pull requests directly for routine maintenance and already-planned work.
 
 ## Preparing Your Change
 
