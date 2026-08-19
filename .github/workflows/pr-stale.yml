@@ -95,6 +95,9 @@ jobs:
               CLOSE_DAYS=$CLOSE_DAYS_EXTERNAL
             fi
 
+            GRACE_DAYS=$(( CLOSE_DAYS - REMIND_DAYS ))
+            GRACE_SECONDS=$(( GRACE_DAYS * 86400 ))
+
             CHECKS_JSON=$(gh pr checks "$PR_NUM" --repo "$REPO" --json name,state 2>/dev/null || echo "[]")
             FAILING=$(echo "$CHECKS_JSON" | jq '[.[] | select(.state == "FAILURE" or .state == "ERROR")] | length')
 
@@ -136,22 +139,30 @@ jobs:
               2>/dev/null | tail -1 || true)
 
             HAS_REMINDER=0
+            REMINDER_AGE_SECONDS=0
             if [ -n "$REMINDER_JSON" ]; then
               HAS_REMINDER=1
               REMINDER_ID=$(echo "$REMINDER_JSON" | jq -r '.id')
               REMINDER_DATE=$(echo "$REMINDER_JSON" | jq -r '.created_at')
               REMINDER_EPOCH=$(date -u -d "$REMINDER_DATE" +%s 2>/dev/null || echo 0)
 
-              if [ "$LAST_ACTIVITY_EPOCH" -gt "$REMINDER_EPOCH" ]; then
+              if [ "$REMINDER_EPOCH" -eq 0 ]; then
+                echo "::warning::Could not parse reminder date for PR #${PR_NUM}"
+                continue
+              elif [ "$LAST_ACTIVITY_EPOCH" -gt "$REMINDER_EPOCH" ]; then
                 echo "  Activity after reminder: deleting reminder and resetting timer"
                 if [ "$DRY_RUN" != "true" ]; then
                   gh api -X DELETE "repos/${REPO}/issues/comments/${REMINDER_ID}" 2>/dev/null || true
                 fi
                 HAS_REMINDER=0
+              else
+                REMINDER_AGE_SECONDS=$(( NOW - REMINDER_EPOCH ))
               fi
             fi
 
-            if [ "$DAYS_INACTIVE" -ge "$CLOSE_DAYS" ] && [ "$HAS_REMINDER" -gt 0 ]; then
+            if [ "$DAYS_INACTIVE" -ge "$CLOSE_DAYS" ] \
+              && [ "$HAS_REMINDER" -gt 0 ] \
+              && [ "$REMINDER_AGE_SECONDS" -ge "$GRACE_SECONDS" ]; then
               echo "  Closing PR #${PR_NUM}"
 
               cat > /tmp/close-body.md <<MSG
@@ -165,8 +176,9 @@ jobs:
           If this was closed in error, add the **keep-open** label and reopen it.
           MSG
               if [ "$DRY_RUN" = "true" ]; then
-                echo "  Dry run: would comment on and close PR #${PR_NUM}"
+                echo "  Dry run: would delete reminder, comment on, and close PR #${PR_NUM}"
               else
+                gh api -X DELETE "repos/${REPO}/issues/comments/${REMINDER_ID}" --silent
                 gh pr comment "$PR_NUM" --repo "$REPO" --body-file /tmp/close-body.md
                 gh pr close "$PR_NUM" --repo "$REPO"
               fi
@@ -190,11 +202,6 @@ jobs:
               fi
 
             elif [ "$DAYS_INACTIVE" -ge "$REMIND_DAYS" ] && [ "$HAS_REMINDER" -eq 0 ]; then
-              GRACE_LEFT=$(( CLOSE_DAYS - DAYS_INACTIVE ))
-              if [ "$GRACE_LEFT" -lt 1 ]; then
-                GRACE_LEFT=1
-              fi
-
               echo "  Posting reminder on PR #${PR_NUM}"
 
               cat > /tmp/remind-body.md <<MSG
@@ -206,7 +213,7 @@ jobs:
           **Failing checks:** ${FAILING_NAMES}
 
           Please push an update or leave a comment if you're still working on this.
-          Otherwise, this PR will be automatically closed in **${GRACE_LEFT} days**.
+          Otherwise, this PR will be automatically closed in **${GRACE_DAYS} days**.
 
           To prevent auto-close, ask a maintainer to add the **keep-open** label.
           MSG
