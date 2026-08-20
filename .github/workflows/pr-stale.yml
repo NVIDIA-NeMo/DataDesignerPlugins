@@ -1,0 +1,230 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: "Stale PR Cleanup"
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report actions without changing PRs"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: stale-pr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  stale-check:
+    if: github.repository_owner == 'NVIDIA-NeMo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check stale PRs
+        env:
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          NOW=$(date -u +%s)
+          echo "Dry run: ${DRY_RUN}"
+
+          if ! gh api "repos/${REPO}/labels/keep-open" --silent 2>/dev/null; then
+            echo "::warning::Required keep-open label does not exist"
+            if [ "$DRY_RUN" != "true" ]; then
+              exit 1
+            fi
+          fi
+
+          REMIND_DAYS_EXTERNAL=7
+          CLOSE_DAYS_EXTERNAL=14
+          REMIND_DAYS_COLLAB=14
+          CLOSE_DAYS_COLLAB=28
+
+          REMINDER_MARKER="<!-- stale-pr-reminder -->"
+          CLOSE_MARKER="<!-- stale-pr-closed -->"
+
+          PRS=$(gh pr list --repo "$REPO" --state open \
+            --json number,author,labels,createdAt,isDraft --limit 1000)
+
+          PR_COUNT=$(echo "$PRS" | jq 'length')
+          echo "Found ${PR_COUNT} open PRs"
+
+          echo "$PRS" | jq -c '.[]' | while IFS= read -r PR; do
+            PR_NUM=$(echo "$PR" | jq -r '.number')
+            AUTHOR=$(echo "$PR" | jq -r '.author.login')
+            IS_DRAFT=$(echo "$PR" | jq -r '.isDraft')
+            HAS_KEEP_OPEN=$(echo "$PR" | jq -r '[.labels[].name] | any(. == "keep-open")')
+
+            echo "PR #${PR_NUM} by ${AUTHOR}"
+
+            if [ "$IS_DRAFT" = "true" ]; then
+              echo "  Skipping: draft PR"
+              continue
+            fi
+
+            if [ "$HAS_KEEP_OPEN" = "true" ]; then
+              echo "  Skipping: has keep-open label"
+              continue
+            fi
+
+            PERMISSION=$(gh api "repos/${REPO}/collaborators/${AUTHOR}/permission" \
+              --jq '.permission' 2>/dev/null || echo "none")
+
+            IS_COLLAB=false
+            if [ "$PERMISSION" = "admin" ] || [ "$PERMISSION" = "maintain" ] || [ "$PERMISSION" = "write" ]; then
+              IS_COLLAB=true
+            fi
+
+            if [ "$IS_COLLAB" = "true" ]; then
+              REMIND_DAYS=$REMIND_DAYS_COLLAB
+              CLOSE_DAYS=$CLOSE_DAYS_COLLAB
+            else
+              REMIND_DAYS=$REMIND_DAYS_EXTERNAL
+              CLOSE_DAYS=$CLOSE_DAYS_EXTERNAL
+            fi
+
+            GRACE_DAYS=$(( CLOSE_DAYS - REMIND_DAYS ))
+            GRACE_SECONDS=$(( GRACE_DAYS * 86400 ))
+
+            CHECKS_JSON=$(gh pr checks "$PR_NUM" --repo "$REPO" --json name,state 2>/dev/null || echo "[]")
+            FAILING=$(echo "$CHECKS_JSON" | jq '[.[] | select(.state == "FAILURE" or .state == "ERROR")] | length')
+
+            if [ "$FAILING" -eq 0 ]; then
+              echo "  Skipping: no failing checks"
+              continue
+            fi
+
+            FAILING_NAMES=$(echo "$CHECKS_JSON" | jq -r '[.[] | select(.state == "FAILURE" or .state == "ERROR") | .name] | join(", ")')
+            echo "  Failing checks (${FAILING}): ${FAILING_NAMES}"
+
+            LAST_PUSH=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUM}/commits?per_page=100" \
+              --jq '.[].commit.committer.date' 2>/dev/null | tail -1 || true)
+            LAST_COMMENT=$(gh api --paginate "repos/${REPO}/issues/${PR_NUM}/comments?per_page=100" \
+              --jq ".[] | select(.user.login == \"${AUTHOR}\") | .created_at" 2>/dev/null | tail -1 || true)
+            LAST_REVIEW_COMMENT=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUM}/comments?per_page=100" \
+              --jq ".[] | select(.user.login == \"${AUTHOR}\") | .created_at" 2>/dev/null | tail -1 || true)
+
+            LAST_ACTIVITY_EPOCH=0
+            for ACTIVITY in "$LAST_PUSH" "$LAST_COMMENT" "$LAST_REVIEW_COMMENT"; do
+              if [ -n "$ACTIVITY" ] && [ "$ACTIVITY" != "null" ]; then
+                ACTIVITY_EPOCH=$(date -u -d "$ACTIVITY" +%s 2>/dev/null || echo 0)
+                if [ "$ACTIVITY_EPOCH" -gt "$LAST_ACTIVITY_EPOCH" ]; then
+                  LAST_ACTIVITY_EPOCH=$ACTIVITY_EPOCH
+                fi
+              fi
+            done
+
+            if [ "$LAST_ACTIVITY_EPOCH" -eq 0 ]; then
+              CREATED=$(echo "$PR" | jq -r '.createdAt')
+              LAST_ACTIVITY_EPOCH=$(date -u -d "$CREATED" +%s 2>/dev/null || echo "$NOW")
+            fi
+
+            DAYS_INACTIVE=$(( (NOW - LAST_ACTIVITY_EPOCH) / 86400 ))
+            echo "  Days inactive: ${DAYS_INACTIVE} (remind=${REMIND_DAYS}, close=${CLOSE_DAYS}, collab=${IS_COLLAB})"
+
+            REMINDER_JSON=$(gh api --paginate "repos/${REPO}/issues/${PR_NUM}/comments?per_page=100" \
+              --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.body | contains(\"${REMINDER_MARKER}\")) | {id, created_at}" \
+              2>/dev/null | tail -1 || true)
+
+            HAS_REMINDER=0
+            REMINDER_AGE_SECONDS=0
+            if [ -n "$REMINDER_JSON" ]; then
+              HAS_REMINDER=1
+              REMINDER_ID=$(echo "$REMINDER_JSON" | jq -r '.id')
+              REMINDER_DATE=$(echo "$REMINDER_JSON" | jq -r '.created_at')
+              REMINDER_EPOCH=$(date -u -d "$REMINDER_DATE" +%s 2>/dev/null || echo 0)
+
+              if [ "$REMINDER_EPOCH" -eq 0 ]; then
+                echo "::warning::Could not parse reminder date for PR #${PR_NUM}"
+                continue
+              elif [ "$LAST_ACTIVITY_EPOCH" -gt "$REMINDER_EPOCH" ]; then
+                echo "  Activity after reminder: deleting reminder and resetting timer"
+                if [ "$DRY_RUN" != "true" ]; then
+                  gh api -X DELETE "repos/${REPO}/issues/comments/${REMINDER_ID}" 2>/dev/null || true
+                fi
+                HAS_REMINDER=0
+              else
+                REMINDER_AGE_SECONDS=$(( NOW - REMINDER_EPOCH ))
+              fi
+            fi
+
+            if [ "$DAYS_INACTIVE" -ge "$CLOSE_DAYS" ] \
+              && [ "$HAS_REMINDER" -gt 0 ] \
+              && [ "$REMINDER_AGE_SECONDS" -ge "$GRACE_SECONDS" ]; then
+              echo "  Closing PR #${PR_NUM}"
+
+              cat > /tmp/close-body.md <<MSG
+          ${CLOSE_MARKER}
+          ### Auto-closed: inactive PR
+
+          This PR has been automatically closed after ${DAYS_INACTIVE} days of inactivity
+          with failing checks.
+
+          Feel free to reopen it once you're ready to address the outstanding checks.
+          If this was closed in error, add the **keep-open** label and reopen it.
+          MSG
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "  Dry run: would delete reminder, comment on, and close PR #${PR_NUM}"
+              else
+                gh api -X DELETE "repos/${REPO}/issues/comments/${REMINDER_ID}" --silent
+                gh pr comment "$PR_NUM" --repo "$REPO" --body-file /tmp/close-body.md
+                gh pr close "$PR_NUM" --repo "$REPO"
+              fi
+
+              gh pr view "$PR_NUM" --repo "$REPO" --json body -q '.body' > /tmp/pr-body-raw.txt 2>/dev/null || true
+              LINKED_ISSUE=$(jq -Rrn --rawfile body /tmp/pr-body-raw.txt \
+                '$body | capture("(?i)\\b(?:fixes|closes|resolves)\\s+#(?<issue>[0-9]+)") | .issue' \
+                2>/dev/null || true)
+              if [ -n "$LINKED_ISSUE" ]; then
+                ISSUE_STATE=$(gh api "repos/${REPO}/issues/${LINKED_ISSUE}" \
+                  --jq 'select(has("pull_request") | not) | .state' 2>/dev/null || true)
+                if [ "$ISSUE_STATE" = "open" ]; then
+                  if [ "$DRY_RUN" = "true" ]; then
+                    echo "  Dry run: would add needs-attention to issue #${LINKED_ISSUE}"
+                  elif gh issue edit "$LINKED_ISSUE" --repo "$REPO" --add-label "needs-attention"; then
+                    echo "  Added needs-attention to issue #${LINKED_ISSUE}"
+                  else
+                    echo "::warning::Could not add needs-attention to issue #${LINKED_ISSUE}"
+                  fi
+                fi
+              fi
+
+            elif [ "$DAYS_INACTIVE" -ge "$REMIND_DAYS" ] && [ "$HAS_REMINDER" -eq 0 ]; then
+              echo "  Posting reminder on PR #${PR_NUM}"
+
+              cat > /tmp/remind-body.md <<MSG
+          ${REMINDER_MARKER}
+          ### Stale PR reminder
+
+          This PR has had failing checks for **${DAYS_INACTIVE} days** without author activity.
+
+          **Failing checks:** ${FAILING_NAMES}
+
+          Please push an update or leave a comment if you're still working on this.
+          Otherwise, this PR will be automatically closed in **${GRACE_DAYS} days**.
+
+          To prevent auto-close, ask a maintainer to add the **keep-open** label.
+          MSG
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "  Dry run: would comment on PR #${PR_NUM}"
+              else
+                gh pr comment "$PR_NUM" --repo "$REPO" --body-file /tmp/remind-body.md
+              fi
+            else
+              echo "  No action needed"
+            fi
+          done
+
+          echo "Stale PR check complete"
