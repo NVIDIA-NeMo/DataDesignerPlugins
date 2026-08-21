@@ -25,6 +25,9 @@ nav = [
       {"Overview" = "plugins/data-designer-github/index.md"},
       {"Usage" = "plugins/data-designer-github/usage.md"},
     ]},
+    {"data-designer-group-consistent" = [
+      {"Overview" = "plugins/data-designer-group-consistent/index.md"},
+    ]},
     {"data-designer-retrieval-sdg" = [
       {"Overview" = "plugins/data-designer-retrieval-sdg/index.md"},
     ]},

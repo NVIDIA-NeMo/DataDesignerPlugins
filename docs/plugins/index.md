@@ -16,6 +16,17 @@ Browse available Data Designer plugins by what they add to your data generation 
       <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">github</span></span>
     </span>
   </a>
+  <a class="plugin-doc-card" href="data-designer-group-consistent/" aria-label="Open data-designer-group-consistent documentation">
+    <span class="plugin-doc-card__header">
+      <span class="plugin-doc-card__title">data-designer-group-consistent</span>
+      <span class="plugin-doc-card__version">v0.1.0</span>
+    </span>
+    <span class="plugin-doc-card__description">Deterministic group-scoped record generation for Data Designer</span>
+    <span class="plugin-doc-card__section">
+      <span class="plugin-doc-card__label">Entry points</span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">group-consistent</span></span>
+    </span>
+  </a>
   <a class="plugin-doc-card" href="data-designer-retrieval-sdg/" aria-label="Open data-designer-retrieval-sdg documentation">
     <span class="plugin-doc-card__header">
       <span class="plugin-doc-card__title">data-designer-retrieval-sdg</span>
