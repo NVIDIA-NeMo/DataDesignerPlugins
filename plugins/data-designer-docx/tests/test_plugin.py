@@ -15,6 +15,7 @@ from docx import Document
 from pydantic import ValidationError
 
 from data_designer_docx.config import DocxProcessorConfig
+from data_designer_docx.impl import DocxProcessor
 from data_designer_docx.plugin import plugin
 from data_designer_docx.render import normalize_rows, render_document, safe_filename
 from data_designer_docx.schema import DocSection, DocTable, WordDocument
@@ -42,6 +43,32 @@ def make_document(title: str = "Access Control Standard") -> WordDocument:
     )
 
 
+class BoundDocxProcessor(DocxProcessor):
+    """A processor bound to an explicit dataset path.
+
+    Lets the collision and path-containment logic be tested directly, without
+    standing up a ResourceProvider.
+    """
+
+    _base_dataset_path: Path
+
+    @property
+    def base_dataset_path(self) -> Path:
+        return self._base_dataset_path
+
+
+def build_processor(tmp_path: Path, **overrides: object) -> BoundDocxProcessor:
+    """Construct a BoundDocxProcessor over a temporary dataset directory."""
+    dataset_path = tmp_path / "dataset"
+    dataset_path.mkdir(exist_ok=True)
+
+    processor = BoundDocxProcessor.__new__(BoundDocxProcessor)
+    processor._base_dataset_path = dataset_path
+    processor._config = DocxProcessorConfig(name="docs", document_column="document", **overrides)
+    processor._initialize()
+    return processor
+
+
 class TestDocxProcessorConfig:
     def test_defaults(self) -> None:
         config = DocxProcessorConfig(name="docs", document_column="document")
@@ -49,11 +76,44 @@ class TestDocxProcessorConfig:
         assert config.output_subdir == "documents"
         assert config.output_path_column == "docx_path"
 
-    @pytest.mark.parametrize("reserved", ["processors-files", "parquet-files"])
+    def test_default_filename_needs_no_dataset_column(self) -> None:
+        """A minimal config must be renderable without inventing an unrelated id column."""
+        config = DocxProcessorConfig(name="docs", document_column="document")
+        assert "{{" not in config.filename_template
+
+    @pytest.mark.parametrize(
+        "reserved",
+        [
+            "processors-files",
+            "parquet-files",
+            "dropped-columns-parquet-files",
+            # Deleted by Data Designer on resume, which would orphan every docx_path.
+            "tmp-partial-parquet-files",
+            "images",
+            "./processors-files",
+            "foo/../parquet-files",
+            "nested/images",
+        ],
+    )
     def test_reserved_output_subdir_is_rejected(self, reserved: str) -> None:
-        """Data Designer reads these folders back as parquet, so documents must not go there."""
-        with pytest.raises(ValidationError, match="Data Designer-managed folder"):
+        """Data Designer reads or deletes these folders, so documents must not go there."""
+        with pytest.raises(ValidationError):
             DocxProcessorConfig(name="docs", document_column="document", output_subdir=reserved)
+
+    @pytest.mark.parametrize("escaping", ["../outside", "/private/tmp/outside", "a/../../outside", ""])
+    def test_escaping_output_subdir_is_rejected(self, escaping: str) -> None:
+        with pytest.raises(ValidationError):
+            DocxProcessorConfig(name="docs", document_column="document", output_subdir=escaping)
+
+    @pytest.mark.parametrize("bad_name", ["../../outside", "/abs", "nested/name", "..", "processors-files"])
+    def test_unsafe_processor_name_is_rejected(self, bad_name: str) -> None:
+        """The processor name becomes a directory, so it is a traversal route too."""
+        with pytest.raises(ValidationError):
+            DocxProcessorConfig(name=bad_name, document_column="document")
+
+    def test_nested_output_subdir_is_allowed(self) -> None:
+        config = DocxProcessorConfig(name="docs", document_column="document", output_subdir="out/word")
+        assert config.output_subdir == "out/word"
 
 
 class TestSafeFilename:
@@ -195,3 +255,87 @@ class TestDocxProcessorPreviewIntegration:
 
         assert result.dataset["docx_path"].isna().sum() == 1
         assert len(list(artifact_path.rglob("*.docx"))) == 1
+
+
+class TestStructuredStringPreservation:
+    """Regression tests for JSON-decoding of already-decoded document mappings.
+
+    Data Designer's recursive `deserialize_json_values` rewrites string leaves that
+    look like JSON scalars, so `"30"` becomes `30` and `"true"` becomes `True`.
+    Those values are exactly what key-data tables carry, and `WordDocument` rejects
+    them, which silently dropped the row.
+    """
+
+    def numeric_document(self) -> dict:
+        document = make_document().model_dump()
+        document["key_data"]["columns"] = ["Threshold", "Enabled", "Notes"]
+        document["key_data"]["rows"] = [["30", "true", "null"]]
+        return document
+
+    def test_scalar_looking_strings_survive_as_mapping(self, tmp_path: Path) -> None:
+        artifact_path = tmp_path / "artifacts"
+        artifact_path.mkdir()
+        seed_df = pd.DataFrame({"doc_id": ["POL-1"], "document": [json.dumps(self.numeric_document())]})
+
+        builder = DataDesignerConfigBuilder()
+        builder.with_seed_dataset(DataFrameSeedSource(df=seed_df))
+        builder.add_column(ExpressionColumnConfig(name="doc_label", expr="{{ doc_id }}"))
+        builder.add_processor(
+            DocxProcessorConfig(name="docs", document_column="document", filename_template="{{ doc_id }}.docx")
+        )
+
+        result = DataDesigner(artifact_path=artifact_path).preview(builder, num_records=1)
+
+        assert result.dataset["docx_path"].notna().all(), "row was skipped instead of rendered"
+        written = sorted(artifact_path.rglob("*.docx"))
+        assert len(written) == 1
+        cells = [cell.text for cell in Document(str(written[0])).tables[-1].rows[1].cells]
+        assert cells == ["30", "true", "null"], f"string leaves were coerced: {cells}"
+
+
+class TestFilenameCollisions:
+    def make_processor_dir(self, tmp_path: Path) -> Path:
+        output_dir = tmp_path / "documents" / "docs"
+        output_dir.mkdir(parents=True)
+        return output_dir
+
+    def test_case_insensitive_collision(self, tmp_path: Path) -> None:
+        """macOS and Windows treat A.docx and a.docx as the same file."""
+        processor = build_processor(tmp_path, filename_template="{{ doc_id }}.docx")
+        processor.seed_used_filenames(self.make_processor_dir(tmp_path))
+
+        assert processor.unique_filename("Report") == "Report.docx"
+        assert processor.unique_filename("report") == "report-1.docx"
+
+    def test_seeds_from_existing_files(self, tmp_path: Path) -> None:
+        """A resumed run must not overwrite documents written before the resume."""
+        output_dir = self.make_processor_dir(tmp_path)
+        (output_dir / "same.docx").write_bytes(b"existing")
+
+        processor = build_processor(tmp_path, filename_template="same.docx")
+        processor.seed_used_filenames(output_dir)
+
+        assert processor.unique_filename("same") == "same-1.docx"
+
+    def test_output_dir_stays_inside_dataset(self, tmp_path: Path) -> None:
+        processor = build_processor(tmp_path)
+        assert processor.output_dir.is_relative_to((tmp_path / "dataset").resolve())
+
+
+class TestFooterTargeting:
+    def test_footer_applies_to_every_section(self, tmp_path: Path) -> None:
+        """Generated content lands in the template's last section, not the first."""
+        template_path = tmp_path / "two-section-template.docx"
+        template = Document()
+        template.add_section()
+        for index, section in enumerate(template.sections):
+            section.footer.is_linked_to_previous = False
+            section.footer.paragraphs[0].text = f"template-{index}"
+        template.save(str(template_path))
+
+        path = render_document(
+            make_document(), tmp_path / "out.docx", template_path=template_path, footer_text="override"
+        )
+
+        footers = [section.footer.paragraphs[0].text for section in Document(str(path)).sections]
+        assert set(footers) == {"override"}, footers

@@ -82,6 +82,27 @@ def add_data_table(doc: Any, table: DocTable, style: str) -> None:
     doc.add_paragraph()
 
 
+def apply_footer(doc: Any, footer_text: str) -> None:
+    """Set the footer on every section of the document.
+
+    Generated content is appended after whatever the template already contains, so
+    it lands in the template's *final* section. Writing only to ``sections[0]``
+    leaves the generated pages showing the template's footer whenever the sections
+    are not linked. ``footer_template`` is a document-wide setting, so it is applied
+    to all sections.
+
+    Args:
+        doc: The python-docx ``Document`` being rendered.
+        footer_text: The rendered footer text.
+    """
+    for section in doc.sections:
+        # A section that inherits from the previous one cannot hold its own text.
+        section.footer.is_linked_to_previous = False
+        paragraph = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
+        paragraph.text = footer_text
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
 def render_document(
     document: WordDocument,
     output_path: str | Path,
@@ -140,9 +161,7 @@ def render_document(
     add_data_table(doc, document.key_data, table_style)
 
     if footer_text:
-        footer_paragraph = doc.sections[0].footer.paragraphs[0]
-        footer_paragraph.text = footer_text
-        footer_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        apply_footer(doc, footer_text)
 
     # Word core properties travel with the file. Downstream extraction and
     # classification pipelines read them, so it is worth filling them in.

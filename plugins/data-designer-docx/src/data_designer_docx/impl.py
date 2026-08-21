@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -39,6 +41,21 @@ def to_text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def collision_key(filename: str) -> str:
+    """Build a portable key for detecting file name collisions.
+
+    macOS and Windows filesystems are case-insensitive by default, so ``A.docx``
+    and ``a.docx`` are the same file even though the strings differ.
+
+    Args:
+        filename: A sanitized file name.
+
+    Returns:
+        A case-folded key suitable for collision comparison.
+    """
+    return filename.casefold()
+
+
 class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConfig]):
     """Writes one ``.docx`` file per row as each batch completes.
 
@@ -48,13 +65,27 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
     """
 
     def _initialize(self) -> None:
-        """Reset the per-run record of file names already written."""
+        """Reset the record of file names already written."""
         self._used_filenames: set[str] = set()
+        self._seeded_from_disk = False
 
     @property
     def output_dir(self) -> Path:
-        """Directory that documents for this processor are written to."""
-        return self.base_dataset_path / self.config.output_subdir / self.config.name
+        """Directory that documents for this processor are written to.
+
+        Raises:
+            ValueError: If the configured path would resolve outside the dataset
+                directory. The config validators already reject traversal, so this
+                is a defence-in-depth check against symlinked or unusual roots.
+        """
+        base = self.base_dataset_path.resolve()
+        candidate = (base / self.config.output_subdir / self.config.name).resolve()
+        if base != candidate and base not in candidate.parents:
+            raise ValueError(
+                f"Refusing to write documents to {candidate}, which is outside the dataset "
+                f"directory {base}. Check output_subdir and the processor name."
+            )
+        return candidate
 
     def relative_path(self, filename: str) -> str:
         """Build the dataset-relative path stored in the output column.
@@ -66,6 +97,25 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
             A path relative to the dataset directory, keeping the dataset portable.
         """
         return f"{self.config.output_subdir}/{self.config.name}/{filename}"
+
+    def seed_used_filenames(self, output_dir: Path) -> None:
+        """Adopt file names already on disk so a resumed run cannot overwrite them.
+
+        A resumed run builds a fresh processor instance with an empty collision set.
+        Without this, rows generated after the resume can reuse names owned by
+        batches that completed before it.
+
+        Args:
+            output_dir: The directory documents are written to.
+        """
+        if self._seeded_from_disk:
+            return
+        if output_dir.is_dir():
+            existing = {collision_key(path.name) for path in output_dir.glob(f"*{DOCX_SUFFIX}")}
+            self._used_filenames.update(existing)
+            if existing:
+                logger.debug(f"Seeded {len(existing)} existing document name(s) from {output_dir}.")
+        self._seeded_from_disk = True
 
     def render_for_all_records(self, template: str, columns: list[str], records: list[dict]) -> list[str]:
         """Render one Jinja2 template across every record in a batch.
@@ -85,7 +135,7 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
         return [self.render_template(record) for record in records]
 
     def unique_filename(self, rendered: str) -> str:
-        """Sanitize a rendered file name and make it unique within the run.
+        """Sanitize a rendered file name and make it unique across the dataset.
 
         Args:
             rendered: The raw rendered file name.
@@ -94,19 +144,24 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
             A filesystem-safe name, suffixed with ``-1``, ``-2``, and so on if needed.
         """
         filename = safe_filename(rendered)
-        if filename not in self._used_filenames:
-            self._used_filenames.add(filename)
+        if collision_key(filename) not in self._used_filenames:
+            self._used_filenames.add(collision_key(filename))
             return filename
         stem = filename[: -len(DOCX_SUFFIX)]
         counter = 1
-        while f"{stem}-{counter}{DOCX_SUFFIX}" in self._used_filenames:
+        while collision_key(f"{stem}-{counter}{DOCX_SUFFIX}") in self._used_filenames:
             counter += 1
         deduped = f"{stem}-{counter}{DOCX_SUFFIX}"
-        self._used_filenames.add(deduped)
+        self._used_filenames.add(collision_key(deduped))
         return deduped
 
     def parse_document(self, value: Any) -> WordDocument | None:
         """Parse a structured column value into a :class:`WordDocument`.
+
+        Only a top-level JSON string is decoded. Mappings are validated as-is: the
+        engine's recursive JSON decoding would coerce legitimate string leaves such
+        as ``"30"`` or ``"true"`` into ``int`` and ``bool``, which the schema then
+        rejects — exactly the values that show up in key-data tables.
 
         Args:
             value: A JSON string or already-decoded mapping from the dataset.
@@ -119,8 +174,10 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
         try:
             if isinstance(value, str):
                 return WordDocument.model_validate_json(value)
-            return WordDocument.model_validate(value)
-        except (ValidationError, ValueError) as exc:
+            if isinstance(value, Mapping):
+                return WordDocument.model_validate(value)
+            return WordDocument.model_validate(json.loads(json.dumps(value)))
+        except (ValidationError, ValueError, TypeError) as exc:
             logger.warning(f"⚠️ Skipping row: {self.config.document_column!r} is not a valid document ({exc}).")
             return None
 
@@ -128,7 +185,7 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
         """Pre-render every configured template across the batch.
 
         Args:
-            records: The batch records.
+            records: The batch records, with nested JSON decoded for template access.
             columns: Column names allowed as template references.
 
         Returns:
@@ -176,14 +233,18 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
             )
 
         columns = data.columns.to_list()
-        records = [deserialize_json_values(record) for record in data.to_dict(orient="records")]
-        options = self.render_options(records, columns)
+        # Documents are read from the raw records; only the template-facing copy is
+        # recursively JSON-decoded, since that decoding rewrites string leaves.
+        raw_records = data.to_dict(orient="records")
+        template_records = [deserialize_json_values(record) for record in raw_records]
+        options = self.render_options(template_records, columns)
 
         output_dir = self.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
+        self.seed_used_filenames(output_dir)
 
         written: list[str | None] = []
-        for row, record in enumerate(records):
+        for row, record in enumerate(raw_records):
             document = self.parse_document(record.get(self.config.document_column))
             if document is None:
                 written.append(None)
