@@ -120,17 +120,18 @@ class TestGroupConsistentPreviewIntegration:
         builder = DataDesignerConfigBuilder()
         builder.with_seed_dataset(DataFrameSeedSource(df=seed_df))
         builder.add_column(
-            name="synthetic_first_name",
-            column_type="group-consistent",
-            group_by=["patient_id"],
-            records=PERSONAS,
-            field_mapping={
-                "synthetic_first_name": "first_name",
-                "synthetic_last_name": "last_name",
-                "synthetic_email": "email",
-            },
-            role="patient",
-            seed=7,
+            GroupConsistentColumnConfig(
+                name="synthetic_first_name",
+                group_by=["patient_id"],
+                records=PERSONAS,
+                field_mapping={
+                    "synthetic_first_name": "first_name",
+                    "synthetic_last_name": "last_name",
+                    "synthetic_email": "email",
+                },
+                role="patient",
+                seed=7,
+            ),
         )
 
         result = DataDesigner(artifact_path=tmp_path / "artifacts").preview(builder, num_records=4)

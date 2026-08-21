@@ -17,23 +17,25 @@ retries, and resumed runs with the same configuration.
 
 ```python
 from data_designer.config import DataDesignerConfigBuilder
+from data_designer_group_consistent.config import GroupConsistentColumnConfig
 
 builder = DataDesignerConfigBuilder()
 builder.add_column(
-    name="synthetic_first_name",
-    column_type="group-consistent",
-    group_by=["patient_id"],
-    role="patient",
-    seed=7,
-    records=[
-        {"first_name": "Amina", "last_name": "Diallo", "email": "amina@example.test"},
-        {"first_name": "Carlos", "last_name": "Silva", "email": "carlos@example.test"},
-    ],
-    field_mapping={
-        "synthetic_first_name": "first_name",
-        "synthetic_last_name": "last_name",
-        "synthetic_email": "email",
-    },
+    GroupConsistentColumnConfig(
+        name="synthetic_first_name",
+        group_by=["patient_id"],
+        role="patient",
+        seed=7,
+        records=[
+            {"first_name": "Amina", "last_name": "Diallo", "email": "amina@example.test"},
+            {"first_name": "Carlos", "last_name": "Silva", "email": "carlos@example.test"},
+        ],
+        field_mapping={
+            "synthetic_first_name": "first_name",
+            "synthetic_last_name": "last_name",
+            "synthetic_email": "email",
+        },
+    ),
 )
 ```
 
