@@ -13,6 +13,8 @@ External contributors are expected to open a GitHub issue before opening a pull 
 
 Pull requests from external contributors should link to an open, triaged issue. The linked-issue workflow reports when this policy is not met and rechecks when the selected issue gains or loses the `triaged` label, is closed, or is reopened; repository rules must separately require `Linked Issue Check / check` for that result to block merging. Repository collaborators may open pull requests directly for routine maintenance and already-planned work.
 
+Pull requests with failing checks are reminded after 7 days without author activity and closed after 14 days. Repository collaborators use 14-day and 28-day thresholds. Draft pull requests are excluded. If more time is needed, ask a maintainer to add the `keep-open` label.
+
 ## Preparing Your Change
 
 - Follow the repository structure and development guidance in the [README](README.md) and [AGENTS.md](AGENTS.md).
