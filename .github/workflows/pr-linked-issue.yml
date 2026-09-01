@@ -1,0 +1,301 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: "Linked Issue Check"
+
+on:
+  # Re-check when a PR is opened or its body or commits change.
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+    branches: [main]
+
+  # Re-check open PRs when linked-issue validity changes.
+  issues:
+    types: [labeled, unlabeled, closed, reopened]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+  issues: read
+
+jobs:
+  # SECURITY: This workflow uses pull_request_target to post comments on fork
+  # PRs. It MUST NOT check out or execute code from the PR branch. All inputs
+  # from the PR are read through GitHub-controlled metadata and APIs only.
+  check:
+    if: >-
+      github.repository_owner == 'NVIDIA-NeMo'
+      && github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check author permissions
+        id: author
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          USER="$PR_AUTHOR"
+
+          # Bots that are always allowed.
+          if [ "$USER" = "dependabot[bot]" ]; then
+            echo "is_collaborator=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PERMISSION=$(gh api "repos/${{ github.repository }}/collaborators/${USER}/permission" \
+            --jq '.permission' 2>/dev/null || echo "none")
+          echo "permission=${PERMISSION}"
+
+          if [ "$PERMISSION" = "admin" ] || [ "$PERMISSION" = "write" ]; then
+            echo "is_collaborator=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_collaborator=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Parse issue reference from PR body
+        id: parse
+        if: steps.author.outputs.is_collaborator != 'true'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [ -z "$PR_BODY" ] || [ "$PR_BODY" = "null" ]; then
+            echo "issue_num=" >> "$GITHUB_OUTPUT"
+            echo "No PR body found"
+            exit 0
+          fi
+
+          # Case-insensitive match for Fixes #N, Closes #N, or Resolves #N.
+          printf '%s' "$PR_BODY" > /tmp/pr-body-raw.txt
+          ISSUE_NUM=$(grep -ioP '(?:fixes|closes|resolves)\s+#\K\d+' /tmp/pr-body-raw.txt | head -1 || true)
+          echo "issue_num=${ISSUE_NUM}" >> "$GITHUB_OUTPUT"
+          echo "Parsed issue number: ${ISSUE_NUM:-<none>}"
+
+      - name: Validate issue is open and triaged
+        id: validate
+        if: steps.author.outputs.is_collaborator != 'true' && steps.parse.outputs.issue_num != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUM: ${{ steps.parse.outputs.issue_num }}
+        run: |
+          RESPONSE=$(gh api "repos/${{ github.repository }}/issues/${ISSUE_NUM}" 2>/dev/null) || {
+            echo "issue_exists=false" >> "$GITHUB_OUTPUT"
+            echo "is_open=false" >> "$GITHUB_OUTPUT"
+            echo "is_triaged=false" >> "$GITHUB_OUTPUT"
+            echo "Issue #${ISSUE_NUM} not found"
+            exit 0
+          }
+
+          # GitHub's issues API returns both issues and pull requests.
+          IS_PR=$(echo "$RESPONSE" | jq -r 'has("pull_request")')
+          if [ "$IS_PR" = "true" ]; then
+            echo "issue_exists=false" >> "$GITHUB_OUTPUT"
+            echo "is_open=false" >> "$GITHUB_OUTPUT"
+            echo "is_triaged=false" >> "$GITHUB_OUTPUT"
+            echo "#${ISSUE_NUM} is a pull request, not an issue"
+            exit 0
+          fi
+
+          echo "issue_exists=true" >> "$GITHUB_OUTPUT"
+
+          ISSUE_OPEN=$(echo "$RESPONSE" | jq -r '.state == "open"')
+          echo "is_open=${ISSUE_OPEN}" >> "$GITHUB_OUTPUT"
+          if [ "$ISSUE_OPEN" != "true" ]; then
+            echo "is_triaged=false" >> "$GITHUB_OUTPUT"
+            echo "Issue #${ISSUE_NUM} is closed"
+            exit 0
+          fi
+
+          TRIAGED=$(echo "$RESPONSE" | jq -r '[.labels[].name] | any(. == "triaged")')
+          echo "is_triaged=${TRIAGED}" >> "$GITHUB_OUTPUT"
+          echo "Issue #${ISSUE_NUM} is open, triaged=${TRIAGED}"
+
+      - name: Build comment body and post result
+        id: comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IS_COLLABORATOR: ${{ steps.author.outputs.is_collaborator }}
+          ISSUE_NUM: ${{ steps.parse.outputs.issue_num }}
+          ISSUE_EXISTS: ${{ steps.validate.outputs.issue_exists }}
+          ISSUE_OPEN: ${{ steps.validate.outputs.is_open }}
+          IS_TRIAGED: ${{ steps.validate.outputs.is_triaged }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          MARKER="<!-- linked-issue-check -->"
+
+          COMMENT_IDS=$(gh api --paginate \
+            "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.body | contains(\"${MARKER}\")) | .id" \
+            2>/dev/null || echo "")
+          COMMENT_ID=$(printf '%s\n' "$COMMENT_IDS" | tail -1)
+
+          if [ "$IS_COLLABORATOR" = "true" ]; then
+            echo "status=pass" >> "$GITHUB_OUTPUT"
+            if [ -n "$COMMENT_ID" ]; then
+              gh api -X DELETE "repos/${REPO}/issues/comments/${COMMENT_ID}" || true
+            fi
+            exit 0
+          fi
+
+          if [ -z "$ISSUE_NUM" ]; then
+            STATUS="fail"
+            cat > /tmp/comment-body.md <<'MSG'
+          <!-- linked-issue-check -->
+          ### Linked Issue Check
+
+          This PR does not reference an issue. External contributions must link to
+          an open, triaged issue for this check to pass.
+
+          Add one of the following to your PR description:
+          - `Fixes #<issue-number>`
+          - `Closes #<issue-number>`
+          - `Resolves #<issue-number>`
+
+          If no issue exists yet, [open one](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/issues/new)
+          and a maintainer will triage it.
+
+          See [CONTRIBUTING.md](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/CONTRIBUTING.md)
+          for details.
+          MSG
+          elif [ "$ISSUE_EXISTS" != "true" ]; then
+            STATUS="fail"
+            cat > /tmp/comment-body.md <<MSG
+          <!-- linked-issue-check -->
+          ### Linked Issue Check
+
+          The referenced issue #${ISSUE_NUM} was not found. Please check the issue
+          number in your PR description.
+          MSG
+          elif [ "$ISSUE_OPEN" != "true" ]; then
+            STATUS="fail"
+            cat > /tmp/comment-body.md <<MSG
+          <!-- linked-issue-check -->
+          ### Linked Issue Check
+
+          Issue #${ISSUE_NUM} is closed. Please link an open, triaged issue in your
+          PR description.
+          MSG
+          elif [ "$IS_TRIAGED" != "true" ]; then
+            STATUS="fail"
+            cat > /tmp/comment-body.md <<MSG
+          <!-- linked-issue-check -->
+          ### Linked Issue Check
+
+          Issue #${ISSUE_NUM} has not been triaged yet. A maintainer needs to review
+          the issue and add the \`triaged\` label for this check to pass.
+
+          The check will re-run automatically once the issue is triaged.
+          MSG
+          else
+            STATUS="pass"
+          fi
+
+          echo "status=${STATUS}" >> "$GITHUB_OUTPUT"
+
+          if [ "$STATUS" = "fail" ]; then
+            if [ -n "$COMMENT_ID" ]; then
+              gh api -X PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" \
+                -f body="$(cat /tmp/comment-body.md)"
+            else
+              gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+                -f body="$(cat /tmp/comment-body.md)"
+            fi
+          elif [ -n "$COMMENT_ID" ]; then
+            gh api -X DELETE "repos/${REPO}/issues/comments/${COMMENT_ID}" || true
+          fi
+
+      - name: Set check result
+        if: steps.comment.outputs.status == 'fail'
+        run: |
+          echo "::error::Linked issue check failed. See the PR comment for details."
+          exit 1
+
+  retrigger:
+    if: >-
+      github.repository_owner == 'NVIDIA-NeMo'
+      && github.event_name == 'issues'
+      && (
+        github.event.action == 'closed'
+        || github.event.action == 'reopened'
+        || (
+          (github.event.action == 'labeled' || github.event.action == 'unlabeled')
+          && github.event.label.name == 'triaged'
+          && github.event.issue.state == 'open'
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find PRs referencing this issue
+        id: find-prs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          PRS=$(gh pr list --repo "${{ github.repository }}" --state open \
+            --json number,body --limit 200 \
+            | jq -r --arg issue "$ISSUE_NUMBER" '
+                .[]
+                | select(.body != null)
+                | (.body | ascii_downcase | capture("(?:fixes|closes|resolves)\\s+#(?<issue>[0-9]+)")?) as $reference
+                | select($reference.issue == $issue)
+                | .number
+              ')
+
+          if [ -z "$PRS" ]; then
+            echo "No open PRs reference issue #${ISSUE_NUMBER}"
+            echo "prs=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found PRs: ${PRS}"
+            echo "prs=$(echo "$PRS" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-trigger linked issue check
+        if: steps.find-prs.outputs.prs != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_ACTION: ${{ github.event.action }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PR_NUMBERS: ${{ steps.find-prs.outputs.prs }}
+        run: |
+          case "$ISSUE_ACTION" in
+            labeled)
+              EVENT_DESCRIPTION='received the `triaged` label'
+              ;;
+            unlabeled)
+              EVENT_DESCRIPTION='lost the `triaged` label'
+              ;;
+            closed)
+              EVENT_DESCRIPTION="was closed"
+              ;;
+            reopened)
+              EVENT_DESCRIPTION="was reopened"
+              ;;
+            *)
+              echo "::error::Unsupported issue action: ${ISSUE_ACTION}"
+              exit 1
+              ;;
+          esac
+
+          for PR_NUM in $PR_NUMBERS; do
+            echo "Re-triggering check for PR #${PR_NUM}..."
+
+            # Find the latest completed run for this PR's current head commit.
+            # Editing the PR with the workflow's GITHUB_TOKEN would not trigger
+            # another workflow run.
+            HEAD_SHA=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" \
+              --json headRefOid --jq '.headRefOid')
+            RUN_ID=$(gh run list --repo "${{ github.repository }}" \
+              --workflow pr-linked-issue.yml --event pull_request_target \
+              --commit "$HEAD_SHA" --status completed --limit 1 \
+              --json databaseId --jq '.[0].databaseId')
+
+            if [ -z "$RUN_ID" ]; then
+              echo "::warning::No completed Linked Issue Check run found for PR #${PR_NUM}"
+              continue
+            fi
+
+            gh run rerun "$RUN_ID" --repo "${{ github.repository }}"
+            gh pr comment "$PR_NUM" --repo "${{ github.repository }}" --body \
+              "Issue #${ISSUE_NUMBER} ${EVENT_DESCRIPTION}. The linked issue check is being re-evaluated."
+          done
