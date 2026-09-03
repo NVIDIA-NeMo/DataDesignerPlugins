@@ -59,4 +59,4 @@ data-designer-gym ingest \
   --output normalized-rollouts.jsonl
 ```
 
-The normalized result retains the complete task and rollout and can seed Data Designer or SHAPER.
+The normalized result retains the complete task and rollout and can seed Data Designer or another downstream workflow.

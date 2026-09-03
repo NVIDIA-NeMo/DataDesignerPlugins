@@ -124,7 +124,7 @@ data-designer-gym ingest \
   --output normalized-rollouts.jsonl
 ```
 
-Normalized records retain the complete Gym task and rollout with stable identity restored. They can seed another Data Designer workflow or SHAPER.
+Normalized records retain the complete Gym task and rollout with stable identity restored. They can seed another Data Designer or downstream workflow.
 
 ## Current scope
 
