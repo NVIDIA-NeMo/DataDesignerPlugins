@@ -13,6 +13,7 @@ resolution-markers = [
 [manifest]
 members = [
     "data-designer-github",
+    "data-designer-gym",
     "data-designer-plugins-workspace",
     "data-designer-retrieval-sdg",
     "data-designer-template",
@@ -508,6 +509,17 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "starlette", specifier = ">=1.4.1" },
 ]
+
+[[package]]
+name = "data-designer-gym"
+version = "0.1.0"
+source = { editable = "plugins/data-designer-gym" }
+dependencies = [
+    { name = "data-designer" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "data-designer", specifier = ">=0.9.1" }]
 
 [[package]]
 name = "data-designer-plugins-workspace"
