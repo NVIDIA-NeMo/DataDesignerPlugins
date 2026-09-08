@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _ASCII_SENTENCE_TERMINATORS = frozenset(".!?")
 _UNICODE_SENTENCE_TERMINATORS = frozenset("…。！？")
 _SENTENCE_TERMINATORS = _ASCII_SENTENCE_TERMINATORS | _UNICODE_SENTENCE_TERMINATORS
-_SENTENCE_CLOSERS = frozenset("\"'”’»)]}")
+_SENTENCE_CLOSERS = frozenset("\"'”’»)]}」』】）》〉〗〙〛）］｝")
 _NONTERMINAL_ABBREVIATIONS = frozenset(
     {
         "a.m.",
@@ -56,7 +56,57 @@ _NONTERMINAL_ABBREVIATIONS = frozenset(
         "vs.",
     }
 )
+_NAME_TITLE_ABBREVIATIONS = frozenset({"dr.", "jr.", "mr.", "mrs.", "ms.", "prof.", "sr."})
+_LIKELY_SENTENCE_STARTERS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "as",
+        "at",
+        "because",
+        "but",
+        "everyone",
+        "for",
+        "he",
+        "however",
+        "i",
+        "if",
+        "in",
+        "it",
+        "meanwhile",
+        "nevertheless",
+        "next",
+        "no",
+        "on",
+        "or",
+        "otherwise",
+        "she",
+        "so",
+        "still",
+        "that",
+        "the",
+        "then",
+        "there",
+        "therefore",
+        "they",
+        "this",
+        "those",
+        "thus",
+        "to",
+        "we",
+        "what",
+        "when",
+        "where",
+        "while",
+        "who",
+        "why",
+        "yes",
+        "you",
+    }
+)
 _MAX_ABBREVIATION_LENGTH = max(len(abbreviation) for abbreviation in _NONTERMINAL_ABBREVIATIONS)
+_MAX_CONTEXT_LOOKAHEAD = 64
 
 
 def normalize_source_id(source_id: str) -> str:
@@ -367,12 +417,16 @@ def split_sentences(text: str) -> list[str]:
         boundary_end = index + 1
         while boundary_end < len(text) and text[boundary_end] in _SENTENCE_TERMINATORS:
             boundary_end += 1
+        terminator_end = boundary_end
         while boundary_end < len(text) and text[boundary_end] in _SENTENCE_CLOSERS:
             boundary_end += 1
 
         has_boundary_spacing = boundary_end == len(text) or text[boundary_end].isspace()
         unicode_boundary = character in _UNICODE_SENTENCE_TERMINATORS
-        nonterminal_period = character == "." and _period_is_nonterminal(text, index, boundary_end)
+        has_strong_terminator = any(marker != "." for marker in text[index:terminator_end])
+        nonterminal_period = (
+            character == "." and not has_strong_terminator and _period_is_nonterminal(text, index, boundary_end)
+        )
         if (has_boundary_spacing or unicode_boundary) and not nonterminal_period:
             sentence = text[sentence_start:boundary_end].strip()
             if sentence:
@@ -486,15 +540,40 @@ def _period_is_nonterminal(text: str, period_index: int, boundary_end: int) -> b
         if text[period_index - 1].isdigit() and text[period_index + 1].isdigit():
             return True
 
-    next_index = boundary_end
-    while next_index < len(text) and text[next_index].isspace():
-        next_index += 1
-    if next_index == len(text):
+    next_word = _next_context_word(text, boundary_end)
+    if not next_word:
         return False
 
     token = _previous_period_token(text, period_index)
-    if token in _NONTERMINAL_ABBREVIATIONS:
+    is_abbreviation = token in _NONTERMINAL_ABBREVIATIONS
+    is_initial = re.fullmatch(r"[a-z]\.", token) is not None
+    is_multi_initial = re.fullmatch(r"(?:[a-z]\.){2,}", token) is not None
+    if not (is_abbreviation or is_initial or is_multi_initial):
+        return False
+    if next_word[0].islower() or next_word[0].isdigit():
         return True
-    if re.fullmatch(r"(?:[a-z]\.){2,}", token):
+    if token in _NAME_TITLE_ABBREVIATIONS:
         return True
-    return bool(re.fullmatch(r"[a-z]\.", token) and text[next_index].isupper())
+    return next_word.casefold() not in _LIKELY_SENTENCE_STARTERS
+
+
+def _next_context_word(text: str, boundary_end: int) -> str:
+    """Return a bounded lookahead word following a candidate boundary.
+
+    Args:
+        text: Text containing the candidate sentence boundary.
+        boundary_end: Index immediately after trailing punctuation and closers.
+
+    Returns:
+        The next alphanumeric word, or an empty string when none occurs within
+        the bounded lookahead window.
+    """
+    index = boundary_end
+    lookahead_end = min(len(text), boundary_end + _MAX_CONTEXT_LOOKAHEAD)
+    while index < lookahead_end and not text[index].isalnum():
+        index += 1
+
+    word_start = index
+    while index < lookahead_end and text[index].isalnum():
+        index += 1
+    return text[word_start:index]

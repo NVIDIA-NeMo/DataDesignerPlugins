@@ -44,6 +44,35 @@ def test_split_sentences_supports_unicode_terminators_without_spaces() -> None:
     assert split_sentences("最初の文です。次の文です！最後です？") == ["最初の文です。", "次の文です！", "最後です？"]
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("We hired Acme Inc. It starts Monday.", ["We hired Acme Inc.", "It starts Monday."]),
+        ("The answer was no. Everyone agreed.", ["The answer was no.", "Everyone agreed."]),
+        ("Sentence A. Then sentence B.", ["Sentence A.", "Then sentence B."]),
+    ],
+)
+def test_text_to_sentence_chunks_recognizes_sentence_final_abbreviations(text: str, expected: list[str]) -> None:
+    chunks = text_to_sentence_chunks(text, sentences_per_chunk=1)
+    assert [chunk["text"] for chunk in chunks] == expected
+
+
+def test_split_sentences_strong_terminator_overrides_abbreviation() -> None:
+    assert split_sentences("Is she a Dr.? Yes.") == ["Is she a Dr.?", "Yes."]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("「最初の文です。」次の文です。", ["「最初の文です。」", "次の文です。"]),
+        ("『最初の文です。』次の文です。", ["『最初の文です。』", "次の文です。"]),
+        ("（最初の文です。）次の文です。", ["（最初の文です。）", "次の文です。"]),
+    ],
+)
+def test_split_sentences_keeps_unicode_closers_with_sentence(text: str, expected: list[str]) -> None:
+    assert split_sentences(text) == expected
+
+
 def test_text_to_sentence_chunks_treats_paragraphs_as_boundaries() -> None:
     chunks = text_to_sentence_chunks("First paragraph\n\nSecond paragraph", sentences_per_chunk=1)
     assert [chunk["text"] for chunk in chunks] == ["First paragraph", "Second paragraph"]
