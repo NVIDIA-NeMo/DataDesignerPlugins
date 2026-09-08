@@ -341,53 +341,6 @@ def chunks_to_sections_structured(
     return chunks_to_sections_sequential(chunks, num_sections)
 
 
-def _previous_period_token(text: str, period_index: int) -> str:
-    """Return the bounded word-like token ending at a period.
-
-    Args:
-        text: Text containing the candidate sentence boundary.
-        period_index: Index of the candidate period.
-
-    Returns:
-        A case-folded token containing letters and periods. The lookup is
-        deliberately bounded so adversarial input remains linear to scan.
-    """
-    token_start = period_index
-    lower_bound = max(0, period_index + 1 - _MAX_ABBREVIATION_LENGTH)
-    while token_start > lower_bound and (text[token_start - 1].isalpha() or text[token_start - 1] == "."):
-        token_start -= 1
-    return text[token_start : period_index + 1].casefold()
-
-
-def _period_is_nonterminal(text: str, period_index: int, boundary_end: int) -> bool:
-    """Determine whether a period belongs to a number or abbreviation.
-
-    Args:
-        text: Text containing the candidate sentence boundary.
-        period_index: Index of the candidate period.
-        boundary_end: Index immediately after trailing punctuation and closers.
-
-    Returns:
-        ``True`` when the period should not end a sentence.
-    """
-    if period_index > 0 and period_index + 1 < len(text):
-        if text[period_index - 1].isdigit() and text[period_index + 1].isdigit():
-            return True
-
-    next_index = boundary_end
-    while next_index < len(text) and text[next_index].isspace():
-        next_index += 1
-    if next_index == len(text):
-        return False
-
-    token = _previous_period_token(text, period_index)
-    if token in _NONTERMINAL_ABBREVIATIONS:
-        return True
-    if re.fullmatch(r"(?:[a-z]\.){2,}", token):
-        return True
-    return bool(re.fullmatch(r"[a-z]\.", token) and text[next_index].isupper())
-
-
 def split_sentences(text: str) -> list[str]:
     """Split text into sentences without external models or downloads.
 
@@ -498,3 +451,50 @@ def text_to_sentence_chunks(
         chunks.append(chunk_data)
 
     return chunks
+
+
+def _previous_period_token(text: str, period_index: int) -> str:
+    """Return the bounded word-like token ending at a period.
+
+    Args:
+        text: Text containing the candidate sentence boundary.
+        period_index: Index of the candidate period.
+
+    Returns:
+        A case-folded token containing letters and periods. The lookup is
+        deliberately bounded so adversarial input remains linear to scan.
+    """
+    token_start = period_index
+    lower_bound = max(0, period_index + 1 - _MAX_ABBREVIATION_LENGTH)
+    while token_start > lower_bound and (text[token_start - 1].isalpha() or text[token_start - 1] == "."):
+        token_start -= 1
+    return text[token_start : period_index + 1].casefold()
+
+
+def _period_is_nonterminal(text: str, period_index: int, boundary_end: int) -> bool:
+    """Determine whether a period belongs to a number or abbreviation.
+
+    Args:
+        text: Text containing the candidate sentence boundary.
+        period_index: Index of the candidate period.
+        boundary_end: Index immediately after trailing punctuation and closers.
+
+    Returns:
+        ``True`` when the period should not end a sentence.
+    """
+    if period_index > 0 and period_index + 1 < len(text):
+        if text[period_index - 1].isdigit() and text[period_index + 1].isdigit():
+            return True
+
+    next_index = boundary_end
+    while next_index < len(text) and text[next_index].isspace():
+        next_index += 1
+    if next_index == len(text):
+        return False
+
+    token = _previous_period_token(text, period_index)
+    if token in _NONTERMINAL_ABBREVIATIONS:
+        return True
+    if re.fullmatch(r"(?:[a-z]\.){2,}", token):
+        return True
+    return bool(re.fullmatch(r"[a-z]\.", token) and text[next_index].isupper())
