@@ -11,6 +11,7 @@ from data_designer_retrieval_sdg.chunking import (
     build_bundle_id,
     build_bundles,
     chunks_to_sections_structured,
+    split_sentences,
     text_to_sentence_chunks,
 )
 
@@ -32,6 +33,20 @@ def test_text_to_sentence_chunks_with_doc_id() -> None:
 
 def test_text_to_sentence_chunks_empty() -> None:
     assert text_to_sentence_chunks("") == []
+
+
+def test_split_sentences_preserves_abbreviations_decimals_and_closing_quotes() -> None:
+    text = 'Dr. Ada paid $3.50. She said "Done." Then she left.'
+    assert split_sentences(text) == ["Dr. Ada paid $3.50.", 'She said "Done."', "Then she left."]
+
+
+def test_split_sentences_supports_unicode_terminators_without_spaces() -> None:
+    assert split_sentences("最初の文です。次の文です！最後です？") == ["最初の文です。", "次の文です！", "最後です？"]
+
+
+def test_text_to_sentence_chunks_treats_paragraphs_as_boundaries() -> None:
+    chunks = text_to_sentence_chunks("First paragraph\n\nSecond paragraph", sentences_per_chunk=1)
+    assert [chunk["text"] for chunk in chunks] == ["First paragraph", "Second paragraph"]
 
 
 def test_chunks_to_sections_sequential() -> None:

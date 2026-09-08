@@ -21,11 +21,42 @@ from collections import defaultdict, deque
 from pathlib import Path
 from typing import Literal
 
-import nltk
 import yaml
-from nltk.tokenize import sent_tokenize
 
 logger = logging.getLogger(__name__)
+
+_ASCII_SENTENCE_TERMINATORS = frozenset(".!?")
+_UNICODE_SENTENCE_TERMINATORS = frozenset("…。！？")
+_SENTENCE_TERMINATORS = _ASCII_SENTENCE_TERMINATORS | _UNICODE_SENTENCE_TERMINATORS
+_SENTENCE_CLOSERS = frozenset("\"'”’»)]}")
+_NONTERMINAL_ABBREVIATIONS = frozenset(
+    {
+        "a.m.",
+        "approx.",
+        "co.",
+        "corp.",
+        "dept.",
+        "dr.",
+        "e.g.",
+        "est.",
+        "etc.",
+        "fig.",
+        "i.e.",
+        "inc.",
+        "jr.",
+        "ltd.",
+        "mr.",
+        "mrs.",
+        "ms.",
+        "no.",
+        "p.m.",
+        "prof.",
+        "sr.",
+        "st.",
+        "vs.",
+    }
+)
+_MAX_ABBREVIATION_LENGTH = max(len(abbreviation) for abbreviation in _NONTERMINAL_ABBREVIATIONS)
 
 
 def normalize_source_id(source_id: str) -> str:
@@ -310,13 +341,101 @@ def chunks_to_sections_structured(
     return chunks_to_sections_sequential(chunks, num_sections)
 
 
-def ensure_nltk_punkt() -> None:
-    """Download NLTK punkt tokeniser data if not already present."""
-    for resource in ("tokenizers/punkt", "tokenizers/punkt_tab"):
-        try:
-            nltk.data.find(resource)
-        except LookupError:
-            nltk.download(resource.split("/")[-1], quiet=True)
+def _previous_period_token(text: str, period_index: int) -> str:
+    """Return the bounded word-like token ending at a period.
+
+    Args:
+        text: Text containing the candidate sentence boundary.
+        period_index: Index of the candidate period.
+
+    Returns:
+        A case-folded token containing letters and periods. The lookup is
+        deliberately bounded so adversarial input remains linear to scan.
+    """
+    token_start = period_index
+    lower_bound = max(0, period_index + 1 - _MAX_ABBREVIATION_LENGTH)
+    while token_start > lower_bound and (text[token_start - 1].isalpha() or text[token_start - 1] == "."):
+        token_start -= 1
+    return text[token_start : period_index + 1].casefold()
+
+
+def _period_is_nonterminal(text: str, period_index: int, boundary_end: int) -> bool:
+    """Determine whether a period belongs to a number or abbreviation.
+
+    Args:
+        text: Text containing the candidate sentence boundary.
+        period_index: Index of the candidate period.
+        boundary_end: Index immediately after trailing punctuation and closers.
+
+    Returns:
+        ``True`` when the period should not end a sentence.
+    """
+    if period_index > 0 and period_index + 1 < len(text):
+        if text[period_index - 1].isdigit() and text[period_index + 1].isdigit():
+            return True
+
+    next_index = boundary_end
+    while next_index < len(text) and text[next_index].isspace():
+        next_index += 1
+    if next_index == len(text):
+        return False
+
+    token = _previous_period_token(text, period_index)
+    if token in _NONTERMINAL_ABBREVIATIONS:
+        return True
+    if re.fullmatch(r"(?:[a-z]\.){2,}", token):
+        return True
+    return bool(re.fullmatch(r"[a-z]\.", token) and text[next_index].isupper())
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split text into sentences without external models or downloads.
+
+    The scanner recognizes common English abbreviations and decimal numbers,
+    keeps closing quotes and brackets with their sentence, and supports common
+    Unicode sentence terminators. Its work is bounded per input character.
+
+    Args:
+        text: A single paragraph of text.
+
+    Returns:
+        Stripped, non-empty sentences in source order.
+    """
+    sentences: list[str] = []
+    sentence_start = 0
+    index = 0
+
+    while index < len(text):
+        character = text[index]
+        if character not in _SENTENCE_TERMINATORS:
+            index += 1
+            continue
+
+        boundary_end = index + 1
+        while boundary_end < len(text) and text[boundary_end] in _SENTENCE_TERMINATORS:
+            boundary_end += 1
+        while boundary_end < len(text) and text[boundary_end] in _SENTENCE_CLOSERS:
+            boundary_end += 1
+
+        has_boundary_spacing = boundary_end == len(text) or text[boundary_end].isspace()
+        unicode_boundary = character in _UNICODE_SENTENCE_TERMINATORS
+        nonterminal_period = character == "." and _period_is_nonterminal(text, index, boundary_end)
+        if (has_boundary_spacing or unicode_boundary) and not nonterminal_period:
+            sentence = text[sentence_start:boundary_end].strip()
+            if sentence:
+                sentences.append(sentence)
+            sentence_start = boundary_end
+            while sentence_start < len(text) and text[sentence_start].isspace():
+                sentence_start += 1
+            index = sentence_start
+            continue
+
+        index = boundary_end
+
+    remainder = text[sentence_start:].strip()
+    if remainder:
+        sentences.append(remainder)
+    return sentences
 
 
 def text_to_sentence_chunks(
@@ -340,14 +459,12 @@ def text_to_sentence_chunks(
         ``sentence_count``, ``word_count``, ``chunk_id``,
         ``doc_chunk_index``, and optionally ``doc_id`` / ``doc_path``.
     """
-    ensure_nltk_punkt()
-
     paragraphs = re.split(r"\n\s*\n+", text)
     paragraphs = [p.strip() for p in paragraphs if p.strip()]
 
     sentences: list[str] = []
     for paragraph in paragraphs:
-        sentences.extend(sent_tokenize(paragraph))
+        sentences.extend(split_sentences(paragraph))
 
     chunks: list[dict] = []
     word_position = 0
