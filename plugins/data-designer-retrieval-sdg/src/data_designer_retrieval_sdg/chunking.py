@@ -21,9 +21,9 @@ from collections import defaultdict, deque
 from pathlib import Path
 from typing import Literal
 
-import nltk
 import yaml
-from nltk.tokenize import sent_tokenize
+
+from data_designer_retrieval_sdg.sentence_tokenizer import split_sentences
 
 logger = logging.getLogger(__name__)
 
@@ -310,15 +310,6 @@ def chunks_to_sections_structured(
     return chunks_to_sections_sequential(chunks, num_sections)
 
 
-def ensure_nltk_punkt() -> None:
-    """Download NLTK punkt tokeniser data if not already present."""
-    for resource in ("tokenizers/punkt", "tokenizers/punkt_tab"):
-        try:
-            nltk.data.find(resource)
-        except LookupError:
-            nltk.download(resource.split("/")[-1], quiet=True)
-
-
 def text_to_sentence_chunks(
     text: str,
     sentences_per_chunk: int = 5,
@@ -340,14 +331,12 @@ def text_to_sentence_chunks(
         ``sentence_count``, ``word_count``, ``chunk_id``,
         ``doc_chunk_index``, and optionally ``doc_id`` / ``doc_path``.
     """
-    ensure_nltk_punkt()
-
     paragraphs = re.split(r"\n\s*\n+", text)
     paragraphs = [p.strip() for p in paragraphs if p.strip()]
 
     sentences: list[str] = []
     for paragraph in paragraphs:
-        sentences.extend(sent_tokenize(paragraph))
+        sentences.extend(split_sentences(paragraph))
 
     chunks: list[dict] = []
     word_position = 0

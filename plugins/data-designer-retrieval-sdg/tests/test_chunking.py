@@ -34,6 +34,27 @@ def test_text_to_sentence_chunks_empty() -> None:
     assert text_to_sentence_chunks("") == []
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("We hired Acme Inc. It starts Monday.", ["We hired Acme Inc.", "It starts Monday."]),
+        ("The answer was no. Bob disagreed.", ["The answer was no.", "Bob disagreed."]),
+        ("The answer was no. Everyone agreed.", ["The answer was no.", "Everyone agreed."]),
+        ("Sentence A. Bob replied.", ["Sentence A.", "Bob replied."]),
+        ("Sentence A. Then sentence B.", ["Sentence A.", "Then sentence B."]),
+        ("Bring paper, pens, etc. Meetings begin at nine.", ["Bring paper, pens, etc.", "Meetings begin at nine."]),
+    ],
+)
+def test_text_to_sentence_chunks_recognizes_sentence_final_abbreviations(text: str, expected: list[str]) -> None:
+    chunks = text_to_sentence_chunks(text, sentences_per_chunk=1)
+    assert [chunk["text"] for chunk in chunks] == expected
+
+
+def test_text_to_sentence_chunks_treats_paragraphs_as_boundaries() -> None:
+    chunks = text_to_sentence_chunks("First paragraph\n\nSecond paragraph", sentences_per_chunk=1)
+    assert [chunk["text"] for chunk in chunks] == ["First paragraph", "Second paragraph"]
+
+
 def test_chunks_to_sections_sequential() -> None:
     chunks = [{"text": f"chunk {i}", "chunk_id": i} for i in range(1, 7)]
     sections = chunks_to_sections_structured(chunks, num_sections=2, strategy="sequential")

@@ -11,7 +11,6 @@ dependencies = [
     # Data Designer permits older transitive releases that are excluded by the
     # workspace security constraints. Publish the same floors for consumers.
     "mcp>=1.29.0,<2",
-    "nltk>=3.10.2,<3.11",
     "pydantic-settings>=2.14,<3",
     "pyyaml>=6.0",
     "pyarrow>=24.0.0,<25",

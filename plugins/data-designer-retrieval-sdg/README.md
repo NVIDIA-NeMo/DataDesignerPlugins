@@ -83,7 +83,7 @@ pip install \
 Standard version constraints work (`>=0.1`, `==0.1.0`, ...). The
 NVIDIA-NeMo index only serves `data-designer-*` plugin packages; the
 default PyPI index supplies transitive dependencies (`data-designer`,
-`nltk`, `pyarrow`, `pyyaml`).
+`pyarrow`, `pyyaml`).
 
 For development inside the monorepo:
 
