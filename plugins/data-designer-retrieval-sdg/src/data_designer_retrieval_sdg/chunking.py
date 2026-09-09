@@ -57,54 +57,6 @@ _NONTERMINAL_ABBREVIATIONS = frozenset(
     }
 )
 _NAME_TITLE_ABBREVIATIONS = frozenset({"dr.", "jr.", "mr.", "mrs.", "ms.", "prof.", "sr."})
-_LIKELY_SENTENCE_STARTERS = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "as",
-        "at",
-        "because",
-        "but",
-        "everyone",
-        "for",
-        "he",
-        "however",
-        "i",
-        "if",
-        "in",
-        "it",
-        "meanwhile",
-        "nevertheless",
-        "next",
-        "no",
-        "on",
-        "or",
-        "otherwise",
-        "she",
-        "so",
-        "still",
-        "that",
-        "the",
-        "then",
-        "there",
-        "therefore",
-        "they",
-        "this",
-        "those",
-        "thus",
-        "to",
-        "we",
-        "what",
-        "when",
-        "where",
-        "while",
-        "who",
-        "why",
-        "yes",
-        "you",
-    }
-)
 _MAX_ABBREVIATION_LENGTH = max(len(abbreviation) for abbreviation in _NONTERMINAL_ABBREVIATIONS)
 _MAX_CONTEXT_LOOKAHEAD = 64
 
@@ -552,9 +504,7 @@ def _period_is_nonterminal(text: str, period_index: int, boundary_end: int) -> b
         return False
     if next_word[0].islower() or next_word[0].isdigit():
         return True
-    if token in _NAME_TITLE_ABBREVIATIONS:
-        return True
-    return next_word.casefold() not in _LIKELY_SENTENCE_STARTERS
+    return token in _NAME_TITLE_ABBREVIATIONS
 
 
 def _next_context_word(text: str, boundary_end: int) -> str:

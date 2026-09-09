@@ -48,8 +48,11 @@ def test_split_sentences_supports_unicode_terminators_without_spaces() -> None:
     ("text", "expected"),
     [
         ("We hired Acme Inc. It starts Monday.", ["We hired Acme Inc.", "It starts Monday."]),
+        ("The answer was no. Bob disagreed.", ["The answer was no.", "Bob disagreed."]),
         ("The answer was no. Everyone agreed.", ["The answer was no.", "Everyone agreed."]),
+        ("Sentence A. Bob replied.", ["Sentence A.", "Bob replied."]),
         ("Sentence A. Then sentence B.", ["Sentence A.", "Then sentence B."]),
+        ("Bring paper, pens, etc. Meetings begin at nine.", ["Bring paper, pens, etc.", "Meetings begin at nine."]),
     ],
 )
 def test_text_to_sentence_chunks_recognizes_sentence_final_abbreviations(text: str, expected: list[str]) -> None:
