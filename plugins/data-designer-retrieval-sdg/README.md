@@ -306,3 +306,32 @@ normalized `file_name` as the lookup key.
 
 Output schema (one record per row): `file_name`, `text`, `chunks`,
 `sections_structured`, `bundle_id`, `bundle_members`, `is_multi_doc`.
+
+#### Sentence boundaries
+
+The chunker uses a dependency-free, bounded sentence scanner; it does not
+download tokenizer models. It preserves source punctuation, closing quotes and
+brackets, decimals, and paragraph boundaries. Common Unicode terminators are
+recognized, including `。！？` without intervening spaces. Abbreviation handling
+uses English context rules:
+
+- Ordinary abbreviations and name suffixes (`Inc.`, `etc.`, `Jr.`, `Sr.`) end a
+  sentence before a capitalized word, while lowercase/numeric continuations
+  remain attached.
+- Name prefixes (`Dr.`, `St.`), name initials, and dotted acronyms stay with a
+  following name or capitalized noun (`St. Paul`, `J. Smith`, `U.S. Army`).
+  Capitalized clause starters such as `It`, `He`, and `The` provide evidence of
+  a new sentence after an acronym or prefix. Explicit letter labels such as
+  `Sentence A.` and `Option B.` are treated as sentence endings, not initials.
+- Connectives (`e.g.`, `i.e.`, `vs.`) stay attached to the example or name they
+  introduce. Question/exclamation marks override abbreviation suppression.
+
+For example, `sentences_per_chunk=1` splits `They moved to the U.S. It was
+difficult.` into two chunks but keeps `The U.S. Army arrived.` together.
+
+These are deterministic heuristics, not a full language model or a guarantee
+of NLTK-equivalent boundaries. An acronym followed by an unfamiliar proper noun
+is ambiguous: `U.S. Army` and `U.S. Alice ...` both stay together without other
+boundary evidence. Lowercase sentence starts and uses of `St.` as a street
+suffix can also be ambiguous. Review chunk boundaries for the intended corpus;
+paragraph breaks provide explicit boundaries when preparing source text.

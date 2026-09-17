@@ -55,6 +55,36 @@ def test_text_to_sentence_chunks_treats_paragraphs_as_boundaries() -> None:
     assert [chunk["text"] for chunk in chunks] == ["First paragraph", "Second paragraph"]
 
 
+def test_text_to_sentence_chunks_preserves_review_boundaries_and_metadata() -> None:
+    sentences = [
+        "They moved to the U.S.",
+        "It was difficult.",
+        "John Smith Jr.",
+        "He joined the team.",
+        "We visited St. Paul yesterday.",
+        "The U.S. Army arrived.",
+        "Sentence A.",
+        "Bob replied.",
+        "Is she a Dr.?",
+        "Yes.",
+        "「最初の文です。」",
+        "次の文です。",
+    ]
+    text = " ".join(sentences[:10]) + "\n\n" + "".join(sentences[10:])
+    chunks = text_to_sentence_chunks(text, sentences_per_chunk=1, doc_id="doc", chunk_id_offset=20)
+    assert [chunk["text"] for chunk in chunks] == sentences
+    word_position = 0
+    for index, (chunk, sentence) in enumerate(zip(chunks, sentences), start=1):
+        assert chunk["sentence_count"] == 1
+        assert chunk["word_count"] == len(sentence.split())
+        assert chunk["start"] == word_position
+        word_position += len(sentence.split())
+        assert chunk["end"] == word_position
+        assert chunk["chunk_id"] == index + 20
+        assert chunk["doc_chunk_index"] == index
+        assert chunk["doc_id"] == "doc"
+
+
 def test_chunks_to_sections_sequential() -> None:
     chunks = [{"text": f"chunk {i}", "chunk_id": i} for i in range(1, 7)]
     sections = chunks_to_sections_structured(chunks, num_sections=2, strategy="sequential")
