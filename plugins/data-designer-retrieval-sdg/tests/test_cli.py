@@ -369,6 +369,49 @@ def test_generate_print_resolved_config_uses_documented_precedence(
     assert resolved["num_records"] == 3
 
 
+def test_generate_print_resolved_config_preserves_canonical_source(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source_path = tmp_path / "sources.jsonl"
+    source_path.write_text(
+        '{"document_id":"doc-1","unit_id":"unit-1","text":"Local source."}\n',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "generation.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "seed_source": {
+                    "seed_type": "retrieval-sources",
+                    "path": str(source_path),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "data-designer-retrieval-sdg",
+            "generate",
+            "--config",
+            str(config_path),
+            "--print-resolved-config",
+        ],
+    )
+
+    cli.main()
+
+    resolved = yaml.safe_load(capsys.readouterr().out)
+    assert resolved["seed_source"] == {
+        "seed_type": "retrieval-sources",
+        "path": str(source_path),
+    }
+
+
 def test_generate_print_resolved_config_redacts_provider_secret(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

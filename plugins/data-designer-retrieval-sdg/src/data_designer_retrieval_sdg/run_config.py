@@ -18,7 +18,7 @@ import data_designer.config as dd
 import yaml
 from data_designer.config.base import ConfigBase
 from pydantic import ConfigDict, Field, model_validator
-from pydantic_settings import CliApp, CliSettingsSource, CliSuppress
+from pydantic_settings import CliSettingsSource, CliSuppress
 
 from data_designer_retrieval_sdg.retrieval.source_file import RetrievalSourcesFile
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
@@ -437,12 +437,8 @@ def _load_run_config(
             raise ValueError("cli_settings_source requires cli_args")
         cli_values = cli_settings_source(parsed_args=cli_args)()
         override_paths.extend(_leaf_paths(cli_values))
-        config = CliApp.run(
-            model,
-            cli_args=cli_args,
-            cli_settings_source=cli_settings_source,
-            **resolved,
-        )
+        resolved = _deep_merge(resolved, cli_values)
+        config = model.model_validate(resolved)
 
     environment_variables: tuple[str, ...] = ()
     if isinstance(config, GenerationRunConfig):
