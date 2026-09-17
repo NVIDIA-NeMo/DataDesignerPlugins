@@ -1,15 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pipeline builder for the retriever SDG workflow.
-
-Assembles a four-column DataDesigner pipeline:
-
-1. ``document_artifacts`` -- LLM-based artifact extraction
-2. ``qa_generation`` -- LLM-based QA pair generation
-3. ``deduplicated_qa_pairs`` -- embedding-based deduplication (plugin column)
-4. ``qa_evaluations`` -- LLM-based quality evaluation
-"""
+"""Pipeline builders for retrieval SDG from text and optional images."""
 
 from __future__ import annotations
 
@@ -18,20 +10,30 @@ from pathlib import Path
 
 import data_designer.config as dd
 from data_designer.config.default_model_settings import get_builtin_model_providers, get_default_providers
+from data_designer.config.seed_source import SeedSource
 
 from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 from data_designer_retrieval_sdg.models import (
     DocumentArtifacts,
     QAPairEvaluations,
-    QuestionAnswerPairs,
+    QueryQualityEvaluations,
+    RetrievalAnswers,
+    RetrievalQueries,
+    SourceAssessments,
 )
 from data_designer_retrieval_sdg.prompts import (
+    ANSWER_GENERATION_SYSTEM_PROMPT,
+    ANSWER_GENERATION_USER_PROMPT,
     ARTIFACT_EXTRACTION_SYSTEM_PROMPT,
     ARTIFACT_EXTRACTION_USER_PROMPT,
     QA_EVALUATION_SYSTEM_PROMPT,
     QA_EVALUATION_USER_PROMPT,
-    QA_GENERATION_SYSTEM_PROMPT,
-    QA_GENERATION_USER_PROMPT,
+    QUERY_GENERATION_SYSTEM_PROMPT,
+    QUERY_GENERATION_USER_PROMPT,
+    QUERY_QUALITY_SYSTEM_PROMPT,
+    QUERY_QUALITY_USER_PROMPT,
+    SOURCE_ASSESSMENT_SYSTEM_PROMPT,
+    SOURCE_ASSESSMENT_USER_PROMPT,
 )
 from data_designer_retrieval_sdg.run_config import (
     DEFAULT_CHAT_MODEL,
@@ -46,7 +48,7 @@ from data_designer_retrieval_sdg.run_config import (
     DEFAULT_REASONING_COUNTS,
     DEFAULT_SIMILARITY_THRESHOLD,
 )
-from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
+from data_designer_retrieval_sdg.stages import assemble_retrieval_pairs, select_retrieval_queries
 
 
 def custom_model_config(
@@ -229,7 +231,7 @@ def build_model_providers(
 
 
 def build_qa_generation_pipeline(
-    seed_source: DocumentChunkerSeedSource,
+    seed_source: SeedSource,
     start_index: int = 0,
     end_index: int = 199,
     max_artifacts_per_type: int = DEFAULT_MAX_ARTIFACTS_PER_TYPE,
@@ -250,17 +252,14 @@ def build_qa_generation_pipeline(
     embed_model: str = DEFAULT_EMBED_MODEL,
     embed_provider: str = DEFAULT_PROVIDER,
 ) -> dd.DataDesignerConfigBuilder:
-    """Build a four-column QA generation pipeline.
+    """Build the retrieval pipeline for the document-chunker source.
 
-    The pipeline adds columns in order:
-
-    1. ``document_artifacts`` -- structured artifact extraction
-    2. ``qa_generation`` -- QA pair generation from artifacts + sections
-    3. ``deduplicated_qa_pairs`` -- embedding dedup (plugin)
-    4. ``qa_evaluations`` -- quality scoring
+    This compatibility entry point preserves the established text workflow.
+    It delegates to the same staged pipeline used when seed rows also
+    contain images.
 
     Args:
-        seed_source: Configured :class:`DocumentChunkerSeedSource` whose
+        seed_source: Configured source of canonical retrieval seed records whose
             output schema includes ``file_name``, ``text``, ``chunks``,
             ``sections_structured``.
         start_index: Start index (inclusive) for ordered index-range selection.
@@ -287,11 +286,6 @@ def build_qa_generation_pipeline(
         Configured ``DataDesignerConfigBuilder`` ready for
         ``DataDesigner.create()`` or ``.preview()``.
     """
-    if query_counts is None:
-        query_counts = dict(DEFAULT_QUERY_COUNTS)
-    if reasoning_counts is None:
-        reasoning_counts = dict(DEFAULT_REASONING_COUNTS)
-
     model_configs, role_aliases = custom_model_config(
         artifact_extraction_model=artifact_extraction_model,
         artifact_extraction_provider=artifact_extraction_provider,
@@ -304,15 +298,104 @@ def build_qa_generation_pipeline(
         max_parallel_requests_for_gen=max_parallel_requests_for_gen,
     )
 
-    config_builder = dd.DataDesignerConfigBuilder(model_configs=model_configs)
-
-    config_builder.with_seed_dataset(
+    return build_retrieval_pipeline(
         seed_source,
-        sampling_strategy=dd.SamplingStrategy.ORDERED,
-        selection_strategy=dd.IndexRange(start=start_index, end=end_index),
+        artifact_model_alias=role_aliases["artifact_extraction"],
+        generator_model_alias=role_aliases["qa_generation"],
+        judge_model_alias=role_aliases["quality_judge"],
+        embedding_model_alias=role_aliases["embed"],
+        model_configs=model_configs,
+        start_index=start_index,
+        end_index=end_index,
+        max_artifacts_per_type=max_artifacts_per_type,
+        num_pairs=num_pairs,
+        query_counts=query_counts,
+        min_hops=min_hops,
+        max_hops=max_hops,
+        reasoning_counts=reasoning_counts,
+        min_complexity=min_complexity,
+        similarity_threshold=similarity_threshold,
     )
 
-    config_builder.add_column(
+
+def build_retrieval_pipeline(
+    seed_source: SeedSource,
+    *,
+    artifact_model_alias: str,
+    generator_model_alias: str,
+    judge_model_alias: str,
+    embedding_model_alias: str,
+    model_configs: list[dd.ModelConfig] | str | Path | None = None,
+    answer_model_alias: str | None = None,
+    start_index: int | None = None,
+    end_index: int | None = None,
+    max_artifacts_per_type: int = DEFAULT_MAX_ARTIFACTS_PER_TYPE,
+    num_pairs: int = DEFAULT_NUM_PAIRS,
+    query_counts: dict[str, int] | None = None,
+    min_hops: int = DEFAULT_MIN_HOPS,
+    max_hops: int = DEFAULT_MAX_HOPS,
+    reasoning_counts: dict[str, int] | None = None,
+    min_complexity: int = DEFAULT_MIN_COMPLEXITY,
+    similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+) -> dd.DataDesignerConfigBuilder:
+    """Build one retrieval-SDG pipeline for text and optional image inputs.
+
+    Each seed row must expose retrieval_units and images. Text-only rows use an
+    empty images list, which Data Designer treats as zero image contexts.
+    Image-bearing rows require vision-capable artifact, generator, and
+    grounding-judge models. The source-blind query judge never receives source
+    text or images.
+
+    Args:
+        seed_source: Seed whose rows follow the canonical retrieval contract.
+        artifact_model_alias: Model alias for structured artifact extraction.
+        generator_model_alias: Model alias for retrieval-query generation.
+        judge_model_alias: Model alias for both independent quality stages.
+        embedding_model_alias: Model alias for semantic deduplication.
+        model_configs: Data Designer model configuration list or path.
+        answer_model_alias: Optional answer model; defaults to the query generator.
+        start_index: Optional inclusive ordered-selection start.
+        end_index: Optional inclusive ordered-selection end.
+        max_artifacts_per_type: Maximum extracted artifacts of each type.
+        num_pairs: Number of candidates requested per seed row.
+        query_counts: Requested distribution of retrieval-query types.
+        min_hops: Minimum reasoning hops.
+        max_hops: Maximum reasoning hops.
+        reasoning_counts: Requested distribution of reasoning types.
+        min_complexity: Minimum requested complexity.
+        similarity_threshold: Cosine threshold used for query deduplication.
+
+    Returns:
+        Configured retrieval pipeline with query selection before answer generation.
+
+    Raises:
+        ValueError: If aliases, selection bounds, or thresholds are invalid.
+    """
+    _validate_retrieval_pipeline_arguments(
+        artifact_model_alias=artifact_model_alias,
+        generator_model_alias=generator_model_alias,
+        judge_model_alias=judge_model_alias,
+        embedding_model_alias=embedding_model_alias,
+        start_index=start_index,
+        end_index=end_index,
+        similarity_threshold=similarity_threshold,
+    )
+    if answer_model_alias is not None and not answer_model_alias.strip():
+        raise ValueError("answer_model_alias must be non-empty when supplied")
+    effective_query_counts = dict(DEFAULT_QUERY_COUNTS if query_counts is None else query_counts)
+    effective_reasoning_counts = dict(DEFAULT_REASONING_COUNTS if reasoning_counts is None else reasoning_counts)
+    builder = dd.DataDesignerConfigBuilder(model_configs=model_configs)
+    if start_index is None:
+        builder.with_seed_dataset(seed_source, sampling_strategy=dd.SamplingStrategy.ORDERED)
+    else:
+        builder.with_seed_dataset(
+            seed_source,
+            sampling_strategy=dd.SamplingStrategy.ORDERED,
+            selection_strategy=dd.IndexRange(start=start_index, end=end_index),
+        )
+
+    image_context = [dd.ImageContext(column_name="images")]
+    builder.add_column(
         dd.LLMStructuredColumnConfig(
             name="document_artifacts",
             system_prompt=ARTIFACT_EXTRACTION_SYSTEM_PROMPT,
@@ -320,54 +403,130 @@ def build_qa_generation_pipeline(
                 max_artifacts_per_type=max_artifacts_per_type,
             ),
             output_format=DocumentArtifacts,
-            model_alias=role_aliases["artifact_extraction"],
+            model_alias=artifact_model_alias,
+            multi_modal_context=image_context,
         )
     )
-
-    config_builder.add_column(
+    builder.add_column(
         dd.LLMStructuredColumnConfig(
-            name="qa_generation",
-            system_prompt=QA_GENERATION_SYSTEM_PROMPT,
-            prompt=QA_GENERATION_USER_PROMPT.format(
-                query_counts_multi_hop=query_counts.get("multi_hop", 0),
-                query_counts_structural=query_counts.get("structural", 0),
-                query_counts_contextual=query_counts.get("contextual", 0),
-                reasoning_counts_factual=reasoning_counts.get("factual", 0),
-                reasoning_counts_relational=reasoning_counts.get("relational", 0),
-                reasoning_counts_inferential=reasoning_counts.get("inferential", 0),
-                reasoning_counts_temporal=reasoning_counts.get("temporal", 0),
-                reasoning_counts_procedural=reasoning_counts.get("procedural", 0),
-                reasoning_counts_visual=reasoning_counts.get("visual", 0),
-                reasoning_counts_causal=reasoning_counts.get("causal", 0),
+            name="query_generation",
+            system_prompt=QUERY_GENERATION_SYSTEM_PROMPT,
+            prompt=QUERY_GENERATION_USER_PROMPT.format(
+                query_counts_multi_hop=effective_query_counts.get("multi_hop", 0),
+                query_counts_structural=effective_query_counts.get("structural", 0),
+                query_counts_contextual=effective_query_counts.get("contextual", 0),
+                reasoning_counts_factual=effective_reasoning_counts.get("factual", 0),
+                reasoning_counts_relational=effective_reasoning_counts.get("relational", 0),
+                reasoning_counts_inferential=effective_reasoning_counts.get("inferential", 0),
+                reasoning_counts_temporal=effective_reasoning_counts.get("temporal", 0),
+                reasoning_counts_procedural=effective_reasoning_counts.get("procedural", 0),
+                reasoning_counts_visual=effective_reasoning_counts.get("visual", 0),
+                reasoning_counts_causal=effective_reasoning_counts.get("causal", 0),
                 min_hops=min_hops,
                 max_hops=max_hops,
                 min_complexity=min_complexity,
                 num_pairs=num_pairs,
+                query_surface_schedule=", ".join(
+                    f"candidate {index}: {('keyword', 'instruction', 'question')[index % 3]}"
+                    for index in range(num_pairs)
+                ),
             ),
-            output_format=QuestionAnswerPairs,
-            model_alias=role_aliases["qa_generation"],
+            output_format=RetrievalQueries,
+            model_alias=generator_model_alias,
+            multi_modal_context=image_context,
         )
     )
-
-    config_builder.add_column(
+    builder.add_column(
         EmbeddingDedupColumnConfig(
-            name="deduplicated_qa_pairs",
-            source_column="qa_generation",
-            items_key="pairs",
+            name="deduplicated_queries",
+            source_column="query_generation",
+            items_key="queries",
             text_field="question",
-            model_alias="embed",
+            model_alias=embedding_model_alias,
             similarity_threshold=similarity_threshold,
         )
     )
-
-    config_builder.add_column(
+    builder.add_column(
+        dd.LLMStructuredColumnConfig(
+            name="source_blind_evaluations",
+            system_prompt=QUERY_QUALITY_SYSTEM_PROMPT,
+            prompt=QUERY_QUALITY_USER_PROMPT,
+            output_format=QueryQualityEvaluations,
+            model_alias=judge_model_alias,
+            skip=dd.SkipConfig(when="{{ deduplicated_queries | length == 0 }}"),
+        )
+    )
+    builder.add_column(
+        dd.CustomColumnConfig(
+            name="query_selection",
+            generator_function=select_retrieval_queries,
+            propagate_skip=False,
+        )
+    )
+    builder.add_column(
+        dd.LLMStructuredColumnConfig(
+            name="answer_generation",
+            system_prompt=ANSWER_GENERATION_SYSTEM_PROMPT,
+            prompt=ANSWER_GENERATION_USER_PROMPT,
+            output_format=RetrievalAnswers,
+            model_alias=answer_model_alias or generator_model_alias,
+            multi_modal_context=image_context,
+            skip=dd.SkipConfig(when="{{ query_selection.selected | length == 0 }}"),
+        )
+    )
+    builder.add_column(
+        dd.CustomColumnConfig(
+            name="deduplicated_qa_pairs",
+            generator_function=assemble_retrieval_pairs,
+            propagate_skip=False,
+        )
+    )
+    builder.add_column(
+        dd.LLMStructuredColumnConfig(
+            name="source_assessments",
+            system_prompt=SOURCE_ASSESSMENT_SYSTEM_PROMPT,
+            prompt=SOURCE_ASSESSMENT_USER_PROMPT,
+            output_format=SourceAssessments,
+            model_alias=judge_model_alias,
+            multi_modal_context=image_context,
+            skip=dd.SkipConfig(when="{{ deduplicated_qa_pairs | length == 0 }}"),
+        )
+    )
+    builder.add_column(
         dd.LLMStructuredColumnConfig(
             name="qa_evaluations",
             system_prompt=QA_EVALUATION_SYSTEM_PROMPT,
             prompt=QA_EVALUATION_USER_PROMPT,
             output_format=QAPairEvaluations,
-            model_alias=role_aliases["quality_judge"],
+            model_alias=judge_model_alias,
+            skip=dd.SkipConfig(when="{{ deduplicated_qa_pairs | length == 0 }}"),
         )
     )
+    return builder
 
-    return config_builder
+
+def _validate_retrieval_pipeline_arguments(
+    *,
+    artifact_model_alias: str,
+    generator_model_alias: str,
+    judge_model_alias: str,
+    embedding_model_alias: str,
+    start_index: int | None,
+    end_index: int | None,
+    similarity_threshold: float,
+) -> None:
+    """Validate the canonical pipeline construction arguments."""
+    aliases = (
+        artifact_model_alias,
+        generator_model_alias,
+        judge_model_alias,
+        embedding_model_alias,
+    )
+    if any(not alias for alias in aliases):
+        raise ValueError("artifact, generator, judge, and embedding model aliases must be non-empty")
+    if not -1.0 <= similarity_threshold <= 1.0:
+        raise ValueError("similarity_threshold must be between -1 and 1")
+    if (start_index is None) != (end_index is None):
+        raise ValueError("start_index and end_index must be supplied together")
+    if start_index is not None and end_index is not None and start_index > end_index:
+        raise ValueError("start_index must be less than or equal to end_index")

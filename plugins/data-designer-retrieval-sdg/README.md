@@ -20,6 +20,20 @@ via `[project.entry-points."data_designer.plugins"]`:
 Both are registered automatically through Python entry points when the
 package is installed (see [Installation](#installation)).
 
+## Retrieval data from text and images
+
+The package provides one retrieval pipeline for text-only, image-only, and
+image-plus-text units. Existing text generation uses that pipeline with an
+empty image list; image-bearing seed rows automatically supply visual context
+to generation and answer-blind source assessment while the query-quality judge
+remains source blind. A final text-only check compares candidate claims with
+the independent reading. The recipe exporter writes only the text, image, and combined views that
+each positive unit can actually support.
+
+PDF parsing is optional preprocessing rather than a package dependency. See
+[Retrieval SDG from text and images](docs/retrieval-inputs.md) for the unified
+input contract, mixed-row example, quality gates, and recipe-oriented outputs.
+
 ## Native async and resumable generation
 
 `embedding-dedup` implements `agenerate()` directly on top of
@@ -42,7 +56,12 @@ data-designer-retrieval-sdg generate \
 Use `--resume if_possible` to resume when compatible artifacts are available and
 start fresh otherwise. DataDesigner owns checkpoint discovery, configuration
 compatibility, partial-result cleanup, and the behavior of every resume mode. The
-plugin does not maintain a second resume state or inspect corpus bytes.
+plugin does not maintain a second resume state. For canonical
+`RetrievalSourcesFile` inputs, it creates content-addressed snapshots of the
+ordered source rows and image bytes under the artifact path before handing the
+rows to Data Designer. This makes source changes visible to Data Designer's
+native configuration fingerprint. The legacy document-chunker path retains its
+existing resume behavior.
 
 `--buffer-size` controls DataDesigner's checkpoint/write granularity and remains
 part of the resolved config. DataDesigner still profiles the completed dataset
@@ -274,10 +293,10 @@ from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 config_builder.add_column(
     EmbeddingDedupColumnConfig(
         name="deduplicated_qa_pairs",
-        source_column="qa_generation",   # upstream column with the items
-        items_key="pairs",               # key under the source column ("None" if the column is already a list)
-        text_field="question",           # field on each item to embed
-        model_alias="embed",             # registered embedding model alias
+        source_column="qa_generation",  # upstream column with the items
+        items_key="pairs",  # key under the source column ("None" if the column is already a list)
+        text_field="question",  # field on each item to embed
+        model_alias="embed",  # registered embedding model alias
         similarity_threshold=0.9,
     )
 )
@@ -295,7 +314,7 @@ seed_source = DocumentChunkerSeedSource(
     file_extensions=[".txt", ".md"],
     sentences_per_chunk=5,
     num_sections=1,
-    multi_doc=False,                # set True for bundle-per-row mode
+    multi_doc=False,  # set True for bundle-per-row mode
 )
 ```
 

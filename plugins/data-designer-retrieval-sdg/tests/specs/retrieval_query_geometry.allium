@@ -1,0 +1,38 @@
+-- allium: 3
+-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+-- Scope: Source-blind retrieval-query generation and quality checks.
+-- Includes: Explicit chart-mark comparison versus underlying information needs.
+-- Excludes: General visual understanding, multilingual deterministic coverage,
+-- source grounding, answer generation, and evaluation labels.
+
+contract RetrievalQueryGeometry {
+    check_query: (query: String) -> String?
+
+    @invariant RejectExplicitChartMarkReading
+        -- In a chart or graph context, an English query asking which or whose
+        -- bar is longer, shorter, taller, or extends further is rejected with
+        -- visual_mark_reading_query before source-aware answer generation.
+        -- An existing source-relative rejection retains its earlier diagnostic.
+        -- Adding named entities, dates or categories does not turn this
+        -- presentation-reading task into an underlying information need.
+
+    @invariant PreserveLegitimateVisualRetrieval
+        -- Do not reject merely for mentioning charts, geometry or appearance.
+        -- Preserve queries about underlying regional quantities/comparisons,
+        -- chart-design guidance, and distinguishing physical objects by shape.
+        -- The deterministic rule is deliberately narrow and is not a general
+        -- guarantee of retrieval quality or complete multilingual coverage.
+
+    @invariant PreferUnderlyingInformationNeed
+        -- Generation and independent source-blind judging distinguish questions
+        -- about encoded quantities or relationships from reading mark geometry.
+        -- Reject presentation-reading tasks across source languages; preserve
+        -- genuine information needs about appearance or visualization design.
+        -- Judge prompts never receive source text, images, answers or evidence.
+
+    @invariant PreserveDiagnosticsAndExistingGates
+        -- Record rejected queries with the stable reason, never rewrite them
+        -- into accepted queries. Keep existing source-relative, answer-leakage,
+        -- language, scope, deduplication and grounding checks unchanged.
+}

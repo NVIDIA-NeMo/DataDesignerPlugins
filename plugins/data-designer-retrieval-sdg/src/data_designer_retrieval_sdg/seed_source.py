@@ -55,6 +55,11 @@ class DocumentChunkerSeedSource(FileSystemSeedSource, ConfigBase):
         ),
     )
     min_text_length: int = Field(default=0, ge=0)
+    language: str = Field(
+        default="source",
+        min_length=1,
+        description="Language code or 'source' to preserve the language found in each document.",
+    )
     sentences_per_chunk: int = Field(default=5, ge=1)
     num_sections: int = Field(default=1, ge=1)
     num_files: int | None = Field(default=None, ge=1)
