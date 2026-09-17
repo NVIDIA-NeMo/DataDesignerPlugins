@@ -75,3 +75,105 @@ def test_split_sentences_handles_punctuation_context(text: str, expected: list[s
 def test_split_sentences_handles_large_input_without_recursion() -> None:
     sentence = f"{'x' * 200_000}."
     assert split_sentences(sentence) == [sentence]
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        "It was difficult.",
+        "He disagreed.",
+        "She left.",
+        "They returned.",
+        "We left.",
+        "This helped.",
+        "The trip ended.",
+        "Everyone agreed.",
+    ],
+)
+@pytest.mark.parametrize(
+    "first",
+    ["They moved to the U.S.", "They returned from the U.K.", "We met John Smith Jr.", "We met John Smith Sr."],
+)
+def test_split_sentences_ends_acronyms_and_name_suffixes(first: str, second: str) -> None:
+    assert split_sentences(f"{first} {second}") == [first, second]
+
+
+@pytest.mark.parametrize("starter", ["Bob", "Sarah", "Meetings", "Customers", "Everyone", "Then"])
+@pytest.mark.parametrize(
+    "first",
+    [
+        "We hired Acme Inc.",
+        "The answer was no.",
+        "Bring paper, pens, etc.",
+        "Sentence A.",
+        "We met John Smith Jr.",
+        "We met John Smith Sr.",
+    ],
+)
+def test_split_sentences_does_not_require_a_sentence_starter_allowlist(first: str, starter: str) -> None:
+    second = f"{starter} left."
+    assert split_sentences(f"{first} {second}") == [first, second]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We visited St. Paul yesterday.",
+        "The church is in St. Louis.",
+        "We met Dr. Smith today.",
+        "Prof. Ada Lovelace joined us.",
+        "The U.S. Army arrived.",
+        "The U.S.S.R. Delegation arrived.",
+        "The U.K. Parliament voted.",
+        "We met John Smith Jr. yesterday.",
+        "John Smith Jr., our host, arrived.",
+        "Choose a city, e.g. London or Paris.",
+        "We mean the capital, i.e. Paris.",
+        "The case was Smith vs. Jones.",
+        "The meeting begins at 3 p.m. sharp.",
+        "Use Fig. 2 for reference.",
+        "We hired Acme Inc. for the job.",
+        "Dr. J. Smith arrived.",
+        "J. R. R. Tolkien wrote books.",
+        "J. A. Smith arrived.",
+        "J. I. Packer wrote books.",
+        "J. Smith arrived.",
+        "A. Smith arrived.",
+        "John B. Smith arrived.",
+    ],
+)
+def test_split_sentences_keeps_abbreviations_in_continuations(text: str) -> None:
+    assert split_sentences(text) == [text]
+
+
+@pytest.mark.parametrize("label", ["Sentence", "sentence", "Option", "Appendix", "Section", "Vitamin"])
+def test_split_sentences_distinguishes_letter_labels_from_name_initials(label: str) -> None:
+    assert split_sentences(f"{label} A. Bob replied.") == [f"{label} A.", "Bob replied."]
+
+
+@pytest.mark.parametrize("text", ["", " \t\n", "\u2003\n"])
+def test_split_sentences_skips_empty_input(text: str) -> None:
+    assert split_sentences(text) == []
+
+
+@pytest.mark.parametrize("separator", [" ", "\t", "\n", "\u2003"])
+def test_split_sentences_keeps_source_text_and_handles_boundary_whitespace(separator: str) -> None:
+    sentences = ['She said "We moved to the U.S."', "This was good.", "「はい。」", "We met Dr. Smith."]
+    text = separator + separator.join(sentences) + separator
+    assert split_sentences(text) == sentences
+
+
+@pytest.mark.parametrize("first", ["Is she a Dr.?", "The U.S.!", "Ask Mr.?!", "The U.S.！"])
+def test_split_sentences_strong_terminators_override_all_abbreviation_roles(first: str) -> None:
+    assert split_sentences(f"{first} Yes.") == [first, "Yes."]
+
+
+@pytest.mark.parametrize(
+    "repeated",
+    ["Dr. Smith arrived. ", "x" * 10_000 + ". ", "." * 10_000 + " "],
+    ids=["sentences", "long-word", "punctuation-run"],
+)
+def test_split_sentences_preserves_all_text_in_repeated_inputs(repeated: str) -> None:
+    text = repeated * 20
+    sentences = split_sentences(text)
+    assert "".join(text.split()) == "".join("".join(sentences).split())
