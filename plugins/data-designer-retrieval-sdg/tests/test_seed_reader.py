@@ -51,6 +51,11 @@ def test_single_doc_manifest_and_hydration(tmp_path: Path) -> None:
     assert first["bundle_members"] == first["file_name"]
     assert first["bundle_id"] == ""
     assert first["chunks"], "expected non-empty chunk list"
+    assert first["images"] == []
+    assert first["language"] == "source"
+    assert len(first["retrieval_units"]) == len(first["chunks"])
+    assert all(unit["images"] == [] for unit in first["retrieval_units"])
+    assert all(unit["text"] for unit in first["retrieval_units"])
 
 
 def test_extension_filtering(tmp_path: Path) -> None:
@@ -120,3 +125,5 @@ def test_multi_doc_bundles(tmp_path: Path) -> None:
         assert len(row["bundle_members"]) == 2
         assert row["bundle_id"], "multi-doc rows must carry a non-empty bundle_id"
         assert "=== Document Boundary ===" in row["text"]
+        unit_documents = {unit["document_id"] for unit in row["retrieval_units"]}
+        assert unit_documents == set(row["bundle_members"])

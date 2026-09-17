@@ -18,8 +18,9 @@ import data_designer.config as dd
 import yaml
 from data_designer.config.base import ConfigBase
 from pydantic import ConfigDict, Field, model_validator
-from pydantic_settings import CliApp, CliSettingsSource, CliSuppress
+from pydantic_settings import CliSettingsSource, CliSuppress
 
+from data_designer_retrieval_sdg.retrieval.source_file import RetrievalSourcesFile
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
 DEFAULT_CHAT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
@@ -231,7 +232,7 @@ class GenerationRunConfig(RunConfigBase):
     """Complete typed input for one resumable retrieval generation run."""
 
     schema_version: Literal[1] = 1
-    seed_source: DocumentChunkerSeedSource = DocumentChunkerSeedSource(
+    seed_source: DocumentChunkerSeedSource | RetrievalSourcesFile = DocumentChunkerSeedSource(
         path=".",
         file_extensions=[".txt", ".md", ".text"],
         min_text_length=50,
@@ -330,7 +331,12 @@ def _deep_merge(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, 
     merged = copy.deepcopy(base)
     for key, value in override.items():
         existing = merged.get(key)
-        if isinstance(existing, dict) and isinstance(value, Mapping):
+        if key == "seed_source" and isinstance(value, Mapping) and value.get("seed_type") is not None:
+            if isinstance(existing, dict) and existing.get("seed_type") == value["seed_type"]:
+                merged[key] = _deep_merge(existing, value)
+            else:
+                merged[key] = copy.deepcopy(dict(value))
+        elif isinstance(existing, dict) and isinstance(value, Mapping):
             merged[key] = _deep_merge(existing, value)
         else:
             merged[key] = copy.deepcopy(value)
@@ -431,12 +437,8 @@ def _load_run_config(
             raise ValueError("cli_settings_source requires cli_args")
         cli_values = cli_settings_source(parsed_args=cli_args)()
         override_paths.extend(_leaf_paths(cli_values))
-        config = CliApp.run(
-            model,
-            cli_args=cli_args,
-            cli_settings_source=cli_settings_source,
-            **resolved,
-        )
+        resolved = _deep_merge(resolved, cli_values)
+        config = model.model_validate(resolved)
 
     environment_variables: tuple[str, ...] = ()
     if isinstance(config, GenerationRunConfig):
