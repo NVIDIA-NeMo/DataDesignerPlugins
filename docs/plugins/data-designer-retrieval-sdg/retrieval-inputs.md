@@ -5,6 +5,46 @@ image-only, and image-plus-text source units. Multimodality is a property of
 each seed row, not a separate workflow: every row has an `images` list and a
 text-only row simply uses `images=[]`.
 
+## Structured responses without a core patch
+
+The shared pipeline uses the package's `retrieval-structured` column for model
+outputs. It accepts either one complete JSON object or one JSON Markdown code
+fence. It does not extract objects from prose or repair malformed responses.
+Duplicate keys, non-finite numbers, and schema-invalid fields are rejected.
+Extra fields are not silently removed, and negative judge decisions remain
+negative.
+
+The column extends Data Designer's native structured generator. Image context,
+secure prompt rendering, skip propagation, traces, asynchronous scheduling,
+and bounded correction retries remain owned by Data Designer. Configure retry
+limits through its `RunConfig.max_conversation_correction_steps` and
+`RunConfig.max_conversation_restarts`. Exhausted parsing or schema failures
+remain generation failures, not accepted retrieval records.
+
+No Data Designer source patch is required. The pipeline builders select this
+column automatically. For direct use, supply the same fields as a native
+structured column:
+
+```python
+from data_designer_retrieval_sdg import RetrievalStructuredColumnConfig
+
+column = RetrievalStructuredColumnConfig(
+    name="decision",
+    model_alias="judge",
+    prompt="Source: {{ text }}\nQuery: {{ query }}\nIs the source relevant? Explain your decision.",
+    output_format={
+        "type": "object",
+        "properties": {"relevant": {"type": "boolean"}, "reason": {"type": "string"}},
+        "required": ["relevant", "reason"],
+        "additionalProperties": False,
+    },
+)
+```
+
+Register the `judge` model alias and provide the query and source context when
+adding this column to a builder. This example illustrates output handling;
+the retrieval pipeline still performs its separate quality and grounding checks.
+
 ## Input contract
 
 Use `RetrievalSource` to build a canonical row containing one independently

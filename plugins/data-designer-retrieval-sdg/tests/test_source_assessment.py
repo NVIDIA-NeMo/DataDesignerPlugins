@@ -17,7 +17,6 @@ from data_designer.config.seed_source_dataframe import DataFrameSeedSource
 from data_designer.engine.column_generators.utils.prompt_renderer import (
     PromptType,
     RecordBasedPromptRenderer,
-    create_response_recipe,
 )
 from jinja2 import Template
 from pydantic import ValidationError
@@ -25,6 +24,7 @@ from pydantic import ValidationError
 from data_designer_retrieval_sdg.pipeline import build_retrieval_pipeline
 from data_designer_retrieval_sdg.retrieval import GeneratedRetrievalRecord, export_retrieval_data
 from data_designer_retrieval_sdg.stages import select_retrieval_queries
+from data_designer_retrieval_sdg.structured import RetrievalStructuredResponseRecipe
 
 
 def _builder() -> object:
@@ -142,7 +142,7 @@ def _render_context() -> dict:
 def _native_request(column: LLMStructuredColumnConfig, row: dict) -> str:
     """Render actual model messages using Data Designer's secure response recipe."""
     renderer = RecordBasedPromptRenderer(
-        create_response_recipe(column),
+        RetrievalStructuredResponseRecipe(column.output_format, pruning=False),
         jinja_rendering_engine=JinjaRenderingEngine.SECURE,
     )
     system = renderer.render(prompt_template=column.system_prompt, record=row, prompt_type=PromptType.SYSTEM_PROMPT)

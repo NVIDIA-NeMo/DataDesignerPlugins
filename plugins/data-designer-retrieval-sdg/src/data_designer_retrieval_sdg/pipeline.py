@@ -12,7 +12,7 @@ import data_designer.config as dd
 from data_designer.config.default_model_settings import get_builtin_model_providers, get_default_providers
 from data_designer.config.seed_source import SeedSource
 
-from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
+from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig, RetrievalStructuredColumnConfig
 from data_designer_retrieval_sdg.models import (
     DocumentArtifacts,
     QAPairEvaluations,
@@ -396,7 +396,7 @@ def build_retrieval_pipeline(
 
     image_context = [dd.ImageContext(column_name="images")]
     builder.add_column(
-        dd.LLMStructuredColumnConfig(
+        RetrievalStructuredColumnConfig(
             name="document_artifacts",
             system_prompt=ARTIFACT_EXTRACTION_SYSTEM_PROMPT,
             prompt=ARTIFACT_EXTRACTION_USER_PROMPT.format(
@@ -408,7 +408,7 @@ def build_retrieval_pipeline(
         )
     )
     builder.add_column(
-        dd.LLMStructuredColumnConfig(
+        RetrievalStructuredColumnConfig(
             name="query_generation",
             system_prompt=QUERY_GENERATION_SYSTEM_PROMPT,
             prompt=QUERY_GENERATION_USER_PROMPT.format(
@@ -447,7 +447,7 @@ def build_retrieval_pipeline(
         )
     )
     builder.add_column(
-        dd.LLMStructuredColumnConfig(
+        RetrievalStructuredColumnConfig(
             name="source_blind_evaluations",
             system_prompt=QUERY_QUALITY_SYSTEM_PROMPT,
             prompt=QUERY_QUALITY_USER_PROMPT,
@@ -464,7 +464,7 @@ def build_retrieval_pipeline(
         )
     )
     builder.add_column(
-        dd.LLMStructuredColumnConfig(
+        RetrievalStructuredColumnConfig(
             name="answer_generation",
             system_prompt=ANSWER_GENERATION_SYSTEM_PROMPT,
             prompt=ANSWER_GENERATION_USER_PROMPT,
@@ -482,7 +482,7 @@ def build_retrieval_pipeline(
         )
     )
     builder.add_column(
-        dd.LLMStructuredColumnConfig(
+        RetrievalStructuredColumnConfig(
             name="source_assessments",
             system_prompt=SOURCE_ASSESSMENT_SYSTEM_PROMPT,
             prompt=SOURCE_ASSESSMENT_USER_PROMPT,
@@ -493,7 +493,7 @@ def build_retrieval_pipeline(
         )
     )
     builder.add_column(
-        dd.LLMStructuredColumnConfig(
+        RetrievalStructuredColumnConfig(
             name="qa_evaluations",
             system_prompt=QA_EVALUATION_SYSTEM_PROMPT,
             prompt=QA_EVALUATION_USER_PROMPT,

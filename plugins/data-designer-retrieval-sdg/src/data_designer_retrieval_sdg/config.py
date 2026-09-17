@@ -8,6 +8,17 @@ from __future__ import annotations
 from typing import Literal
 
 from data_designer.config.base import SingleColumnConfig
+from data_designer.config.column_configs import LLMStructuredColumnConfig
+
+
+class RetrievalStructuredColumnConfig(LLMStructuredColumnConfig):
+    """Generate schema-validated retrieval JSON, with or without a Markdown fence.
+
+    All model, image, prompt, skip, and trace settings retain their native
+    Data Designer meanings. Only response decoding uses the plugin parser.
+    """
+
+    column_type: Literal["retrieval-structured"] = "retrieval-structured"
 
 
 class EmbeddingDedupColumnConfig(SingleColumnConfig):

@@ -3,15 +3,15 @@
 
 """Data Designer plugins and pipelines for retrieval synthetic data generation.
 
-The package registers the embedding-dedup and document-chunker plugin entry
-points. It also provides one retrieval pipeline for text and optional images,
+The package registers embedding-dedup, document-chunker, and retrieval-structured
+entry points. It also provides one retrieval pipeline for text and optional images,
 recipe-oriented conversion helpers, and reusable post-processing utilities.
 """
 
 from importlib import import_module
 from typing import Any
 
-from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
+from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig, RetrievalStructuredColumnConfig
 from data_designer_retrieval_sdg.pipeline import (
     build_model_providers,
     build_qa_generation_pipeline,
@@ -38,6 +38,7 @@ __all__ = [
     "GeneratedRetrievalRecord",
     "LoadedRunConfig",
     "RetrievalSource",
+    "RetrievalStructuredColumnConfig",
     "RetrievalSourcesFile",
     "RetrievalUnit",
     "SplitRatios",

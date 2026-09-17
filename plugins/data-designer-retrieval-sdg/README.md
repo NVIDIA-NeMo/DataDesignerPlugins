@@ -1,7 +1,7 @@
 # data-designer-retrieval-sdg
 
 Data Designer toolkit for **retriever synthetic data generation**. The
-package registers two `data_designer.plugins` entry points, ships a
+package registers three `data_designer.plugins` entry points, ships a
 ready-made multi-step QA generation pipeline, and exposes a CLI that
 generates QA pairs and converts them into training formats compatible
 with [Automodel](https://github.com/NVIDIA-NeMo/Automodel) retriever
@@ -9,15 +9,16 @@ finetuning.
 
 ## Plugins
 
-A single package contributes two plugins to DataDesigner's registries
+A single package contributes three plugins to DataDesigner's registries
 via `[project.entry-points."data_designer.plugins"]`:
 
 | Slug | Type | Purpose |
 |------|------|---------|
 | `embedding-dedup` | column generator | Generic cosine-similarity dedup of any list-valued column. Implements native `agenerate()` for the async engine. |
 | `document-chunker` | seed reader | Sentence-chunks a directory of text files and emits structured sections, with optional multi-document bundling. |
+| `retrieval-structured` | column generator | Native structured generation accepting one complete bare or JSON-fenced object, with schema validation and bounded corrections. |
 
-Both are registered automatically through Python entry points when the
+All are registered automatically through Python entry points when the
 package is installed (see [Installation](#installation)).
 
 ## Retrieval data from text and images
