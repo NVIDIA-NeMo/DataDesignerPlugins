@@ -4,7 +4,7 @@
 """Public contracts and export helpers for retrieval SDG."""
 
 from data_designer_retrieval_sdg.retrieval.export import (
-    assign_document_splits,
+    assign_query_group_splits,
     export_retrieval_data,
     load_generated_retrieval_records,
 )
@@ -16,15 +16,19 @@ from data_designer_retrieval_sdg.retrieval.models import (
     RetrievalUnit,
     SplitRatios,
 )
+from data_designer_retrieval_sdg.retrieval.query_groups import QueryGroupInput, QueryProvenance, resolve_query_groups
 
 __all__ = [
     "CandidateDiagnostic",
     "ExportSummary",
     "GeneratedRetrievalRecord",
+    "QueryGroupInput",
+    "QueryProvenance",
     "RetrievalSource",
     "RetrievalUnit",
     "SplitRatios",
-    "assign_document_splits",
+    "assign_query_group_splits",
     "export_retrieval_data",
     "load_generated_retrieval_records",
+    "resolve_query_groups",
 ]

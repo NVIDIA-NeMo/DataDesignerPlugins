@@ -19,6 +19,7 @@ from data_designer_retrieval_sdg.models import (
     QuestionAnswerPair,
     SourceAssessments,
 )
+from data_designer_retrieval_sdg.retrieval.query_groups import QueryProvenance
 
 SplitName = Literal["train", "validation", "evaluation"]
 ViewName = Literal["text", "image", "image_and_text"]
@@ -123,11 +124,14 @@ class GeneratedRetrievalRecord(BaseModel):
     generation_diagnostics: list[GenerationDiagnostic] = Field(default_factory=list)
     language: str = Field(default="source", min_length=1)
     model_config = ConfigDict(extra="ignore", frozen=True, str_strip_whitespace=True)
+    query_provenance: dict[int, QueryProvenance] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_evaluation_indexes(self) -> GeneratedRetrievalRecord:
         """Reject duplicate or out-of-range explicit evaluation indexes."""
         candidate_count = len(self.deduplicated_qa_pairs)
+        if any(index < 0 or index >= candidate_count for index in self.query_provenance):
+            raise ValueError("query provenance candidate index is out of range")
         query_indexes = [item.candidate_index for item in self.query_quality_evaluations.evaluations]
         if len(query_indexes) != len(set(query_indexes)):
             raise ValueError("query evaluations contain duplicate candidate indexes")
@@ -152,7 +156,7 @@ class GeneratedRetrievalRecord(BaseModel):
 
 
 class SplitRatios(StrictModel):
-    """Document-level train, validation, and evaluation ratios."""
+    """Query-group-level train, validation, and evaluation ratios."""
 
     train: float = Field(default=0.8, ge=0.0, le=1.0)
     validation: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -189,7 +193,7 @@ class ExportSummary(StrictModel):
     retrieval_unit_count: int
     accepted_candidate_count: int
     rejected_candidate_count: int
-    document_split_counts: dict[str, int]
+    query_group_split_counts: dict[str, int]
     candidate_split_counts: dict[str, int]
     query_surface_counts: dict[str, int]
     evidence_modality_counts: dict[str, int]

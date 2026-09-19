@@ -52,7 +52,7 @@ retrievable unit:
 
 | Field | Required | Description |
 |---|---|---|
-| `document_id` | Yes | Stable source-document identifier used for document-disjoint splitting. |
+| `document_id` | Yes | Stable source-document identifier for provenance, not query splitting. |
 | `unit_id` | Yes | Stable identifier for the positive retrieval unit. |
 | `text` | Conditional | Parsed text. It can be empty when an image is present. |
 | `images` | Conditional | Zero or one local PNG, JPEG, or WebP path in the current page-level implementation. |
@@ -299,9 +299,30 @@ does not describe which export representations happen to be available.
 
 ## Output
 
-Complete source documents are assigned to train, validation, or evaluation.
-Documents linked by one multi-unit generation row stay together. The exporter
-then writes independently sampleable views:
+The protocol is grouped query-disjoint retrieval over a fixed, shared corpus.
+Query groups are assigned to train, validation, or evaluation; all partitions
+retrieve from the full eligible collection, including distractors. Documents
+can support queries in several partitions. Sharing a page, document, summary,
+or generation context does not automatically group independent questions.
+
+Optional `query_provenance` on each generated record maps final
+`deduplicated_qa_pairs` candidate indexes to corpus-independent provenance:
+
+```json
+{"query_provenance": {"0": {"query_group_id": "warranty-question",
+                           "seed_query_id": "seed-42"}}}
+```
+
+`parent_query_ids` can additionally connect known derivations. Populate these
+fields from known generation/import provenance, not model guesses. Missing
+provenance starts each accepted query in its own group. Normalized duplicates
+are joined before splitting; `group_near_duplicates=True` additionally enables
+a conservative lexical heuristic. Unknown translations or semantic equivalents
+cannot be guaranteed detectable. Dataset-specific mapping belongs in external
+experiment or customer preparation scripts, not this plugin.
+
+Group assignments are global across views and recorded in `split_manifest.json`.
+The exporter writes independently sampleable views:
 
 - `text`, for units containing text
 - `image`, for units containing an image
@@ -309,7 +330,7 @@ then writes independently sampleable views:
 
 Image-grounded candidates never enter the text view. A text-grounded candidate
 can enter an image view only when every positive unit actually has an image.
-Each view contains recipe-oriented Parquet corpora, positive-only training JSON,
+Each view contains one `corpus/shared/` Parquet corpus, positive-only training JSON,
 and BEIR-style synthetic evaluation files. Source records, units, judgements,
 relative image assets, and checksums make the bundle self-contained.
 
