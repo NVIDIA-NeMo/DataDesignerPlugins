@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from data_designer_retrieval_sdg.prompts import SOURCE_ASSESSMENT_USER_PROMPT
 from data_designer_retrieval_sdg.retrieval import (
     SplitRatios,
-    assign_document_splits,
+    assign_query_group_splits,
     export_retrieval_data,
 )
 
@@ -229,6 +229,48 @@ def _read_jsonl(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
+def test_query_groups_share_full_corpus_without_document_partitioning(tmp_path: Path) -> None:
+    """Independent questions on one document can cross splits; known rewrites cannot."""
+    rows = []
+    for index, question in enumerate(
+        [
+            "How long is the warranty?",
+            "What is the warranty duration?",
+            "Where is the service center?",
+            "When does the service center open?",
+        ]
+    ):
+        row = _record(
+            f"source-{index}",
+            [_unit(f"unit-{index}", "same-document", text="Warranty and service information.")],
+            _candidate(question, "See the stated service terms.", "question", [f"unit-{index}"]),
+            independent_answer="The service terms provide the requested information.",
+        )
+        if index < 2:
+            row["query_provenance"] = {"0": {"query_group_id": "warranty"}}
+        rows.append(row)
+    source = tmp_path / "generated.jsonl"
+    _write_rows(source, rows)
+    summary = export_retrieval_data(
+        source,
+        tmp_path / "bundle",
+        dataset_id="generic",
+        ratios=SplitRatios(train=0.5, validation=0, evaluation=0.5),
+    )
+    bundle = Path(summary.run_manifest_path).parent
+    split = json.loads((bundle / "split_manifest.json").read_text())
+    assignments = split["query_assignments"]["text"]
+    assert {item["split"] for item in assignments.values()} == {"train", "evaluation"}
+    groups = {}
+    for item in assignments.values():
+        groups.setdefault(item["query_group_id"], set()).add(item["split"])
+    assert len(groups) == 3
+    assert all(len(partitions) == 1 for partitions in groups.values())
+    assert len(_read_jsonl(bundle / "synthetic_eval/text/corpus.jsonl")) == 4
+    shards = list((bundle / "views/text/corpus/shared").glob("*.parquet"))
+    assert sum(pq.read_table(shard).num_rows for shard in shards) == 4
+
+
 @pytest.mark.parametrize(
     ("quotes", "reason"),
     [
@@ -346,10 +388,10 @@ def test_grounding_prompt_requires_independent_numeric_reading_and_uncertainty_r
     assert "answerable=false" in SOURCE_ASSESSMENT_USER_PROMPT
 
 
-def test_document_split_is_deterministic() -> None:
+def test_query_group_split_is_deterministic() -> None:
     ratios = SplitRatios(train=0.5, validation=0.25, evaluation=0.25)
-    first = assign_document_splits(["a", "b", "c", "d"], ratios=ratios, seed=7)
-    second = assign_document_splits(reversed(["a", "b", "c", "d"]), ratios=ratios, seed=7)
+    first = assign_query_group_splits(["a", "b", "c", "d"], ratios=ratios, seed=7)
+    second = assign_query_group_splits(reversed(["a", "b", "c", "d"]), ratios=ratios, seed=7)
 
     assert first == second
     assert set(first.values()) == {"train", "validation", "evaluation"}
@@ -642,7 +684,7 @@ def test_cross_unit_query_collision_is_quarantined(tmp_path: Path) -> None:
     assert sum(row["rejection_reason"] == "cross_unit_query_collision" for row in diagnostics) == 2
 
 
-def test_linked_documents_cannot_cross_splits(tmp_path: Path) -> None:
+def test_multi_document_positives_use_shared_collection(tmp_path: Path) -> None:
     row = _record(
         "source-bundle",
         [
@@ -679,4 +721,8 @@ def test_linked_documents_cannot_cross_splits(tmp_path: Path) -> None:
         ratios=SplitRatios(train=0.5, validation=0.0, evaluation=0.5),
     )
     split_manifest = json.loads((output / "split_manifest.json").read_text(encoding="utf-8"))
-    assert split_manifest["assignments"]["doc-a"] == split_manifest["assignments"]["doc-b"]
+    assert split_manifest["document_disjoint"] is False
+    assert "assignments" not in split_manifest
+    corpus = _read_jsonl(output / "synthetic_eval/text/corpus.jsonl")
+    assert {row["_id"] for row in corpus} == {"unit-a", "unit-b", "unit-c"}
+    assert {row["split"] for row in _read_jsonl(output / "retrieval_units.jsonl")} == {"shared"}

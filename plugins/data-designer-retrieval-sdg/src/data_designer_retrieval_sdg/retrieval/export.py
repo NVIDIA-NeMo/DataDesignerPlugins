@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import csv
+import dataclasses
 import hashlib
 import json
 import math
@@ -39,6 +40,7 @@ from data_designer_retrieval_sdg.retrieval.quality import (
     deterministic_rejection_reason,
     normalize_query_text,
 )
+from data_designer_retrieval_sdg.retrieval.query_groups import QueryGroupInput, resolve_query_groups
 
 _SPLIT_NAMES: tuple[SplitName, ...] = ("train", "validation", "evaluation")
 _VIEW_NAMES: tuple[ViewName, ...] = ("text", "image", "image_and_text")
@@ -53,6 +55,7 @@ class _AcceptedCandidate:
     positive_units: tuple[RetrievalUnit, ...]
     evidence_modality: EvidenceModality
     query_id: str
+    query_group_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -63,35 +66,6 @@ class _CandidateDecision:
     positive_units: tuple[RetrievalUnit, ...]
     evidence_modality: EvidenceModality | None
     diagnostic: CandidateDiagnostic
-
-
-class _UnionFind:
-    """Disjoint sets for source documents linked by one generation row."""
-
-    def __init__(self) -> None:
-        self._parent: dict[str, str] = {}
-        self._rank: dict[str, int] = {}
-
-    def find(self, value: str) -> str:
-        """Return the representative for a source document."""
-        if value not in self._parent:
-            self._parent[value] = value
-            self._rank[value] = 0
-        if self._parent[value] != value:
-            self._parent[value] = self.find(self._parent[value])
-        return self._parent[value]
-
-    def union(self, left: str, right: str) -> None:
-        """Join two linked source-document sets."""
-        left_root = self.find(left)
-        right_root = self.find(right)
-        if left_root == right_root:
-            return
-        if self._rank[left_root] < self._rank[right_root]:
-            left_root, right_root = right_root, left_root
-        self._parent[right_root] = left_root
-        if self._rank[left_root] == self._rank[right_root]:
-            self._rank[left_root] += 1
 
 
 def load_generated_retrieval_records(input_path: str | Path) -> list[GeneratedRetrievalRecord]:
@@ -125,16 +99,16 @@ def load_generated_retrieval_records(input_path: str | Path) -> list[GeneratedRe
     return records
 
 
-def assign_document_splits(
+def assign_query_group_splits(
     document_ids: Iterable[str],
     *,
     ratios: SplitRatios | None = None,
     seed: int = 42,
 ) -> dict[str, SplitName]:
-    """Assign whole source documents to deterministic splits.
+    """Assign whole query groups to deterministic splits.
 
     Args:
-        document_ids: Source-document or connected-component identifiers.
+        document_ids: Resolved query-group identifiers.
         ratios: Requested split ratios.
         seed: Stable split seed.
 
@@ -189,6 +163,7 @@ def export_retrieval_data(
     generator_model: str | None = None,
     judge_model: str | None = None,
     answer_model: str | None = None,
+    group_near_duplicates: bool = False,
 ) -> ExportSummary:
     """Export accepted candidates into independently sampleable views.
 
@@ -196,12 +171,13 @@ def export_retrieval_data(
         input_path: Completed Data Designer JSONL or Parquet export.
         output_dir: New or empty destination directory.
         dataset_id: Corpus identifier written into recipe records.
-        ratios: Source-document-level split ratios.
+        ratios: Query-group-level split ratios.
         seed: Stable split seed.
         strict_visual: Fail if image inputs produced no visual candidates.
         generator_model: Optional auditable generator model identity.
         judge_model: Optional auditable judge model identity.
         answer_model: Optional separate answer model; defaults to generator_model.
+        group_near_duplicates: Opt into conservative lexical grouping before splitting.
 
     Returns:
         Counts, warnings, and manifest location.
@@ -220,6 +196,8 @@ def export_retrieval_data(
     decisions = _quarantine_cross_unit_collisions(_candidate_decisions(records))
     early_rejections = sum(len(record.generation_diagnostics) for record in records)
     accepted = _accepted_candidates(decisions)
+    groups = _candidate_query_groups(accepted, group_near_duplicates=group_near_duplicates)
+    accepted = [dataclasses.replace(item, query_group_id=groups[item.query_id]) for item in accepted]
     if not accepted:
         reasons = sorted(
             {
@@ -244,11 +222,13 @@ def export_retrieval_data(
     _require_empty_output(destination)
     destination.mkdir(parents=True)
     split_ratios = ratios or SplitRatios()
-    assignments = _connected_document_splits(records, split_ratios, seed)
+    assignments = assign_query_group_splits(groups.values(), ratios=split_ratios, seed=seed)
     candidate_split_counts = Counter(_candidate_split(item, assignments) for item in accepted)
     warnings.extend(_split_warnings(assignments, candidate_split_counts, split_ratios))
     assets = _materialize_assets(records, input_file.parent, destination)
-    generated_paths = _write_audit_files(destination, records, decisions, assignments, assets)
+    generated_paths = _write_audit_files(
+        destination, records, decisions, assignments, assets, accepted, seed, split_ratios, group_near_duplicates
+    )
     generated_paths.extend(_write_views(destination, records, accepted, assignments, assets, dataset_id))
 
     split_counts = Counter(assignments.values())
@@ -258,6 +238,8 @@ def export_retrieval_data(
     manifest_path = destination / "run_manifest.json"
     manifest = {
         "schema_version": 2,
+        "split_protocol": "grouped_query_disjoint",
+        "corpus_scope": "full_collection",
         "quality_contract": "independent_source_assessment_v1",
         "dataset_id": dataset_id,
         "models": {
@@ -282,7 +264,7 @@ def export_retrieval_data(
             )
         ),
         "source_suitability_counts": _source_suitability_counts(records),
-        "document_split_counts": {name: split_counts[name] for name in _SPLIT_NAMES},
+        "query_group_split_counts": {name: split_counts[name] for name in _SPLIT_NAMES},
         "candidate_split_counts": {name: candidate_split_counts[name] for name in _SPLIT_NAMES},
         "query_surface_counts": {name: surface_counts[name] for name in ("question", "instruction", "keyword")},
         "evidence_modality_counts": {name: modality_counts[name] for name in ("text_only", "image_grounded")},
@@ -297,7 +279,7 @@ def export_retrieval_data(
         retrieval_unit_count=len(units),
         accepted_candidate_count=len(accepted),
         rejected_candidate_count=manifest["rejected_candidate_count"],
-        document_split_counts=manifest["document_split_counts"],
+        query_group_split_counts=manifest["query_group_split_counts"],
         candidate_split_counts=manifest["candidate_split_counts"],
         query_surface_counts=manifest["query_surface_counts"],
         evidence_modality_counts=manifest["evidence_modality_counts"],
@@ -316,6 +298,7 @@ def _normalize_nested_columns(row: dict[str, Any]) -> dict[str, Any]:
         "source_assessments",
         "document_artifacts",
         "generation_diagnostics",
+        "query_provenance",
     ):
         value = normalized.get(name)
         if isinstance(value, str):
@@ -589,32 +572,24 @@ def _model_warnings(generator_model: str | None, judge_model: str | None) -> lis
     return []
 
 
-def _connected_document_splits(
-    records: list[GeneratedRetrievalRecord],
-    ratios: SplitRatios,
-    seed: int,
-) -> dict[str, SplitName]:
-    """Keep every document linked by a generation row in the same split."""
-    groups = _UnionFind()
-    document_ids: set[str] = set()
-    for record in records:
-        record_document_ids = sorted({unit.document_id for unit in record.retrieval_units})
-        document_ids.update(record_document_ids)
-        for document_id in record_document_ids:
-            groups.find(document_id)
-        for document_id in record_document_ids[1:]:
-            groups.union(record_document_ids[0], document_id)
-    components = {document_id: groups.find(document_id) for document_id in document_ids}
-    component_splits = assign_document_splits(components.values(), ratios=ratios, seed=seed)
-    return {document_id: component_splits[component] for document_id, component in components.items()}
+def _candidate_query_groups(accepted: list[_AcceptedCandidate], *, group_near_duplicates: bool) -> dict[str, str]:
+    """Resolve only explicit provenance and query duplicates, never shared documents."""
+    rows = []
+    for item in accepted:
+        provenance = item.record.query_provenance.get(item.candidate_index)
+        rows.append(
+            QueryGroupInput(
+                query_id=item.query_id,
+                text=item.candidate.question,
+                **(provenance.model_dump() if provenance is not None else {}),
+            )
+        )
+    return resolve_query_groups(rows, group_near_duplicates=group_near_duplicates)
 
 
 def _candidate_split(item: _AcceptedCandidate, assignments: dict[str, SplitName]) -> SplitName:
-    """Return the common split for a candidate's positives."""
-    splits = {assignments[unit.document_id] for unit in item.positive_units}
-    if len(splits) != 1:
-        raise ValueError("candidate positive documents cross split boundaries")
-    return next(iter(splits))
+    """Return the split of a query's resolved group."""
+    return assignments[item.query_group_id]
 
 
 def _split_warnings(
@@ -622,17 +597,17 @@ def _split_warnings(
     candidate_counts: Counter[SplitName],
     ratios: SplitRatios,
 ) -> list[str]:
-    """Report requested splits without documents or accepted queries."""
-    document_counts = Counter(assignments.values())
+    """Report requested splits without groups or accepted queries."""
+    group_counts = Counter(assignments.values())
     values = {"train": ratios.train, "validation": ratios.validation, "evaluation": ratios.evaluation}
     warnings: list[str] = []
     for name in _SPLIT_NAMES:
         if values[name] <= 0:
             continue
-        if document_counts[name] == 0:
-            warnings.append(f"EMPTY_{name.upper()}_SPLIT: add source documents or adjust split ratios")
+        if group_counts[name] == 0:
+            warnings.append(f"EMPTY_{name.upper()}_SPLIT: add independent query groups or adjust split ratios")
         elif candidate_counts[name] == 0:
-            warnings.append(f"EMPTY_{name.upper()}_QUERIES: no accepted queries for assigned documents")
+            warnings.append(f"EMPTY_{name.upper()}_QUERIES: no accepted queries for assigned groups")
     return warnings
 
 
@@ -681,8 +656,12 @@ def _write_audit_files(
     decisions: list[_CandidateDecision],
     assignments: dict[str, SplitName],
     assets: dict[str, str],
+    accepted: list[_AcceptedCandidate],
+    seed: int,
+    ratios: SplitRatios,
+    group_near_duplicates: bool,
 ) -> list[Path]:
-    """Write portable source-unit, split, and decision audit files."""
+    """Write portable source-unit, query-group, and decision audit files."""
     records_path = output_dir / "source_records.jsonl"
     _write_jsonl(
         records_path,
@@ -691,11 +670,7 @@ def _write_audit_files(
     units_path = output_dir / "retrieval_units.jsonl"
     _write_jsonl(
         units_path,
-        (
-            _portable_unit(unit, assignments[unit.document_id], assets)
-            for record in records
-            for unit in record.retrieval_units
-        ),
+        (_portable_unit(unit, "shared", assets) for record in records for unit in record.retrieval_units),
     )
     diagnostics_path = output_dir / "candidate_diagnostics.jsonl"
     diagnostics = [decision.diagnostic.model_dump(mode="json") for decision in decisions]
@@ -706,7 +681,30 @@ def _write_audit_files(
     )
     _write_jsonl(diagnostics_path, diagnostics)
     split_path = output_dir / "split_manifest.json"
-    _write_json(split_path, {"schema_version": 1, "assignments": assignments, "document_disjoint": True})
+    query_assignments = {
+        view: {
+            item.query_id: {"split": _candidate_split(item, assignments), "query_group_id": item.query_group_id}
+            for item in accepted
+            if _candidate_supports_view(item, view)
+        }
+        for view in _VIEW_NAMES
+    }
+    _write_json(
+        split_path,
+        {
+            "schema_version": 1,
+            "split_protocol": "grouped_query_disjoint",
+            "corpus_scope": "full_collection",
+            "document_disjoint": False,
+            "query_assignments": query_assignments,
+            "seed": seed,
+            "ratios": ratios.model_dump(),
+            "ratio_unit": "query_groups",
+            "group_near_duplicates": group_near_duplicates,
+            "grouping_policy": "explicit provenance + normalized duplicates; optional lexical near duplicates",
+            "limitation": "Unknown semantic equivalents cannot be guaranteed without provenance.",
+        },
+    )
     return [
         records_path,
         units_path,
@@ -725,7 +723,7 @@ def _portable_record(record: GeneratedRetrievalRecord) -> dict[str, Any]:
 
 def _portable_unit(
     unit: RetrievalUnit,
-    split: SplitName,
+    split: str,
     assets: dict[str, str],
 ) -> dict[str, Any]:
     """Serialize a unit using only bundle-relative image paths."""
@@ -747,17 +745,14 @@ def _write_views(
     units = [unit for record in records for unit in record.retrieval_units]
     paths: list[Path] = []
     for view in _VIEW_NAMES:
-        for split in _SPLIT_NAMES:
-            split_units = [
-                unit for unit in units if assignments[unit.document_id] == split and _unit_supports_view(unit, view)
-            ]
-            corpus_dir = output_dir / "views" / view / "corpus" / split
-            corpus_dir.mkdir(parents=True, exist_ok=True)
-            corpus_path = corpus_dir / "part-00000.parquet"
-            _write_corpus(corpus_path, view, split_units, assets, output_dir)
-            metadata_path = corpus_dir / "merlin_metadata.json"
-            _write_json(metadata_path, _corpus_metadata(view, dataset_id))
-            paths.extend([corpus_path, metadata_path])
+        shared_units = [unit for unit in units if _unit_supports_view(unit, view)]
+        corpus_dir = output_dir / "views" / view / "corpus/shared"
+        corpus_dir.mkdir(parents=True, exist_ok=True)
+        corpus_path = corpus_dir / "part-00000.parquet"
+        _write_corpus(corpus_path, view, shared_units, assets, output_dir)
+        metadata_path = corpus_dir / "merlin_metadata.json"
+        _write_json(metadata_path, _corpus_metadata(view, dataset_id))
+        paths.extend([corpus_path, metadata_path])
         for split in ("train", "validation"):
             data = [
                 _training_record(item, dataset_id)
@@ -765,7 +760,7 @@ def _write_views(
                 if _candidate_split(item, assignments) == split and _candidate_supports_view(item, view)
             ]
             path = output_dir / "views" / view / f"{split}.json"
-            _write_json(path, {"corpus": {"path": f"corpus/{split}"}, "data": data})
+            _write_json(path, {"corpus": {"path": "corpus/shared"}, "data": data})
             paths.append(path)
         paths.extend(_write_evaluation_view(output_dir, view, units, accepted, assignments, assets, dataset_id))
     return paths
@@ -832,6 +827,7 @@ def _training_record(item: _AcceptedCandidate, dataset_id: str) -> dict[str, Any
     document_ids = sorted({unit.document_id for unit in item.positive_units})
     return {
         "question_id": item.query_id,
+        "query_group_id": item.query_group_id,
         "question": item.candidate.question,
         "corpus_id": dataset_id,
         "pos_doc": [{"id": unit.unit_id} for unit in item.positive_units],
@@ -860,9 +856,7 @@ def _write_evaluation_view(
     root = output_dir / "synthetic_eval" / view
     qrels_dir = root / "qrels"
     qrels_dir.mkdir(parents=True, exist_ok=True)
-    evaluation_units = [
-        unit for unit in units if assignments[unit.document_id] == "evaluation" and _unit_supports_view(unit, view)
-    ]
+    evaluation_units = [unit for unit in units if _unit_supports_view(unit, view)]
     candidates = [
         item
         for item in accepted
@@ -874,6 +868,7 @@ def _write_evaluation_view(
         (
             {
                 "_id": item.query_id,
+                "query_group_id": item.query_group_id,
                 "text": item.candidate.question,
                 "metadata": {
                     "corpus_id": dataset_id,
