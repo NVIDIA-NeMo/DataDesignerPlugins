@@ -40,7 +40,7 @@ def checked_candidates(
         if not reasons:
             context = GenerationContext(context_id=candidate.context_id, unit_ids=candidate.source_unit_ids)
             reasons = (
-                localization_reasons(candidate.localization, context, by_id)
+                localization_reasons(candidate.localization, context, by_id, config.require_verbatim_quotes)
                 if candidate.localization
                 else ["no_localized_positives"]
             )
@@ -232,6 +232,9 @@ def export_multimodal_bundle(
         "rejection_reasons": dict(Counter(reason for c in candidates for reason in c.rejection_reasons)),
         "views": view_counts,
     }
+    from data_designer_retrieval_sdg.multimodal.reporting import generation_report
+
+    counts.update(generation_report(sources, candidates, outcomes))
     write_json(root / "report.json", counts)
     write_json(
         root / "run_manifest.json",
@@ -245,6 +248,10 @@ def export_multimodal_bundle(
                 "relevance_threshold": config.relevance_threshold,
                 "self_sufficiency_threshold": config.self_sufficiency_threshold,
                 "instructions": [item.model_dump() for item in config.instructions],
+                "require_verbatim_quotes": config.require_verbatim_quotes,
+                "generation_config": config.model_dump(
+                    mode="json", exclude={"generator", "judge", "sources_file", "contexts_file", "output_dir", "resume"}
+                ),
             },
             "models": {"generator": config.generator.model_dump(), "judge": config.judge.model_dump()},
             "shared_generator_judge": config.generator.model == config.judge.model

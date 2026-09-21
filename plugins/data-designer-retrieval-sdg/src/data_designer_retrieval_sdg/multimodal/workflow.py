@@ -22,6 +22,14 @@ from data_designer_retrieval_sdg.multimodal.models import (
     QueryBatch,
     QueryJudgment,
     RelevanceJudgment,
+    SummaryJudgment,
+)
+from data_designer_retrieval_sdg.multimodal.planning import (
+    automatic_contexts,
+    bounded_contexts,
+    context_instructions,
+    related_contexts,
+    select_summaries,
 )
 from data_designer_retrieval_sdg.multimodal.storage import artifact, digest, fingerprint, write_bytes, write_json
 from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
@@ -29,7 +37,7 @@ from data_designer_retrieval_sdg.retrieval.source_file import load_retrieval_sou
 
 
 def load_contexts(config: MultimodalSDGConfig, sources: list[RetrievalSource]) -> list[GenerationContext]:
-    """Use explicit contexts or one per unit; never infer sections or split groups.
+    """Build lossless bounded contexts, independent of query split groups.
 
     Args:
         config: Optional context JSONL and explicit request size bound.
@@ -39,7 +47,7 @@ def load_contexts(config: MultimodalSDGConfig, sources: list[RetrievalSource]) -
         Validated contexts; unselected source units remain corpus distractors.
     """
     if config.contexts_file is None:
-        contexts = [GenerationContext(context_id=s.unit_id, unit_ids=[s.unit_id], language=s.language) for s in sources]
+        contexts = automatic_contexts(sources, config.context_strategy)
     else:
         contexts = [
             GenerationContext.model_validate_json(line)
@@ -52,11 +60,9 @@ def load_contexts(config: MultimodalSDGConfig, sources: list[RetrievalSource]) -
     if not contexts or len({context.context_id for context in contexts}) != len(contexts):
         raise ValueError("contexts must be nonempty with unique IDs")
     for context in contexts:
-        if not set(context.unit_ids) <= known or len(context.unit_ids) > config.max_units_per_context:
-            raise ValueError(
-                f"Unknown units or oversized context: {context.context_id}; prepare explicit bounded contexts"
-            )
-    return contexts
+        if not set(context.unit_ids) <= known:
+            raise ValueError(f"Unknown units in context: {context.context_id}")
+    return bounded_contexts(contexts, sources, config)
 
 
 def source_request(
@@ -83,7 +89,10 @@ def source_request(
 
 
 def localization_reasons(
-    localization: Localization, context: GenerationContext, sources: dict[str, RetrievalSource]
+    localization: Localization,
+    context: GenerationContext,
+    sources: dict[str, RetrievalSource],
+    require_verbatim_quotes: bool = False,
 ) -> list[str]:
     """Validate source identities and inspectable evidence without repairing judge output."""
     if not localization.supports:
@@ -96,11 +105,55 @@ def localization_reasons(
         source = sources[support.unit_id]
         if support.modality in {"text", "text_and_image"}:
             quote = " ".join(support.quote.split())
-            if not quote or quote not in " ".join(source.text.split()):
+            if not source.text.strip() or not quote:
+                return ["missing_text_evidence"]
+            if require_verbatim_quotes and not quote_verified(support.quote, source.text):
                 return ["unverified_text_evidence"]
         if support.modality in {"image", "text_and_image"} and (not source.images or not support.visual_evidence):
             return ["missing_visual_evidence"]
     return []
+
+
+def quote_verified(quote: str, text: str) -> bool:
+    """Report quotation fidelity separately from the source-local relevance judgment."""
+    normalized = " ".join(quote.casefold().split())
+    return bool(normalized) and normalized in " ".join(text.casefold().split())
+
+
+def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
+    """Summarize original evidence and optionally judge each summary against it.
+
+    Args:
+        contexts: Bounded memberships.
+        sources: Canonical unit lookup.
+        config: Summary judging policy.
+        inference: Cached structured inference implementation.
+
+    Returns:
+        Complete summary records, including rejected summaries and empty query slots.
+    """
+    summaries = inference.generate(
+        [source_request(prompts.SUMMARY, ContextSummary, "generator", c, sources) for c in contexts]
+    )
+    judgments = (
+        inference.generate(
+            [
+                source_request(prompts.SUMMARY_JUDGE, SummaryJudgment, "judge", c, sources, summary=s.model_dump())
+                for c, s in zip(contexts, summaries, strict=True)
+            ]
+        )
+        if config.judge_summaries
+        else [None] * len(contexts)
+    )
+    return [
+        {
+            "context": c.model_dump(),
+            "summary": s.model_dump(),
+            "summary_judgment": j.model_dump() if j else None,
+            "slots": {"queries": []},
+        }
+        for c, s, j in zip(contexts, summaries, judgments, strict=True)
+    ]
 
 
 def generate_candidates(
@@ -111,9 +164,13 @@ def generate_candidates(
 ) -> tuple[list[Candidate], list[dict]]:
     """Generate and judge bounded contexts, retaining abstentions and every rejected candidate."""
     by_id = {source.unit_id: source for source in sources}
-    summaries = inference.generate(
-        [source_request(prompts.SUMMARY, ContextSummary, "generator", c, by_id) for c in contexts]
-    )
+    outcomes = summarize_contexts(contexts, by_id, config, inference)
+    if config.related_contexts_per_context:
+        additional = related_contexts(outcomes, sources, config)
+        outcomes.extend(summarize_contexts(additional, by_id, config, inference))
+    selected = select_summaries(outcomes, config)
+    contexts = [GenerationContext.model_validate(row["context"]) for row in selected]
+    instructions = {c.context_id: context_instructions(config, c.context_id) for c in contexts}
     batches = inference.generate(
         [
             source_request(
@@ -123,17 +180,20 @@ def generate_candidates(
                 context,
                 by_id,
                 language=context.language,
-                summary=summary.model_dump(),
-                instructions=[{"slot": i, **item.model_dump()} for i, item in enumerate(config.instructions)],
+                summary=row["summary"],
+                instructions=[
+                    {"slot": i, **item.model_dump()} for i, item in enumerate(instructions[context.context_id])
+                ],
             )
-            for context, summary in zip(contexts, summaries, strict=True)
+            for context, row in zip(contexts, selected, strict=True)
         ]
     )
-    pending, outcomes = [], []
-    for context, summary, batch in zip(contexts, summaries, batches, strict=True):
-        if sorted(slot.slot for slot in batch.queries) != list(range(len(config.instructions))):
+    pending = []
+    for context, row, batch in zip(contexts, selected, batches, strict=True):
+        if sorted(slot.slot for slot in batch.queries) != list(range(len(instructions[context.context_id]))):
             raise ValueError("Generator did not return exactly one outcome for every requested slot")
-        outcomes.append({"context": context.model_dump(), "summary": summary.model_dump(), "slots": batch.model_dump()})
+        row["slots"] = batch.model_dump()
+        row["instructions"] = [item.model_dump() for item in instructions[context.context_id]]
         for slot in sorted(batch.queries, key=lambda s: s.slot):
             if slot.query is None:
                 if slot.evidence_modality != "none":
@@ -170,7 +230,7 @@ def generate_candidates(
         reasons = reasons_by_index[i]
         localization = by_index.get(i)
         if localization is not None:
-            reasons.extend(localization_reasons(localization, context, by_id))
+            reasons.extend(localization_reasons(localization, context, by_id, config.require_verbatim_quotes))
         candidates.append(
             Candidate(
                 query_id="q_" + fingerprint([context.context_id, slot.slot, slot.query])[:32],
@@ -178,7 +238,15 @@ def generate_candidates(
                 query=slot.query,
                 source_unit_ids=context.unit_ids,
                 language=context.language,
-                requested_instruction=config.instructions[slot.slot],
+                requested_instruction=instructions[context.context_id][slot.slot],
+                evidence_modality=slot.evidence_modality,
+                quote_verification={
+                    s.unit_id: quote_verified(s.quote, by_id[s.unit_id].text)
+                    for s in localization.supports
+                    if s.unit_id in by_id and s.modality != "image"
+                }
+                if localization
+                else {},
                 query_judgment=query_judge,
                 relevance_judgment=relevance_judge,
                 localization=localization,

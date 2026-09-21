@@ -37,6 +37,11 @@ class QueryInstruction(StrictModel):
 
     name: str = Field(min_length=1)
     instruction: str = Field(min_length=1)
+    query_type: str | None = None
+    format: Literal["question", "instruction", "keyword"] | None = None
+    modality: Literal["text", "image", "text_and_image"] | None = None
+    persona: str | None = None
+    answerability: str | None = None
 
 
 DEFAULT_INSTRUCTIONS = (
@@ -73,6 +78,18 @@ class MultimodalSDGConfig(StrictModel):
     concurrency: int = Field(default=8, ge=1, le=128)
     batch_size: int = Field(default=30, ge=1, le=128)
     max_units_per_context: int = Field(default=8, ge=1)
+    context_strategy: Literal["unit", "document"] = "unit"
+    max_context_chars: int = Field(default=100000, ge=1)
+    related_contexts_per_context: int = Field(default=0, ge=0, le=2)
+    related_summary_similarity: float = Field(default=0.2, gt=0, le=1)
+    judge_summaries: bool = True
+    summary_quality_threshold: int = Field(default=4, ge=1, le=5)
+    summary_count: int | None = Field(default=None, gt=0)
+    summary_fraction: float | None = Field(default=None, gt=0, le=1)
+    summary_near_duplicate_threshold: float | None = Field(default=None, gt=0, le=1)
+    instructions_per_context: int | None = Field(default=None, gt=0)
+    missing_response_attempts: int = Field(default=3, ge=1, le=3)
+    require_verbatim_quotes: bool = False
     instructions: list[QueryInstruction] = Field(default_factory=lambda: list(DEFAULT_INSTRUCTIONS), min_length=1)
     relevance_threshold: int = Field(default=4, ge=1, le=5)
     self_sufficiency_threshold: int = Field(default=4, ge=1, le=5)
@@ -86,6 +103,10 @@ class MultimodalSDGConfig(StrictModel):
         """Require stable, unambiguous requested slot identities."""
         if len({item.name for item in self.instructions}) != len(self.instructions):
             raise ValueError("instruction names must be unique")
+        if self.summary_count is not None and self.summary_fraction is not None:
+            raise ValueError("summary_count and summary_fraction are mutually exclusive")
+        if self.instructions_per_context is not None and self.instructions_per_context > len(self.instructions):
+            raise ValueError("instructions_per_context exceeds the instruction pool")
         return self
 
 
@@ -94,6 +115,14 @@ class ContextSummary(StrictModel):
 
     summary: str
     visual_evidence: str
+
+
+class SummaryJudgment(StrictModel):
+    """Source-grounded summary fidelity and usefulness, independent of query labels."""
+
+    fidelity: int = Field(ge=1, le=5)
+    usefulness: int = Field(ge=1, le=5)
+    reasoning: str
 
 
 class QuerySlot(StrictModel):
@@ -158,4 +187,6 @@ class Candidate(StrictModel):
     localization: Localization | None
     accepted: bool
     rejection_reasons: list[str]
+    evidence_modality: Literal["text", "image", "text_and_image", "none"] = "none"
+    quote_verification: dict[str, bool] = Field(default_factory=dict)
     provenance: QueryProvenance = Field(default_factory=QueryProvenance)

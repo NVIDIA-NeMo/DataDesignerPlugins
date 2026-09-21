@@ -16,6 +16,7 @@ import data_designer.config as dd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from data_designer.engine.secret_resolver import EnvironmentResolver
+from data_designer.engine.storage.artifact_storage import ArtifactStorage, ResumeMode
 from data_designer.interface import DataDesigner
 from pydantic import BaseModel
 
@@ -70,11 +71,12 @@ class DataDesignerInference:
         return request.schema.model_validate(value["response"])
 
     def generate(self, requests: list[Request]) -> list[BaseModel]:
-        """Execute missing requests once; native DD owns bounded correction retries.
+        """Retry only missing rows within the configured finite attempt budget.
 
         Missing outputs fail the stage after preserving successful responses and
-        attempt evidence. An explicit run resume reuses those successes. This
-        method does not automatically relaunch failed API stages.
+        attempt evidence. Exceptions stop immediately; only normally completed
+        batches with missing/invalid rows get another attempt. Native DD's own
+        schema corrections remain bounded inside each attempt.
         """
         groups: dict[str, dict[str, Request]] = {}
         for request in requests:
@@ -84,7 +86,12 @@ class DataDesignerInference:
         for group in groups.values():
             items = list(group.items())
             for start in range(0, len(items), self.config.batch_size):
-                self.run_batch(items[start : start + self.config.batch_size])
+                pending = items[start : start + self.config.batch_size]
+                for _ in range(self.config.missing_response_attempts):
+                    if not pending:
+                        break
+                    self.run_batch(pending)
+                    pending = [(key, request) for key, request in pending if self.cached(request) is None]
         results = [self.cached(request) for request in requests]
         if any(value is None for value in results):
             raise RuntimeError("Missing structured responses; inspect attempt evidence before explicitly resuming")
@@ -161,16 +168,31 @@ class DataDesignerInference:
         except Exception as exc:
             # Do not serialize exception messages: provider errors can contain credentials.
             write_json(attempt / "failure.json", {"exception_type": type(exc).__name__})
+            storage = ArtifactStorage(
+                artifact_path=attempt / "dd", dataset_name="requests", resume=ResumeMode.IF_POSSIBLE
+            )
+            self.collect_responses(items, storage.final_dataset_path, attempt)
             raise
+        self.collect_responses(items, result.artifact_storage.final_dataset_path, attempt)
+
+    def collect_responses(self, items: list[tuple[str, Request]], dataset: Path, attempt: Path) -> None:
+        """Cache completed rows even when a later provider failure stops the batch.
+
+        Args:
+            items: Exact requests owned by this attempt.
+            dataset: Native DD final-row shards, never arbitrary partial artifacts.
+            attempt: Directory for immutable completion evidence.
+        """
         expected = {key: item for key, item in items}
         found: set[str] = set()
         invalid: list[str] = []
-        for batch in sorted(result.artifact_storage.final_dataset_path.glob("batch_*.parquet")):
+        for batch in sorted(dataset.glob("batch_*.parquet")):
             for row in pq.read_table(batch).to_pylist():
                 key = row["request_id"]
                 if key not in expected or key in found:
                     raise ValueError("Unexpected or duplicate Data Designer response identity")
                 raw = row["response"]
+                request = expected[key]
                 try:
                     response = (
                         request.schema.model_validate_json(raw)

@@ -25,6 +25,7 @@ from data_designer_retrieval_sdg.multimodal.models import (
     QueryJudgment,
     QuerySlot,
     RelevanceJudgment,
+    SummaryJudgment,
     Support,
 )
 from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
@@ -87,6 +88,8 @@ def scripted_response(request):
     payload = json.loads(request.text.splitlines()[-1])
     if request.schema is ContextSummary:
         return ContextSummary(summary="Valve operating specifications", visual_evidence="")
+    if request.schema is SummaryJudgment:
+        return SummaryJudgment(fidelity=5, usefulness=5, reasoning="Source-grounded and substantive")
     if request.schema is QueryBatch:
         subject = payload["sources"][0]["unit_id"]
         return QueryBatch(
@@ -177,7 +180,7 @@ def test_recorded_query_rejections_cannot_be_exported_as_passes(tmp_path, change
     "support_changes,reason",
     [
         ({"unit_id": "not-in-context"}, "invalid_localized_identity"),
-        ({"quote": "Invented quote"}, "unverified_text_evidence"),
+        ({"quote": ""}, "missing_text_evidence"),
         ({"modality": "image", "visual_evidence": ""}, "missing_visual_evidence"),
     ],
 )
@@ -295,12 +298,14 @@ def test_invalid_configuration_fails_before_model_calls(tmp_path, changes):
         MultimodalSDGConfig.model_validate({**payload, **changes})
 
 
-def test_context_bounds_fail_without_truncation(tmp_path):
+def test_context_bounds_partition_without_truncation(tmp_path):
     config = fixture_config(tmp_path)
-    with pytest.raises(ValueError, match="oversized"):
-        load_contexts(
-            config.model_copy(update={"max_units_per_context": 1}), load_retrieval_sources(config.sources_file)
-        )
+    contexts = load_contexts(
+        config.model_copy(update={"max_units_per_context": 1}), load_retrieval_sources(config.sources_file)
+    )
+    assert len(contexts) == 20 and all(len(c.unit_ids) == 1 for c in contexts)
+    assert len({c.context_id for c in contexts}) == 20
+    assert sum(c.unit_ids == ["unit-11"] for c in contexts) == 10
 
 
 def test_fingerprints_preserve_unicode_and_mapping_order():
@@ -336,11 +341,11 @@ class MissingInference(DataDesignerInference):
         self.calls = getattr(self, "calls", 0) + 1
 
 
-def test_missing_response_fails_without_outer_retry_or_fabrication(tmp_path):
+def test_missing_response_has_finite_attempts_without_fabrication(tmp_path):
     inference = MissingInference(tmp_path / "inference", fixture_config(tmp_path))
     with pytest.raises(RuntimeError, match="Missing structured"):
         inference.generate([Request("one", ContextSummary, "judge")])
-    assert inference.calls == 1
+    assert inference.calls == 3
 
 
 def test_run_lock_prevents_duplicate_workers(tmp_path):

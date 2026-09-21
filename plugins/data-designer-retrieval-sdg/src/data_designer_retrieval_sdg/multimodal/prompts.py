@@ -39,6 +39,15 @@ necessary premises, dates and constraints are not answer leakage by themselves. 
 is not its own answer. Record the actual semantic type and format, without enforcing a requested label.
 """
 
+SUMMARY_JUDGE = (
+    SOURCE_BOUNDARY
+    + """Evaluate the supplied summary and visual_evidence against the actual sources.
+Rate fidelity and usefulness from 1 (unsupported/useless) to 5 (faithful/substantive).
+A score of 4 means useful, grounded content with minor imperfections. Empty decorative
+visual evidence is fine when no substantive figure exists. Do not require any query style.
+"""
+)
+
 RELEVANCE = (
     SOURCE_BOUNDARY
     + """Rate the relevance of these sources to the supplied query from 1
