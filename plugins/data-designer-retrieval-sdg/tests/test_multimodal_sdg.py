@@ -436,12 +436,15 @@ def test_single_modality_views_require_all_localized_evidence(tmp_path, modality
         assert all(len(row["pos_doc"]) == 2 for row in rows)
 
 
-def test_inconsistent_slot_is_retried_without_rewriting_response(tmp_path, monkeypatch):
+@pytest.mark.parametrize("invalid_query", ["", "null"])
+def test_inconsistent_slot_is_retried_without_rewriting_response(tmp_path, monkeypatch, invalid_query):
     config = fixture_config(tmp_path)
     monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
     completion = AsyncMock(
         side_effect=[
-            make_stub_completion_response(content='{"queries":[{"slot":0,"query":"","evidence_modality":"none"}]}'),
+            make_stub_completion_response(
+                content=json.dumps({"queries": [{"slot": 0, "query": invalid_query, "evidence_modality": "none"}]})
+            ),
             make_stub_completion_response(content='{"queries":[{"slot":0,"query":null,"evidence_modality":"none"}]}'),
         ]
     )
@@ -449,6 +452,7 @@ def test_inconsistent_slot_is_retried_without_rewriting_response(tmp_path, monke
     inference = DataDesignerInference(tmp_path / "inference", config)
     result = inference.generate([Request("Generate or abstain explicitly", QueryBatch, "generator")])
     assert result[0].queries[0].query is None
+    assert len(list((inference.root / "attempts").iterdir())) == 1
     assert completion.await_count == 2
     assert inference.generate([Request("Generate or abstain explicitly", QueryBatch, "generator")]) == result
     assert completion.await_count == 2

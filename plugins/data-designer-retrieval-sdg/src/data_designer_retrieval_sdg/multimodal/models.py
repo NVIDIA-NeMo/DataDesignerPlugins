@@ -179,6 +179,22 @@ class QueryMetadata(StrictModel):
 class QuerySlot(StrictModel):
     """One generated query or explicit abstention."""
 
+    # Data Designer validates JSON Schema before Python models are reconstructed.
+    # Encode the relation here too, so native correction receives the actual error.
+    model_config = ConfigDict(
+        json_schema_extra={
+            "if": {"properties": {"slot": {}, "query": {}, "evidence_modality": {"const": "none"}}},
+            "then": {"properties": {"slot": {}, "evidence_modality": {}, "query": {"type": "null"}}},
+            "else": {
+                "properties": {
+                    "slot": {},
+                    "evidence_modality": {},
+                    "query": {"type": "string", "minLength": 1, "pattern": "\\S"},
+                }
+            },
+        }
+    )
+
     slot: int = Field(ge=0)
     query: str | None = Field(description="A nonempty query, or null for an unsupported slot; never an empty string")
     evidence_modality: Literal["text", "image", "text_and_image", "none"] = Field(

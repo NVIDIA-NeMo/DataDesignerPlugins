@@ -234,7 +234,9 @@ def generate_candidates(
                     query_modules=[item.model_dump() for item in instructions[context.context_id]],
                 )
                 + "\nReturn one outcome per numbered slot (zero-based slot IDs). Return query=null and "
-                "evidence_modality=none for unsupported slots. Do not invent figures or tables. "
+                'evidence_modality=none for unsupported slots. Use JSON null without quotes, never the string "null". '
+                'Example abstention: {"slot": 1, "query": null, "evidence_modality": "none"}. '
+                "Do not invent figures or tables. "
                 "Use the supplied original text as well as images; text-only inputs require no images. "
                 "No generated answers are requested.",
                 QueryBatch,
