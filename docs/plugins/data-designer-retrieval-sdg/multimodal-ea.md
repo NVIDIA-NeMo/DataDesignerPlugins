@@ -44,7 +44,11 @@ With `context_strategy: document` and no contexts file, the planner groups units
 by document and language in input reading order, then creates bounded contiguous
 sections. Short documents have one document summary; longer ones have multiple
 section summaries. This is structural partitioning, not LLM extraction of page
-delimiters or inferred headings. An explicit contexts file takes precedence.
+delimiters or inferred headings. An explicit contexts file replaces automatic
+unit/document grouping, but still undergoes bounding. Related-context proposals
+also apply to explicit contexts when enabled. Set `related_contexts_per_context: 0`
+and keep each explicit context within both bounds to generate only from the
+supplied memberships.
 Set `related_contexts_per_context: 1` or `2` to also propose cross-document pairs
 or pairs/triples from lexical overlap of these summaries. All proposed contexts
 are bounded and summarized against their original text and pixels again. The
@@ -147,6 +151,13 @@ and matching numeric/negation tokens. Disjoint evidence is never merged just
 because its summaries look alike. Matching is against retained representatives,
 not transitive clusters. Reasons and representative context IDs are retained.
 
+Exact membership/language deduplication is always active, even when the near
+threshold is unset. Near deduplication adds no behavior at the default
+`max_units_per_context: 8`: distinct bounded memberships overlap by at most 7/8,
+below the 90% Jaccard guard. It is useful only with larger contexts that meet
+that guard (for example, nine units contained in ten). Raising the unit bound
+alone is insufficient if `max_context_chars` partitions those memberships.
+
 By default all passing representatives are used. Set **either** `summary_count`
 or `summary_fraction` to cap generation after judging/deduplication. Fractions
 round up; ranking prefers the sum then minimum of fidelity/usefulness, with stable
@@ -173,6 +184,9 @@ checksummed schema-v2 portable manifest. The bundle contains:
   sequential query gate counts, independent rejection counts, retention rates,
   generated modalities, image-dependent and multi-positive fractions, images per
   context, requested-versus-observed type/format counts, and quote fidelity.
+  Generated coverage counts units in contexts with at least one non-abstaining
+  query; all-abstaining contexts contribute only to planned coverage. Accepted
+  positive coverage separately counts localized positive units.
 
 Groups resolve before splitting using optional query lineage, normalized
 duplicates and opt-in conservative lexical near-duplicates. Independent queries
@@ -247,8 +261,6 @@ in `test_multimodal_sdg.py`.
 | Missing-response recovery | Finite pending-only attempts, completed-row harvesting, no retry on runtime exceptions; cache-reuse tests. |
 | Recipe configuration | Nemotron forwards producer controls and independent model settings through validated options; rejects unknown/reserved keys. |
 
-Excluded deliberately: dataset ingestion/mappings, translation-specific adapters,
-malformed-section repairs, reviewed duplicate-ID allowlists, fixed domain quotas,
-benchmark-specific prompts, historical canceled training arms and installed-package
-patches. Native mining and its checks belong to the recipe/AutoModel, not this
-generation plugin. No generic capability here depends on a dataset name.
+Dataset ingestion, domain-specific prompts and corpus repairs belong in caller
+preprocessing. Native mining and its checks belong to the recipe/AutoModel. The
+generation plugin operates on the canonical source and context contracts above.

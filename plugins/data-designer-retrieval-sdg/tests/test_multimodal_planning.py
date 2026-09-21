@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from test_multimodal_sdg import ScriptedInference, fixture_config, generated_fixture, scripted_response
 
 from data_designer_retrieval_sdg.multimodal import run_multimodal_sdg
+from data_designer_retrieval_sdg.multimodal.export import export_multimodal_bundle
 from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request
 from data_designer_retrieval_sdg.multimodal.models import (
     ContextSummary,
@@ -107,19 +108,53 @@ def test_summary_quality_then_best_representative_then_fraction(tmp_path):
 
 
 def test_near_summary_dedup_protects_values_and_disjoint_evidence(tmp_path):
-    config = fixture_config(tmp_path).model_copy(update={"summary_near_duplicate_threshold": 0.8})
+    config = fixture_config(tmp_path).model_copy(
+        update={"summary_near_duplicate_threshold": 0.8, "max_units_per_context": 21}
+    )
+    sources = [RetrievalSource(unit_id=str(i), document_id="manual", text="Valve specification") for i in range(21)]
+    contexts = [
+        GenerationContext(context_id="a", unit_ids=[str(i) for i in range(20)], language="en"),
+        GenerationContext(context_id="b", unit_ids=[str(i) for i in range(21)], language="en"),
+    ]
+    config.contexts_file.write_text("".join(c.model_dump_json() + "\n" for c in contexts))
+    bounded = load_contexts(config, sources)
+    assert [len(c.unit_ids) for c in bounded] == [20, 21]
     a = summary_row(
-        "a",
-        [str(i) for i in range(20)],
+        bounded[0].context_id,
+        bounded[0].unit_ids,
         text="A long substantive pressure specification describes the valve opening at 20 bar",
     )
-    b = summary_row("b", [str(i) for i in range(21)], text=a["summary"]["summary"] + ".")
+    b = summary_row(bounded[1].context_id, bounded[1].unit_ids, text=a["summary"]["summary"] + ".")
+    assert len(select_summaries([a, b], config)) == 1
     assert duplicate_summary(a, b, config)
     b["summary"]["summary"] = b["summary"]["summary"].replace("20", "25")
     assert not duplicate_summary(a, b, config)
     b["summary"] = a["summary"].copy()
     b["context"]["unit_ids"] = ["unrelated"]
     assert not duplicate_summary(a, b, config)
+
+
+@pytest.mark.parametrize("threshold", [None, 0.8])
+def test_default_context_bounds_keep_exact_dedup_without_merging_distinct_memberships(tmp_path, threshold):
+    config = fixture_config(tmp_path).model_copy(update={"summary_near_duplicate_threshold": threshold})
+    assert config.max_units_per_context == 8
+    sources = load_retrieval_sources(config.sources_file)
+    contexts = [
+        GenerationContext(context_id="long", unit_ids=[f"unit-{i}" for i in range(9)], language="en"),
+        GenerationContext(context_id="exact", unit_ids=[f"unit-{i}" for i in range(8)], language="en"),
+        GenerationContext(context_id="distinct", unit_ids=[f"unit-{i}" for i in range(7)], language="en"),
+    ]
+    config.contexts_file.write_text("".join(c.model_dump_json() + "\n" for c in contexts))
+    bounded = load_contexts(config, sources)
+    assert [len(c.unit_ids) for c in bounded] == [8, 1, 8, 7]
+    rows = [summary_row(c.context_id, c.unit_ids) for c in bounded]
+    selected = select_summaries(rows, config)
+    assert {tuple(row["context"]["unit_ids"]) for row in selected} == {
+        tuple(f"unit-{i}" for i in range(8)),
+        ("unit-8",),
+        tuple(f"unit-{i}" for i in range(7)),
+    }
+    assert len(selected) == 3
 
 
 def test_seeded_profiles_are_context_order_independent_and_not_gates(tmp_path):
@@ -191,6 +226,22 @@ def test_report_coverage_funnel_and_labels_are_independent(tmp_path):
     assert report["multi_unit_positive_fraction"] == 1
     assert report["quote_verification"] == {"true": 20}
     assert report["requested_observed"]["query_type"] == {"unspecified -> numerical": 10}
+
+
+def test_export_generated_coverage_excludes_all_abstaining_contexts(tmp_path):
+    config, sources, candidates, outcomes, _ = generated_fixture(tmp_path)
+    abstained = summary_row("abstained", ["unselected"])
+    abstained["slots"]["queries"] = [
+        {"slot": i, "query": None, "evidence_modality": "none"} for i in range(len(config.instructions))
+    ]
+    outcomes.append(abstained)
+    handoff = export_multimodal_bundle(tmp_path / "bundle", sources, candidates, outcomes, config)
+    report = json.loads((handoff.parent / "report.json").read_text())
+    assert report["coverage"]["planned"]["units"] == 12
+    assert report["coverage"]["generated"]["units"] == 11
+    assert report["coverage"]["generated"]["documents"] == 1
+    assert report["coverage"]["accepted_positive"]["units"] == 11
+    assert report["funnel"]["generated"] == 10
 
 
 def test_automatic_planning_selection_export_and_resume(tmp_path, monkeypatch):

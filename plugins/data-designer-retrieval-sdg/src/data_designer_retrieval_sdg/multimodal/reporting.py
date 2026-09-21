@@ -22,7 +22,12 @@ def generation_report(sources: list[RetrievalSource], candidates: list[Candidate
     """
     by_id = {s.unit_id: s for s in sources}
     planned = {key for row in outcomes for key in row["context"]["unit_ids"]}
-    generated = {key for row in outcomes if row["slots"]["queries"] for key in row["context"]["unit_ids"]}
+    generated = {
+        key
+        for row in outcomes
+        if any(slot["query"] is not None for slot in row["slots"]["queries"])
+        for key in row["context"]["unit_ids"]
+    }
     accepted = [c for c in candidates if c.accepted]
     positives = {s.unit_id for c in accepted for s in c.localization.supports}
     survivors = candidates
