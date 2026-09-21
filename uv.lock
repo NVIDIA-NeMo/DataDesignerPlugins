@@ -534,10 +534,11 @@ dev = [
 
 [[package]]
 name = "data-designer-retrieval-sdg"
-version = "0.2.1"
+version = "0.3.0a1"
 source = { editable = "plugins/data-designer-retrieval-sdg" }
 dependencies = [
     { name = "data-designer" },
+    { name = "filelock" },
     { name = "mcp" },
     { name = "nltk" },
     { name = "pyarrow" },
@@ -549,6 +550,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "data-designer", specifier = ">=0.9.1" },
+    { name = "filelock", specifier = ">=3.20,<4" },
     { name = "mcp", specifier = ">=1.29.0,<2" },
     { name = "nltk", specifier = ">=3.10.2,<3.11" },
     { name = "pyarrow", specifier = ">=24.0.0,<25" },

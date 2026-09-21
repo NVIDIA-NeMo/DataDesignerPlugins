@@ -1,5 +1,10 @@
 # Retrieval SDG from text and images
 
+This page documents the existing QA workflow. New multimodal recipe runs use
+the [retrieval-first EA entry point](multimodal-ea.md), with direct query
+generation and recorded source-local relevance judgments instead of generated
+answer comparison.
+
 The retrieval-SDG package uses one native Data Designer pipeline for text-only,
 image-only, and image-plus-text source units. Multimodality is a property of
 each seed row, not a separate workflow: every row has an `images` list and a

@@ -3,11 +3,12 @@
 
 [project]
 name = "data-designer-retrieval-sdg"
-version = "0.2.1"
+version = "0.3.0a1"
 description = "Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
 requires-python = ">=3.10"
 dependencies = [
     "data-designer>=0.9.1",
+    "filelock>=3.20,<4",
     # Data Designer permits older transitive releases that are excluded by the
     # workspace security constraints. Publish the same floors for consumers.
     "mcp>=1.29.0,<2",

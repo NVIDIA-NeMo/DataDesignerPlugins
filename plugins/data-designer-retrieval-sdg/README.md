@@ -23,19 +23,21 @@ package is installed (see [Installation](#installation)).
 
 ## Retrieval data from text and images
 
-The package provides one retrieval pipeline for text-only, image-only, and
-image-plus-text units. Existing text generation uses that pipeline with an
-empty image list; image-bearing seed rows automatically supply visual context
-to generation and answer-blind source assessment while the query-quality judge
-remains source blind. A final text-only check compares candidate claims with
-the independent reading. The recipe exporter writes only the text, image, and combined views that
-each positive unit can actually support.
+For new multimodal fine-tuning workflows, use the
+[retrieval-first EA candidate](docs/multimodal-ea.md): direct text/image query
+generation, source-blind query judging, source-aware relevance and graded
+positive localization, followed by grouped-query export over a shared corpus.
+It accepts generic unit/context JSONL and requires explicit generator/judge
+models. It has no dataset-specific adapters or external benchmark dependencies.
 
-PDF parsing is optional preprocessing rather than a package dependency. See
-[Retrieval SDG from text and images](docs/retrieval-inputs.md) for the unified
-input contract, mixed-row example, quality gates, and recipe-oriented outputs.
+The existing QA pipeline and conversion CLI remain available for existing
+clients. Their [QA input contract](docs/retrieval-inputs.md) is separate from the
+new EA entry point. PDF parsing/OCR remain caller-owned preprocessing.
 
 ## Native async and resumable generation
+
+This section describes the existing QA `generate` command. The EA workflow has
+its own documented immutable request cache and explicit resume policy.
 
 `embedding-dedup` implements `agenerate()` directly on top of
 `model.agenerate_text_embeddings`, so the column participates in
