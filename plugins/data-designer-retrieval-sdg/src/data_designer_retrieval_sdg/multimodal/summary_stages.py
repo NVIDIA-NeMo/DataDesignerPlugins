@@ -59,6 +59,12 @@ def section_contexts(sources: list[RetrievalSource], config: MultimodalSDGConfig
     return output
 
 
+def visual_description(visual: dict, unit_id: str) -> str:
+    """Use enrichment only when the model identified substantive visual content."""
+    record = visual.get(unit_id, {})
+    return record.get("description", "") if record.get("has_visual_content", False) else ""
+
+
 def enriched_text(context: GenerationContext, sources: dict[str, RetrievalSource], visual: dict) -> str:
     """Serialize separate source and generated-enrichment fields without altering corpus text."""
     return json.dumps(
@@ -66,7 +72,7 @@ def enriched_text(context: GenerationContext, sources: dict[str, RetrievalSource
             {
                 "unit_id": key,
                 "text": sources[key].text,
-                "visual_description": visual.get(key, {}).get("description", ""),
+                "visual_description": visual_description(visual, key),
             }
             for key in context.unit_ids
         ],
@@ -82,7 +88,7 @@ def bounded_enriched_contexts(contexts, sources, visual, config):
                 "text": json.dumps(
                     {
                         "text": source.text,
-                        "visual_description": visual.get(source.unit_id, {}).get("description", ""),
+                        "visual_description": visual_description(visual, source.unit_id),
                     },
                     ensure_ascii=False,
                 )

@@ -434,3 +434,21 @@ def test_single_modality_views_require_all_localized_evidence(tmp_path, modality
         rows = json.loads((handoff.parent / "views" / view / "train.json").read_text())["data"]
         assert bool(rows) == bool(expected)
         assert all(len(row["pos_doc"]) == 2 for row in rows)
+
+
+def test_inconsistent_slot_is_retried_without_rewriting_response(tmp_path, monkeypatch):
+    config = fixture_config(tmp_path)
+    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
+    completion = AsyncMock(
+        side_effect=[
+            make_stub_completion_response(content='{"queries":[{"slot":0,"query":"","evidence_modality":"none"}]}'),
+            make_stub_completion_response(content='{"queries":[{"slot":0,"query":null,"evidence_modality":"none"}]}'),
+        ]
+    )
+    monkeypatch.setattr(ModelFacade, "acompletion", completion)
+    inference = DataDesignerInference(tmp_path / "inference", config)
+    result = inference.generate([Request("Generate or abstain explicitly", QueryBatch, "generator")])
+    assert result[0].queries[0].query is None
+    assert completion.await_count == 2
+    assert inference.generate([Request("Generate or abstain explicitly", QueryBatch, "generator")]) == result
+    assert completion.await_count == 2

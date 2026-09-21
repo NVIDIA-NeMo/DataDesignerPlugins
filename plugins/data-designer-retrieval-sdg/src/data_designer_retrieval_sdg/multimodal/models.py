@@ -180,8 +180,19 @@ class QuerySlot(StrictModel):
     """One generated query or explicit abstention."""
 
     slot: int = Field(ge=0)
-    query: str | None
-    evidence_modality: Literal["text", "image", "text_and_image", "none"]
+    query: str | None = Field(description="A nonempty query, or null for an unsupported slot; never an empty string")
+    evidence_modality: Literal["text", "image", "text_and_image", "none"] = Field(
+        description="Use none exactly when query is null; otherwise identify the actual supporting evidence"
+    )
+
+    @model_validator(mode="after")
+    def consistent_abstention(self) -> QuerySlot:
+        """Reject inconsistent slots so bounded structured-response retries can regenerate them."""
+        if self.query is None and self.evidence_modality != "none":
+            raise ValueError("Abstention must declare evidence_modality=none")
+        if self.query is not None and (not self.query or self.evidence_modality == "none"):
+            raise ValueError("Generated query must be nonempty and declare evidence")
+        return self
 
 
 class QueryBatch(StrictModel):

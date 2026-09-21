@@ -91,7 +91,7 @@ def test_explicit_contexts_are_preserved_and_semantic_pairs_bounded(tmp_path, mo
 def test_enrichment_is_included_in_character_bounds(tmp_path):
     config = fixture_config(tmp_path).model_copy(update={"max_context_chars": 900})
     sources = load_retrieval_sources(config.sources_file)
-    visual = {s.unit_id: {"description": "x" * 300} for s in sources}
+    visual = {s.unit_id: {"description": "x" * 300, "has_visual_content": True} for s in sources}
     contexts = section_contexts(sources, config)
     chunks = bounded_enriched_contexts(contexts, sources, visual, config)
     assert len(chunks) > len(contexts)
@@ -169,3 +169,27 @@ def test_localization_filters_unknown_and_keeps_highest_grade():
         Localization(supports=[support, {**support, "grade": 2}, {**support, "unit_id": "unknown"}]), context
     )
     assert len(result.supports) == 1 and result.supports[0].grade == 2
+
+
+def test_nonvisual_description_is_not_used_for_planning(tmp_path):
+    config = fixture_config(tmp_path)
+    sources = load_retrieval_sources(config.sources_file)
+    context = GenerationContext(context_id="opaque", unit_ids=["unit-0", "unit-1"])
+    visual = {
+        "unit-0": {"has_visual_content": False, "description": "Ordinary prose only"},
+        "unit-1": {"has_visual_content": True, "description": "A substantive diagram"},
+    }
+    text = enriched_text(context, {s.unit_id: s for s in sources}, visual)
+    assert "Ordinary prose only" not in text
+    assert "A substantive diagram" in text
+    assert "Valve 0 opens at 20 bar." in text
+
+
+@pytest.mark.parametrize("query,modality", [("", "none"), ("   ", "text"), ("A query", "none"), (None, "text")])
+def test_invalid_slot_fails_response_validation(query, modality):
+    from pydantic import ValidationError
+
+    from data_designer_retrieval_sdg.multimodal.models import QueryBatch
+
+    with pytest.raises(ValidationError):
+        QueryBatch.model_validate({"queries": [{"slot": 0, "query": query, "evidence_modality": modality}]})
