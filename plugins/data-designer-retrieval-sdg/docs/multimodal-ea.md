@@ -40,24 +40,32 @@ not token limits; provider image/token limits may require smaller settings. A
 single indivisible unit above the bound fails with its ID; preprocess it into
 smaller canonical units rather than truncating it or changing its identity here.
 
-With `context_strategy: document` and no contexts file, the planner groups units
-by document and language in input reading order, then creates bounded contiguous
-sections. Short documents have one document summary; longer ones have multiple
-section summaries. This is structural partitioning, not LLM extraction of page
-delimiters or inferred headings. An explicit contexts file replaces automatic
-unit/document grouping, but still undergoes bounding. Related-context proposals
-also apply to explicit contexts when enabled. Set `related_contexts_per_context: 0`
-and keep each explicit context within both bounds to generate only from the
-supplied memberships.
-Set `related_contexts_per_context: 1` or `2` to also propose cross-document pairs
-or pairs/triples from lexical overlap of these summaries. All proposed contexts
-are bounded and summarized against their original text and pixels again. The
-algorithm uses no embedding model, UMAP, or external service. Lexical overlap
-does not guarantee semantic relatedness; subsequent source-grounded gates apply.
+The Nemotron EA profile selects `context_strategy: sections`. It describes
+images separately from original source text, describes documents/corpus, and
+summarizes five-unit sections in document/language input order. A markdown heading
+inside a boundary unit keeps that whole unit in the next section too. No page
+numbers, filenames, dataset fields or page-break delimiters are interpreted.
+Explicit contexts replace automatic sections. Set `combination_iterations: 0`
+to generate only from supplied memberships (subject to selection and bounds).
+
+With `combination_iterations: 20`, local summary embeddings feed seeded
+UMAP/HDBSCAN clustering and related section pairs/triples, including combinations
+across documents. Install the plugin's `multimodal` extra and configure
+`summary_embedding_model`, preferably with an immutable `summary_embedding_revision`.
+The EA profile uses `Qwen/Qwen3-Embedding-0.6B` on CPU; `summary_embedding_device`
+can select an available local GPU. Language groups with fewer than twelve section
+summaries skip combinations. This stage does not use a hosted embedding endpoint.
+
+Summary grading, deduplication and budget selection happen before the final
+eight-unit image/text generation bound. Larger selected memberships are split
+without dropping evidence. Identical resulting generation memberships run once.
+The original `unit` and `document` strategies remain available, along with opt-in
+lexical `related_contexts_per_context`; lexical and semantic combinations cannot
+be enabled together. Semantic combinations require the `sections` strategy.
 
 ## Run
 
-Install the candidate from its reviewed public commit before using this API;
+Install the candidate with its `multimodal` extra from the reviewed public commit before using this API;
 the existing published package does not yet provide it. No core-package patch
 is needed: the registered `retrieval-structured` column uses released Data
 Designer and retains schema validation and native bounded corrections.
@@ -66,7 +74,14 @@ Save an operator-owned YAML configuration:
 
 ```yaml
 sources_file: /absolute/path/to/sources.jsonl
-contexts_file: /absolute/path/to/contexts.jsonl  # omit for one context per unit
+contexts_file: /absolute/path/to/contexts.jsonl  # optional; replaces automatic sections
+context_strategy: sections
+section_size: 5
+combination_iterations: 20
+summary_embedding_model: Qwen/Qwen3-Embedding-0.6B
+summary_embedding_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+summary_embedding_device: cpu
+summary_count: 400
 output_dir: /absolute/path/to/new-sdg-run
 dataset_id: service-manuals
 generator:
@@ -110,26 +125,33 @@ handoff = run_multimodal_sdg(MultimodalSDGConfig.model_validate(settings))
 
 ## Pipeline and gates
 
-1. Summarize each bounded context's text and visual evidence. These summaries
-   aid generation but never replace original evidence or determine positives.
-   Judge fidelity/usefulness against the original sources, then select summaries.
-2. Generate queries directly from the original text **and attached pixels**.
-   The default three slots request text, figure and table information needs.
-   Unsupported slots explicitly abstain. Customize `instructions` with a list
-   of `{name, instruction}` objects; there is no fixed three-slot schema. Optional
-   `query_type`, `format`, `modality`, `persona`, and `answerability` fields express
-   generic diversity profiles. `instructions_per_context` samples that many
-   profiles without replacement using the seed and stable context ID, independent
-   of enumeration order. Otherwise every configured profile is used.
-3. Independently judge query self-sufficiency and answer leakage **without**
-   sources. Independently judge relevance using the actual source text/images.
-4. Localize every useful positive in the context. Grade 2 means complete
-   support; grade 1 means useful partial evidence. Multi-part questions can
-   have multiple partial positives. Text support requires text and a quote;
-   visual evidence requires an image and a description, not an invented quote.
-   Quote fidelity is recorded separately after whitespace/case normalization.
-   It is diagnostic by default; `require_verbatim_quotes: true` makes it a hard
-   gate. Relevance and source-local localization are still required either way.
+1. Enrich and summarize sources, form related summary combinations, then judge
+   information richness, persona relevance, query-generation potential and
+   conceptual clarity. Every grade must meet the configured floor (default 4).
+   Summaries select evidence contexts; they never replace corpus text or positives.
+2. Generate queries from original text **and attached pixels**, using packaged
+   single/multi-document instructions and standalone-query examples. Each context
+   deterministically samples one weighted text, figure and table module, including
+   type, format and full/partial answerability. Unsupported slots explicitly abstain.
+   Custom `instructions` and `instructions_per_context` remain supported.
+3. Judge self-sufficiency with the query **and original source text**. Separately
+   classify observed type/format and answer leakage from the query alone. Judge
+   relevance with original source text and images. A generated summary cannot
+   supply missing evidence to these judges.
+4. Localize source support: grade 2 means complete support; grade 1 means useful
+   partial evidence. Drop out-of-context IDs and keep the highest grade per
+   repeated unit. Text support requires source text and a quote; image support
+   requires a source image and visual explanation. Quote fidelity is diagnostic
+   unless `require_verbatim_quotes: true` makes it a hard gate.
+
+The packaged templates and weighted samplers derive from the MIT-licensed
+[ViDoRe v3 generation implementation](https://github.com/illuin-tech/vidore-v3-generation/tree/2cfd2f78b8ae4f4bedd87d67f373dc51c12a856e).
+`multimodal/THIRD_PARTY_NOTICE.txt` records attribution. This port adapts behavior
+to generic source identities, whole-unit sections and the existing output schemas;
+it does not import benchmark ingestion or depend on an external checkout.
+Its context-aware self-sufficiency score reproduces that judging policy, not an
+independent query-only standalone assessment. Retention must be measured on the
+actual corpus; it is not guaranteed to match earlier benchmark runs.
 
 Acceptance requires relevance and self-sufficiency scores at least 4/5, no
 answer leakage, and valid nonempty localized support. Both score thresholds
@@ -141,29 +163,35 @@ similarity scores; mining remains entirely downstream.
 
 ### Summary selection
 
-`judge_summaries` defaults to true, with both fidelity and usefulness at least
-`summary_quality_threshold` (default 4). The full judge output is preserved.
-If disabled explicitly, the record says no judgment; no passing label is invented.
-Identical source memberships/languages keep the highest-quality representative.
-Optional `summary_near_duplicate_threshold` enables character-shingle Jaccard
-deduplication with at least 90% source-unit overlap, minimum 40-character summaries,
-and matching numeric/negation tokens. Disjoint evidence is never merged just
-because its summaries look alike. Matching is against retained representatives,
-not transitive clusters. Reasons and representative context IDs are retained.
+`judge_summaries` defaults to true. Each of the four grades must meet
+`summary_quality_threshold` (default 4). Full judgments are preserved. A disabled
+judge is recorded as absent, never as a fabricated pass. Exact membership/language
+duplicates keep the representative with the highest sum, then minimum grade;
+ties retain input order.
 
-Exact membership/language deduplication is always active, even when the near
-threshold is unset. Near deduplication adds no behavior at the default
-`max_units_per_context: 8`: distinct bounded memberships overlap by at most 7/8,
-below the 90% Jaccard guard. It is useful only with larger contexts that meet
-that guard (for example, nine units contained in ten). Raising the unit bound
-alone is insufficient if `max_context_chars` partitions those memberships.
+Optional `summary_near_duplicate_threshold` compares five-character shingles,
+requiring at least 90% source-unit overlap, the same document set, summaries at
+least 40 characters long, and matching numeric/negation tokens. It compares only
+against retained representatives, never transitive clusters. With `unit` or
+`document` planning, distinct eight-unit-bounded contexts cannot meet the 90%
+overlap guard. With `sections` planning, deduplication precedes the final generation
+bound, so larger combined summaries can qualify (for example, nine units contained
+in ten). Character bounds can still split those larger planning contexts. The
+example omits this optional setting; exact deduplication always remains active.
 
-By default all passing representatives are used. Set **either** `summary_count`
-or `summary_fraction` to cap generation after judging/deduplication. Fractions
-round up; ranking prefers the sum then minimum of fidelity/usefulness, with stable
-context-ID tie-breaking. These decisions never use validation/test results.
-All filtered/budgeted summary records remain in `context_outcomes.json` with no
-fabricated query slots. Summary selection does not remove corpus units.
+Set either `summary_count` or `summary_fraction`, never both. Fractions round up
+after quality filtering/deduplication. Budgeting prioritizes visual multi-document
+combinations, visual single-document combinations, visual sections, then the
+corresponding nonvisual groups, retaining stable order within each group. The EA
+recipe caps selection at 400 summaries. All selection reasons and representative
+IDs remain in `context_outcomes.json`; no corpus units are removed.
+
+The `planning/` directory records visual enrichment, document/corpus descriptions,
+section/combined summaries, membership combinations and all four summary grades.
+Descriptions are generated planning aids; original input text and images remain
+unchanged. Character bounds include generated visual descriptions, without silent
+truncation. Model weights are downloaded to the local Hugging Face cache when
+needed. Budget for that model, clustering dependencies and additional hosted calls.
 
 ## Handoff, splits and audit
 

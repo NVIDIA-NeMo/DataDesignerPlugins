@@ -21,8 +21,9 @@ from data_designer.interface import DataDesigner
 from pydantic import BaseModel
 
 from data_designer_retrieval_sdg.config import RetrievalStructuredColumnConfig
-from data_designer_retrieval_sdg.multimodal.models import MultimodalSDGConfig
+from data_designer_retrieval_sdg.multimodal.models import GenerationContext, MultimodalSDGConfig
 from data_designer_retrieval_sdg.multimodal.storage import digest, fingerprint, write_json
+from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,29 @@ class Request:
     schema: type[BaseModel]
     role: Literal["generator", "judge"]
     images: tuple[Path, ...] = ()
+
+
+def source_request(
+    instruction: str,
+    schema: type,
+    role: str,
+    context: GenerationContext,
+    sources: dict[str, RetrievalSource],
+    **payload,
+) -> Request:
+    """Attach exact source text and aligned image pixels without truncation or templating source content."""
+    selected = [sources[key] for key in context.unit_ids]
+    data = {
+        "sources": [{"unit_id": s.unit_id, "text": s.text} for s in selected],
+        "image_unit_ids": [s.unit_id for s in selected for _ in s.images],
+        **payload,
+    }
+    return Request(
+        instruction + "\n" + json.dumps(data, ensure_ascii=False),
+        schema,
+        role,
+        tuple(Path(image) for s in selected for image in s.images),
+    )
 
 
 class DataDesignerInference:

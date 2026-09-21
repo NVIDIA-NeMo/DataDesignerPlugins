@@ -12,7 +12,7 @@ from pathlib import Path
 from filelock import FileLock
 
 from data_designer_retrieval_sdg.multimodal import prompts
-from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request
+from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request, source_request
 from data_designer_retrieval_sdg.multimodal.models import (
     Candidate,
     ContextSummary,
@@ -21,7 +21,9 @@ from data_designer_retrieval_sdg.multimodal.models import (
     MultimodalSDGConfig,
     QueryBatch,
     QueryJudgment,
+    QueryMetadata,
     RelevanceJudgment,
+    SelfSufficiencyJudgment,
     SummaryJudgment,
 )
 from data_designer_retrieval_sdg.multimodal.planning import (
@@ -62,30 +64,31 @@ def load_contexts(config: MultimodalSDGConfig, sources: list[RetrievalSource]) -
     for context in contexts:
         if not set(context.unit_ids) <= known:
             raise ValueError(f"Unknown units in context: {context.context_id}")
+    if config.context_strategy == "sections":
+        return contexts
     return bounded_contexts(contexts, sources, config)
 
 
-def source_request(
-    instruction: str,
-    schema: type,
-    role: str,
-    context: GenerationContext,
-    sources: dict[str, RetrievalSource],
-    **payload,
-) -> Request:
-    """Attach exact source text and aligned image pixels without truncation or templating source content."""
-    selected = [sources[key] for key in context.unit_ids]
-    data = {
-        "sources": [{"unit_id": s.unit_id, "text": s.text} for s in selected],
-        "image_unit_ids": [s.unit_id for s in selected for _ in s.images],
-        **payload,
-    }
-    return Request(
-        instruction + "\n" + json.dumps(data, ensure_ascii=False),
-        schema,
-        role,
-        tuple(Path(image) for s in selected for image in s.images),
+def source_text(context: GenerationContext, sources: dict[str, RetrievalSource]) -> str:
+    """Supply exact source text to context-aware judgments, independently of generated summaries."""
+    return json.dumps(
+        [
+            {"unit_id": key, "document_id": sources[key].document_id, "text": sources[key].text}
+            for key in context.unit_ids
+        ],
+        ensure_ascii=False,
     )
+
+
+def normalize_localization(localization: Localization, context: GenerationContext) -> Localization:
+    """Keep valid source identities and the highest grade for each repeated support."""
+    supports = {}
+    for support in localization.supports:
+        if support.unit_id in context.unit_ids and (
+            support.unit_id not in supports or support.grade > supports[support.unit_id].grade
+        ):
+            supports[support.unit_id] = support
+    return Localization(supports=list(supports.values()))
 
 
 def localization_reasons(
@@ -133,12 +136,30 @@ def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
         Complete summary records, including rejected summaries and empty query slots.
     """
     summaries = inference.generate(
-        [source_request(prompts.SUMMARY, ContextSummary, "generator", c, sources) for c in contexts]
+        [
+            source_request(
+                prompts.render(
+                    "section_summary",
+                    document_description="",
+                    section="See supplied sources below.",
+                    language=c.language,
+                ),
+                ContextSummary,
+                "generator",
+                c,
+                sources,
+            )
+            for c in contexts
+        ]
     )
     judgments = (
         inference.generate(
             [
-                source_request(prompts.SUMMARY_JUDGE, SummaryJudgment, "judge", c, sources, summary=s.model_dump())
+                Request(
+                    prompts.render("judgment", summary=s.summary, persona=config.persona, language=c.language),
+                    SummaryJudgment,
+                    "judge",
+                )
                 for c, s in zip(contexts, summaries, strict=True)
             ]
         )
@@ -156,6 +177,31 @@ def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
     ]
 
 
+def generation_context_rows(selected, outcomes, sources, config) -> list[dict]:
+    """Bound selected summary memberships losslessly and remove duplicate generation requests."""
+    seen, result = set(), []
+    for row in selected:
+        original = GenerationContext.model_validate(row["context"])
+        for context in bounded_contexts([original], sources, config):
+            key = (context.language, tuple(context.unit_ids))
+            if key in seen:
+                continue
+            seen.add(key)
+            if context.context_id == original.context_id:
+                result.append(row)
+            else:
+                child = {
+                    **row,
+                    "context": context.model_dump(),
+                    "slots": {"queries": []},
+                    "selection_reason": "generation_context",
+                    "parent_context_id": original.context_id,
+                }
+                outcomes.append(child)
+                result.append(child)
+    return result
+
+
 def generate_candidates(
     config: MultimodalSDGConfig,
     sources: list[RetrievalSource],
@@ -164,23 +210,38 @@ def generate_candidates(
 ) -> tuple[list[Candidate], list[dict]]:
     """Generate and judge bounded contexts, retaining abstentions and every rejected candidate."""
     by_id = {source.unit_id: source for source in sources}
-    outcomes = summarize_contexts(contexts, by_id, config, inference)
+    if config.context_strategy == "sections":
+        from data_designer_retrieval_sdg.multimodal.summary_stages import plan_summaries
+
+        outcomes = plan_summaries(sources, contexts, config, inference)
+    else:
+        outcomes = summarize_contexts(contexts, by_id, config, inference)
     if config.related_contexts_per_context:
         additional = related_contexts(outcomes, sources, config)
         outcomes.extend(summarize_contexts(additional, by_id, config, inference))
     selected = select_summaries(outcomes, config)
+    selected = generation_context_rows(selected, outcomes, sources, config)
     contexts = [GenerationContext.model_validate(row["context"]) for row in selected]
     instructions = {c.context_id: context_instructions(config, c.context_id) for c in contexts}
     batches = inference.generate(
         [
             source_request(
-                prompts.GENERATE,
+                prompts.render(
+                    "multi_section_query_generation"
+                    if len({by_id[k].document_id for k in context.unit_ids}) > 1
+                    else "single_section_query_generation",
+                    language=context.language,
+                    query_modules=[item.model_dump() for item in instructions[context.context_id]],
+                )
+                + "\nReturn one outcome per numbered slot (zero-based slot IDs). Return query=null and "
+                "evidence_modality=none for unsupported slots. Do not invent figures or tables. "
+                "Use the supplied original text as well as images; text-only inputs require no images. "
+                "No generated answers are requested.",
                 QueryBatch,
                 "generator",
                 context,
                 by_id,
                 language=context.language,
-                summary=row["summary"],
                 instructions=[
                     {"slot": i, **item.model_dump()} for i, item in enumerate(instructions[context.context_id])
                 ],
@@ -202,15 +263,39 @@ def generate_candidates(
             if not slot.query or slot.evidence_modality == "none":
                 raise ValueError("Generated query must be nonempty and declare evidence")
             pending.append((context, slot))
-    query_judgments = inference.generate(
+    metadata = inference.generate(
+        [Request(prompts.render("query_metadata", query=slot.query), QueryMetadata, "judge") for _, slot in pending]
+    )
+    sufficiency = inference.generate(
         [
-            Request(prompts.QUERY_JUDGE + "\n" + json.dumps({"query": slot.query}), QueryJudgment, "judge")
-            for _, slot in pending
+            Request(
+                prompts.render("self_sufficiency", summary=source_text(c, by_id), query=slot.query),
+                SelfSufficiencyJudgment,
+                "judge",
+            )
+            for c, slot in pending
         ]
     )
+    query_judgments = [
+        QueryJudgment(
+            self_sufficiency=s.self_sufficiency,
+            has_answer=m.has_answer,
+            observed_type=m.actual_query_type,
+            observed_format=m.actual_query_format,
+            reasoning=s.reasoning + "\n" + m.classification_reasoning,
+        )
+        for s, m in zip(sufficiency, metadata, strict=True)
+    ]
     relevance = inference.generate(
         [
-            source_request(prompts.RELEVANCE, RelevanceJudgment, "judge", c, by_id, query=slot.query)
+            source_request(
+                prompts.render("relevancy", summary=source_text(c, by_id), query=slot.query),
+                RelevanceJudgment,
+                "judge",
+                c,
+                by_id,
+                query=slot.query,
+            )
             for c, slot in pending
         ]
     )
@@ -230,6 +315,7 @@ def generate_candidates(
         reasons = reasons_by_index[i]
         localization = by_index.get(i)
         if localization is not None:
+            localization = normalize_localization(localization, context)
             reasons.extend(localization_reasons(localization, context, by_id, config.require_verbatim_quotes))
         candidates.append(
             Candidate(
@@ -296,11 +382,24 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             "images": {image: digest(Path(image)) for s in sources for image in s.images},
             "implementation": {
                 p.relative_to(Path(__file__).parents[1]).as_posix(): digest(p)
-                for p in sorted(Path(__file__).parents[1].rglob("*.py"))
+                for p in sorted(Path(__file__).parents[1].rglob("*"))
+                if p.is_file() and p.suffix in {".py", ".j2", ".json", ".txt"}
             },
             "dependencies": {
                 name: version(name)
-                for name in ("data-designer", "data-designer-engine", "data-designer-config", "pydantic", "pyarrow")
+                for name in (
+                    "data-designer",
+                    "data-designer-engine",
+                    "data-designer-config",
+                    "pydantic",
+                    "pyarrow",
+                    "jinja2",
+                )
+                + (
+                    ("sentence-transformers", "scikit-learn", "umap-learn", "numpy")
+                    if config.combination_iterations
+                    else ()
+                )
             },
         }
         if root.exists() and not config.resume:

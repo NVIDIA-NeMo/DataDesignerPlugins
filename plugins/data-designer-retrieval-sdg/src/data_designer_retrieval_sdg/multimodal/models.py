@@ -78,7 +78,13 @@ class MultimodalSDGConfig(StrictModel):
     concurrency: int = Field(default=8, ge=1, le=128)
     batch_size: int = Field(default=30, ge=1, le=128)
     max_units_per_context: int = Field(default=8, ge=1)
-    context_strategy: Literal["unit", "document"] = "unit"
+    context_strategy: Literal["unit", "document", "sections"] = "unit"
+    section_size: int = Field(default=5, ge=1)
+    combination_iterations: int = Field(default=0, ge=0, le=100)
+    summary_embedding_model: str | None = None
+    summary_embedding_revision: str | None = None
+    summary_embedding_device: str = "cpu"
+    persona: str = "A reader seeking specific evidence and useful information from this corpus."
     max_context_chars: int = Field(default=100000, ge=1)
     related_contexts_per_context: int = Field(default=0, ge=0, le=2)
     related_summary_similarity: float = Field(default=0.2, gt=0, le=1)
@@ -107,6 +113,12 @@ class MultimodalSDGConfig(StrictModel):
             raise ValueError("summary_count and summary_fraction are mutually exclusive")
         if self.instructions_per_context is not None and self.instructions_per_context > len(self.instructions):
             raise ValueError("instructions_per_context exceeds the instruction pool")
+        if self.combination_iterations and self.context_strategy != "sections":
+            raise ValueError("semantic combinations require context_strategy=sections")
+        if self.combination_iterations and not self.summary_embedding_model:
+            raise ValueError("summary_embedding_model is required for semantic combinations")
+        if self.combination_iterations and self.related_contexts_per_context:
+            raise ValueError("semantic combinations and lexical related contexts are mutually exclusive")
         return self
 
 
@@ -117,12 +129,51 @@ class ContextSummary(StrictModel):
     visual_evidence: str
 
 
-class SummaryJudgment(StrictModel):
-    """Source-grounded summary fidelity and usefulness, independent of query labels."""
+class Grade(StrictModel):
+    """One independently recorded summary quality criterion."""
 
-    fidelity: int = Field(ge=1, le=5)
-    usefulness: int = Field(ge=1, le=5)
+    grade: int = Field(ge=1, le=5)
+    explanation: str
+
+
+class SummaryJudgment(StrictModel):
+    """Four reference summary grades; all must meet the configured threshold."""
+
+    information_richness: Grade
+    persona_relevance: Grade
+    query_generation_potential: Grade
+    conceptual_clarity: Grade
+
+
+class Description(StrictModel):
+    """A concise description used only for summary planning."""
+
+    description: str
+
+
+class VisualDescription(Description):
+    """Visual enrichment kept separate from original source text."""
+
+    has_visual_content: bool
+
+
+class SelfSufficiencyJudgment(StrictModel):
+    """Reference self-sufficiency judgment with supplied source context."""
+
+    self_sufficiency: int = Field(ge=1, le=5)
     reasoning: str
+
+
+class QueryMetadata(StrictModel):
+    """Query-only answer-leak and observed-label assessment."""
+
+    actual_query_type: Literal[
+        "open-ended", "compare-contrast", "enumerative", "numerical", "boolean", "extractive", "multi-hop"
+    ]
+    actual_query_format: Literal["question", "instruction", "keyword"]
+    has_answer: bool
+    classification_reasoning: str = ""
+    classification_confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class QuerySlot(StrictModel):
@@ -140,7 +191,7 @@ class QueryBatch(StrictModel):
 
 
 class QueryJudgment(StrictModel):
-    """Query-only standalone/answer-leak checks and observed, non-gating style labels."""
+    """Stable combined output of context-aware sufficiency and query-only metadata checks."""
 
     self_sufficiency: int = Field(ge=1, le=5)
     has_answer: bool

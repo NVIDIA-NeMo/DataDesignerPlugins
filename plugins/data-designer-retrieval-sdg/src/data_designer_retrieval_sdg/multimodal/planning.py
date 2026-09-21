@@ -9,14 +9,18 @@ import json
 import math
 import random
 import re
+import unicodedata
 from collections import defaultdict
+from decimal import Decimal
 from itertools import zip_longest
 
 from data_designer_retrieval_sdg.multimodal.models import (
+    DEFAULT_INSTRUCTIONS,
     GenerationContext,
     MultimodalSDGConfig,
     QueryInstruction,
 )
+from data_designer_retrieval_sdg.multimodal.sampling import sample_instructions
 from data_designer_retrieval_sdg.multimodal.storage import fingerprint
 from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
 
@@ -98,7 +102,7 @@ def automatic_contexts(sources: list[RetrievalSource], strategy: str) -> list[Ge
 
 def summary_text(row: dict) -> str:
     """Return normalized textual and visual summary evidence for comparison."""
-    return " ".join((row["summary"]["summary"] + " " + row["summary"]["visual_evidence"]).casefold().split())
+    return " ".join(unicodedata.normalize("NFKC", row["summary"]["summary"]).casefold().split())
 
 
 def similarity(left: set, right: set) -> float:
@@ -156,14 +160,14 @@ def related_contexts(
 def summary_passes(row: dict, config: MultimodalSDGConfig) -> bool:
     """Apply the configured summary gate without inventing missing judgments."""
     judgment = row["summary_judgment"]
-    return judgment is None or min(judgment["fidelity"], judgment["usefulness"]) >= config.summary_quality_threshold
+    return judgment is None or min(value["grade"] for value in judgment.values()) >= config.summary_quality_threshold
 
 
 def summary_rank(row: dict) -> tuple:
     """Prefer higher-quality representatives, then stable context identity."""
     judgment = row["summary_judgment"]
-    scores = [judgment["fidelity"], judgment["usefulness"]] if judgment else [0, 0]
-    return (-sum(scores), -min(scores), row["context"]["context_id"])
+    scores = [value["grade"] for value in judgment.values()] if judgment else [0, 0]
+    return (-sum(scores), -min(scores))
 
 
 def duplicate_summary(left: dict, right: dict, config: MultimodalSDGConfig) -> bool:
@@ -178,9 +182,14 @@ def duplicate_summary(left: dict, right: dict, config: MultimodalSDGConfig) -> b
     threshold = config.summary_near_duplicate_threshold
     if threshold is None or similarity(a, b) < 0.9 or left["context"]["language"] != right["context"]["language"]:
         return False
+    if left.get("document_ids") and set(left["document_ids"]) != set(right.get("document_ids", [])):
+        return False
     text_a, text_b = summary_text(left), summary_text(right)
-    protected = r"\d+(?:[.,]\d+)*|\b(?:no|not|never|without)\b"
-    if re.findall(protected, text_a) != re.findall(protected, text_b) or min(len(text_a), len(text_b)) < 40:
+    protected = r"\d+(?:[.,]\d+)*%?|\b(?:no|not|never|without|neither|nor|none|cannot)\b|\w+n[’']t\b"
+    if (
+        sorted(re.findall(protected, text_a)) != sorted(re.findall(protected, text_b))
+        or min(len(text_a), len(text_b)) < 40
+    ):
         return False
     return (
         similarity(
@@ -212,12 +221,40 @@ def select_summaries(rows: list[dict], config: MultimodalSDGConfig) -> list[dict
             row["representative_context_id"] = duplicate["context"]["context_id"]
             continue
         kept.append(row)
+    # Restore generation order after choosing the highest-grade duplicate representative.
+    kept_ids = {id(row) for row in kept}
+    kept = [row for row in rows if id(row) in kept_ids]
     limit = config.summary_count or len(kept)
     if config.summary_fraction is not None:
-        limit = math.ceil(len(kept) * config.summary_fraction)
-    for row in kept[limit:]:
-        row["selection_reason"] = "summary_budget"
-    return kept[:limit]
+        limit = math.ceil(Decimal(str(config.summary_fraction)) * len(kept))
+    selected = priority_selection(kept, limit) if limit < len(kept) else kept
+    selected_ids = {id(row) for row in selected}
+    for row in kept:
+        if id(row) not in selected_ids:
+            row["selection_reason"] = "summary_budget"
+    return selected
+
+
+def priority_selection(rows: list[dict], limit: int) -> list[dict]:
+    """Apply the reference visual/multi-document summary budget in stable input order."""
+    buckets = [[] for _ in range(6)]
+    for row in rows:
+        category = (
+            0 if row.get("combined") and len(row.get("document_ids", [])) > 1 else 1 if row.get("combined") else 2
+        )
+        if not row.get("has_visual_content", bool(row["summary"]["visual_evidence"])):
+            category += 3
+        buckets[category].append(row)
+    positions = [0] * 6
+    selected = []
+    while len(selected) < limit:
+        remaining = limit - len(selected)
+        for index, bucket in enumerate(buckets):
+            amount = max(1, remaining // 6 + (20 if index < 3 else -20))
+            count = min(amount, len(bucket) - positions[index], limit - len(selected))
+            selected.extend(bucket[positions[index] : positions[index] + count])
+            positions[index] += count
+    return selected
 
 
 def context_instructions(config: MultimodalSDGConfig, context_id: str) -> list[QueryInstruction]:
@@ -230,6 +267,8 @@ def context_instructions(config: MultimodalSDGConfig, context_id: str) -> list[Q
     Returns:
         All configured profiles or a reproducible sample without replacement.
     """
+    if config.instructions == list(DEFAULT_INSTRUCTIONS) and config.instructions_per_context is None:
+        return sample_instructions(config.seed, context_id)
     if config.instructions_per_context is None:
         return config.instructions
     rng = random.Random(fingerprint([config.seed, context_id]))

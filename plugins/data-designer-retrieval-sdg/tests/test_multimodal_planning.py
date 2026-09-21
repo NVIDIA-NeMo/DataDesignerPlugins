@@ -41,7 +41,10 @@ def summary_row(key, units, quality=5, text="A substantive valve specification w
     return {
         "context": GenerationContext(context_id=key, unit_ids=units, language="en").model_dump(),
         "summary": {"summary": text, "visual_evidence": ""},
-        "summary_judgment": {"fidelity": quality, "usefulness": quality, "reasoning": "Recorded"},
+        "summary_judgment": {
+            key: {"grade": quality, "explanation": "Recorded"}
+            for key in ("information_richness", "persona_relevance", "query_generation_potential", "conceptual_clarity")
+        },
         "slots": {"queries": []},
     }
 
@@ -225,7 +228,8 @@ def test_report_coverage_funnel_and_labels_are_independent(tmp_path):
     assert report["generated_modalities"] == {"text": 10}
     assert report["multi_unit_positive_fraction"] == 1
     assert report["quote_verification"] == {"true": 20}
-    assert report["requested_observed"]["query_type"] == {"unspecified -> numerical": 10}
+    assert sum(report["requested_observed"]["query_type"].values()) == 10
+    assert all(key.endswith(" -> numerical") for key in report["requested_observed"]["query_type"])
 
 
 def test_export_generated_coverage_excludes_all_abstaining_contexts(tmp_path):

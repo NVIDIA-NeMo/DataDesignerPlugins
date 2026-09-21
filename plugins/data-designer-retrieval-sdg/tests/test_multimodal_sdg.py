@@ -22,9 +22,10 @@ from data_designer_retrieval_sdg.multimodal.models import (
     ContextSummary,
     Localization,
     QueryBatch,
-    QueryJudgment,
+    QueryMetadata,
     QuerySlot,
     RelevanceJudgment,
+    SelfSufficiencyJudgment,
     SummaryJudgment,
     Support,
 )
@@ -85,12 +86,22 @@ class ScriptedInference:
 
 
 def scripted_response(request):
-    payload = json.loads(request.text.splitlines()[-1])
     if request.schema is ContextSummary:
         return ContextSummary(summary="Valve operating specifications", visual_evidence="")
     if request.schema is SummaryJudgment:
-        return SummaryJudgment(fidelity=5, usefulness=5, reasoning="Source-grounded and substantive")
+        return SummaryJudgment(
+            **{
+                key: {"grade": 5, "explanation": "Substantive"}
+                for key in (
+                    "information_richness",
+                    "persona_relevance",
+                    "query_generation_potential",
+                    "conceptual_clarity",
+                )
+            }
+        )
     if request.schema is QueryBatch:
+        payload = json.loads(request.text.splitlines()[-1])
         subject = payload["sources"][0]["unit_id"]
         return QueryBatch(
             queries=[
@@ -99,16 +110,18 @@ def scripted_response(request):
                 QuerySlot(slot=2, query=None, evidence_modality="none"),
             ]
         )
-    if request.schema is QueryJudgment:
-        return QueryJudgment(
-            self_sufficiency=5,
+    if request.schema is SelfSufficiencyJudgment:
+        return SelfSufficiencyJudgment(self_sufficiency=5, reasoning="Standalone")
+    if request.schema is QueryMetadata:
+        return QueryMetadata(
             has_answer=False,
-            observed_type="numerical",
-            observed_format="question",
-            reasoning="Standalone",
+            actual_query_type="numerical",
+            actual_query_format="question",
+            classification_reasoning="Standalone",
         )
     if request.schema is RelevanceJudgment:
         return RelevanceJudgment(relevance=5, reasoning="Source states a pressure")
+    payload = json.loads(request.text.splitlines()[-1])
     return Localization(
         supports=[
             Support(
@@ -155,12 +168,17 @@ def test_complete_generic_workflow_and_verified_resume(tmp_path, monkeypatch):
         run_multimodal_sdg(config.model_copy(update={"resume": True}))
 
 
-def test_query_only_judge_has_no_source_and_all_grounded_stages_receive_pixels(tmp_path):
+def test_judges_use_reference_source_visibility(tmp_path):
     _, _, candidates, outcomes, inference = generated_fixture(tmp_path)
     assert len(outcomes) == 10 and len(outcomes[0]["slots"]["queries"]) == 3
     for request in inference.requests:
-        if request.schema is QueryJudgment:
-            assert not request.images and "Valve 0 opens" not in request.text
+        if request.schema is QueryMetadata:
+            assert not request.images and "opens at 20 bar" not in request.text
+        elif request.schema is SelfSufficiencyJudgment:
+            assert not request.images and "opens at 20 bar" in request.text
+            assert "Valve operating specifications" not in request.text
+        elif request.schema is SummaryJudgment:
+            assert not request.images and "Valve operating specifications" in request.text
         else:
             assert len(request.images) == 2
             assert "image_unit_ids" in request.text
@@ -316,7 +334,7 @@ class RejectingInference(ScriptedInference):
     def generate(self, requests):
         values = super().generate(requests)
         return [
-            value.model_copy(update={"has_answer": True}) if isinstance(value, QueryJudgment) else value
+            value.model_copy(update={"has_answer": True}) if isinstance(value, QueryMetadata) else value
             for value in values
         ]
 

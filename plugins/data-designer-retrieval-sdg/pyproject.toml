@@ -9,6 +9,7 @@ requires-python = ">=3.10"
 dependencies = [
     "data-designer>=0.9.1",
     "filelock>=3.20,<4",
+    "jinja2>=3.1.6,<4",
     # Data Designer permits older transitive releases that are excluded by the
     # workspace security constraints. Publish the same floors for consumers.
     "mcp>=1.29.0,<2",
@@ -27,6 +28,13 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+multimodal = [
+    "sentence-transformers>=5.0,<7",
+    "scikit-learn>=1.6,<2",
+    "umap-learn>=0.5.7,<0.6",
 ]
 
 [project.entry-points."data_designer.plugins"]
