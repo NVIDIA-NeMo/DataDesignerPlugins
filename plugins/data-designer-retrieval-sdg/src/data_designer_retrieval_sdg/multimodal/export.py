@@ -50,12 +50,12 @@ def checked_candidates(
 
 
 def view_candidates(view: str, units: list[dict], candidates: list[Candidate]) -> list[Candidate]:
-    """Keep all positives or exclude the query; never downgrade multimodal labels to text-only."""
+    """Keep all positives or exclude the query; never discard the localized evidence modality."""
     ids = {unit["unit_id"] for unit in units}
     return [
         c
         for c in candidates
-        if all(s.unit_id in ids and (view != "text" or s.modality == "text") for s in c.localization.supports)
+        if all(s.unit_id in ids and (view == "image_and_text" or s.modality == view) for s in c.localization.supports)
     ]
 
 

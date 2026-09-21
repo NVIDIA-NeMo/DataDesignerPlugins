@@ -134,7 +134,9 @@ protocol is offered by this workflow.
 
 Each view retains **every modality-eligible corpus unit**, including distractors.
 A query is excluded from a view if any positive cannot be represented; positives
-are never silently dropped. Text-only views additionally exclude visual support.
+are never silently dropped. Text-only views require text support, image-only views require image support,
+and support that needs both modalities is retained only in the combined view.
+Attaching an image to a text-grounded source does not make its query image-grounded.
 Missing/empty training views must fail downstream selection, never fall back to
 another modality. Labels are source-local, incomplete silver judgments;
 unlisted corpus units are unjudged, not known negatives.

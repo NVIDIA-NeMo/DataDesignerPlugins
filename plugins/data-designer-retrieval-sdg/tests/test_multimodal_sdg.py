@@ -209,7 +209,9 @@ def test_all_positives_grades_full_corpus_and_query_groups_survive_export(tmp_pa
     root = tmp_path / "bundle"
     export_multimodal_bundle(root, sources, candidates, outcomes, config)
     splits = json.loads((root / "split_manifest.json").read_text())["query_assignments"]
-    for view, assignments in splits.items():
+    assert splits["image"] == {}  # White images do not contain the localized text evidence.
+    for view in ("text", "image_and_text"):
+        assignments = splits[view]
         assert assignments[candidates[0].query_id] == assignments[candidates[1].query_id]
         train = json.loads((root / "views" / view / "train.json").read_text())["data"]
         assert train and all(len(row["pos_doc"]) == 2 for row in train)
@@ -223,11 +225,18 @@ def test_all_positives_grades_full_corpus_and_query_groups_survive_export(tmp_pa
         export_multimodal_bundle(root, sources, candidates, outcomes, config)
 
 
-def test_full_nemotron_consumer_contract(tmp_path):
+@pytest.mark.parametrize("modality", ["text", "image"])
+def test_full_nemotron_consumer_contract(tmp_path, modality):
     consumer = pytest.importorskip("nemotron.recipes.embed.sdg_manifest")
     config, sources, candidates, outcomes, _ = generated_fixture(tmp_path)
+    if modality == "image":
+        for candidate in candidates:
+            for support in candidate.localization.supports:
+                support.modality = "image"
+                support.quote = ""
+                support.visual_evidence = "White page"
     handoff = export_multimodal_bundle(tmp_path / "bundle", sources, candidates, outcomes, config)
-    for view in ("text", "image", "image_and_text"):
+    for view in (modality, "image_and_text"):
         assert consumer.resolve_portable_training_input(handoff, view).is_file()
         assert consumer.resolve_portable_evaluation_input(handoff, view)[0].is_dir()
 
@@ -377,6 +386,28 @@ def test_image_only_sources_and_mixed_views_do_not_drop_positives(tmp_path):
     )
     handoff = export_multimodal_bundle(tmp_path / "bundle", sources, candidates, outcomes, config)
     report = json.loads((handoff.parent / "report.json").read_text())
+    assert report["views"]["image"]["accepted_queries"] == 0
     assert report["views"]["text"]["accepted_queries"] == 9
     assert report["views"]["image_and_text"]["accepted_queries"] == 10
     assert report["positive_annotations"] == 20
+
+
+@pytest.mark.parametrize("modality", ["text", "image", "text_and_image"])
+def test_single_modality_views_require_all_localized_evidence(tmp_path, modality):
+    config, sources, candidates, outcomes, _ = generated_fixture(tmp_path)
+    for candidate in candidates:
+        for support in candidate.localization.supports:
+            support.modality = modality
+            support.visual_evidence = "White page" if modality != "text" else ""
+            if modality == "image":
+                support.quote = ""
+    handoff = export_multimodal_bundle(tmp_path / "bundle", sources, candidates, outcomes, config)
+    report = json.loads((handoff.parent / "report.json").read_text())
+    assignments = json.loads((handoff.parent / "split_manifest.json").read_text())["query_assignments"]
+    for view in ("text", "image", "image_and_text"):
+        expected = len(candidates) if view in (modality, "image_and_text") else 0
+        assert report["views"][view]["accepted_queries"] == expected
+        assert len(assignments[view]) == expected
+        rows = json.loads((handoff.parent / "views" / view / "train.json").read_text())["data"]
+        assert bool(rows) == bool(expected)
+        assert all(len(row["pos_doc"]) == 2 for row in rows)
