@@ -171,3 +171,17 @@ def test_conflicting_embedding_configuration_fails(tmp_path, update):
     raw = api_config(tmp_path).model_dump()
     with pytest.raises(ValueError):
         MultimodalSDGConfig.model_validate({**raw, **update})
+
+
+def test_null_clears_hosted_embedding_request_options(tmp_path):
+    raw = api_config(tmp_path).model_dump()
+    config = MultimodalSDGConfig.model_validate(
+        {
+            **raw,
+            "summary_embedding_endpoint": None,
+            "summary_embedding_extra_body": None,
+            "summary_embedding_model": "operator/local-model",
+        }
+    )
+    assert config.summary_embedding_extra_body == {}
+    assert config.model_dump()["summary_embedding_extra_body"] == {}

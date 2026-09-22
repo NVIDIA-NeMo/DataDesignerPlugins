@@ -181,7 +181,7 @@ def test_seeded_profiles_are_context_order_independent_and_not_gates(tmp_path):
     candidates, outcomes = generate_candidates(config, sources, load_contexts(config, sources), inference)
     assert all(c.accepted and c.requested_instruction == profile for c in candidates)
     assert outcomes[0]["instructions"][0]["persona"] == "engineer"
-    query_request = next(r for r in inference.requests if r.schema is QueryBatch)
+    query_request = next(r for r in inference.requests if issubclass(r.schema, QueryBatch))
     assert '"answerability": "distributed evidence"' in query_request.text
 
 
@@ -190,7 +190,7 @@ class ProfileInference(ScriptedInference):
         self.requests.extend(requests)
         results = []
         for request in requests:
-            if request.schema is QueryBatch:
+            if issubclass(request.schema, QueryBatch):
                 payload = json.loads(request.text.splitlines()[-1])
                 results.append(
                     QueryBatch(

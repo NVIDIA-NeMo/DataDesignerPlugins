@@ -240,7 +240,7 @@ def generate_candidates(
                 "Do not invent figures or tables. "
                 "Use the supplied original text as well as images; text-only inputs require no images. "
                 "No generated answers are requested.",
-                QueryBatch,
+                QueryBatch.for_slot_count(len(instructions[context.context_id])),
                 "generator",
                 context,
                 by_id,

@@ -100,7 +100,7 @@ def scripted_response(request):
                 )
             }
         )
-    if request.schema is QueryBatch:
+    if issubclass(request.schema, QueryBatch):
         payload = json.loads(request.text.splitlines()[-1])
         subject = payload["sources"][0]["unit_id"]
         return QueryBatch(
@@ -456,3 +456,61 @@ def test_inconsistent_slot_is_retried_without_rewriting_response(tmp_path, monke
     assert completion.await_count == 2
     assert inference.generate([Request("Generate or abstain explicitly", QueryBatch, "generator")]) == result
     assert completion.await_count == 2
+
+
+@pytest.mark.parametrize("slots", [[], [0, 1], [0, 1, 1], [0, 1, 3], [0, 1, 2, 3]])
+def test_slot_membership_is_corrected_natively_before_caching(tmp_path, monkeypatch, slots):
+    config = fixture_config(tmp_path)
+    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
+    invalid = {"queries": [{"slot": slot, "query": None, "evidence_modality": "none"} for slot in slots]}
+    corrected = {
+        "queries": [
+            {"slot": 2, "query": None, "evidence_modality": "none"},
+            {"slot": 0, "query": "What pressure opens the valve?", "evidence_modality": "text"},
+            {"slot": 1, "query": None, "evidence_modality": "none"},
+        ]
+    }
+    schema = QueryBatch.for_slot_count(3)
+    with pytest.raises(ValidationError):
+        schema.model_validate(invalid)
+    completion = AsyncMock(
+        side_effect=[
+            make_stub_completion_response(content=json.dumps(invalid)),
+            make_stub_completion_response(content=json.dumps(corrected)),
+        ]
+    )
+    monkeypatch.setattr(ModelFacade, "acompletion", completion)
+    inference = DataDesignerInference(tmp_path / "inference", config)
+    request = Request("Generate three addressed query slots", schema, "generator")
+    result = inference.generate([request])[0]
+    assert result.model_dump() == corrected  # Preserve model order, wording and abstentions.
+    assert completion.await_count == 2
+    assert len(list((inference.root / "attempts").iterdir())) == 1
+    resumed = DataDesignerInference(inference.root, config.model_copy(update={"resume": True}))
+    assert resumed.generate([request])[0] == result
+    assert completion.await_count == 2
+    caches = list((inference.root / "responses").glob("*.json"))
+    assert len(caches) == 1 and json.loads(caches[0].read_text())["response"] == corrected
+
+
+def test_request_slot_count_changes_cache_identity_and_invalid_rows_are_not_cached(tmp_path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    config = fixture_config(tmp_path)
+    inference = DataDesignerInference(tmp_path / "inference", config)
+    request = Request("Generate queries", QueryBatch.for_slot_count(3), "generator")
+    assert inference.request_key(request) != inference.request_key(
+        Request(request.text, QueryBatch.for_slot_count(2), request.role)
+    )
+    assert inference.request_key(request) != inference.request_key(Request(request.text, QueryBatch, request.role))
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    pq.write_table(
+        pa.Table.from_pylist([{"request_id": inference.request_key(request), "response": '{"queries":[]}'}]),
+        dataset / "batch_000.parquet",
+    )
+    inference.collect_responses([(inference.request_key(request), request)], dataset, tmp_path / "attempt")
+    assert inference.cached(request) is None
+    outcome = json.loads((tmp_path / "attempt/outcome.json").read_text())
+    assert outcome["returned"] == 0 and outcome["invalid"] == [inference.request_key(request)]

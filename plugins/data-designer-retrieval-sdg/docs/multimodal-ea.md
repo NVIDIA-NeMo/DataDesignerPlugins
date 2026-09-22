@@ -41,7 +41,7 @@ single indivisible unit above the bound fails with its ID; preprocess it into
 smaller canonical units rather than truncating it or changing its identity here.
 
 The Nemotron EA profile selects `context_strategy: sections`. It describes
-images separately from original source text, describes documents/corpus, and
+images separately from original source text, describes documents, and
 summarizes five-unit sections in document/language input order. A markdown heading
 inside a boundary unit keeps that whole unit in the next section too. No page
 numbers, filenames, dataset fields or page-break delimiters are interpreted.
@@ -61,10 +61,11 @@ Model, endpoint, credential-variable name and extra request fields are configura
 independently of the generator and judge.
 
 For a local Sentence Transformers model, set `summary_embedding_endpoint: null`,
-`summary_embedding_extra_body: {}`, and `summary_embedding_model` to its Hugging
+`summary_embedding_extra_body: null`, and `summary_embedding_model` to its Hugging
 Face ID or local path. Set `summary_embedding_revision` to an immutable revision
 and use `summary_embedding_device` to select CPU (default) or an available GPU.
-Revision and device settings apply only to local inference. Language groups with
+Revision and device settings apply only to local inference. `null` clears inherited
+hosted request options; an empty mapping may retain keys under CLI/config merging. Language groups with
 fewer than twelve section summaries skip combinations and embedding requests.
 
 Summary grading, deduplication and budget selection happen before the final
@@ -200,7 +201,7 @@ corresponding nonvisual groups, retaining stable order within each group. The EA
 recipe caps selection at 400 summaries. All selection reasons and representative
 IDs remain in `context_outcomes.json`; no corpus units are removed.
 
-The `planning/` directory records visual enrichment, document/corpus descriptions,
+The `planning/` directory records visual enrichment, document descriptions,
 section/combined summaries, membership combinations and all four summary grades.
 Descriptions are generated planning aids; original input text and images remain
 unchanged. Character bounds include generated visual descriptions, without silent
@@ -258,6 +259,9 @@ stop immediately, preserving any completed native final-row shards and cacheable
 responses; they are not blindly retried. Attempt records are immutable and
 exception messages are not copied into failure metadata. Inspect attempt evidence
 before setting `resume: true`.
+Query generation uses a request-sized schema requiring exactly one outcome for
+each requested slot. Missing, duplicate and extra slots undergo native correction
+before any response is cached; response order and explicit abstentions are preserved.
 Successful cached requests are reused. Changed inputs/configuration/code or
 corrupt caches fail instead of silently regenerating or mixing results.
 

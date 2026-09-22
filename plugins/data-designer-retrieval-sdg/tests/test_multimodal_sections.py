@@ -18,6 +18,7 @@ from data_designer_retrieval_sdg.multimodal.models import (
     Description,
     GenerationContext,
     Localization,
+    QueryBatch,
     SummaryJudgment,
     VisualDescription,
 )
@@ -69,9 +70,11 @@ def test_sections_export_keeps_original_generic_sources(tmp_path, monkeypatch):
     assert all(set(row["summary_judgment"]) == set(SummaryJudgment.model_fields) for row in outcomes)
     assert all("page_number" not in request.text for request in inference.requests)
     # Generated enrichment is planning-only; query and localization evidence remain original.
-    grounded = [request for request in inference.requests if request.schema.__name__ in {"QueryBatch", "Localization"}]
+    grounded = [request for request in inference.requests if issubclass(request.schema, (QueryBatch, Localization))]
     assert grounded and all("Generated chart description" not in request.text for request in grounded)
     assert (config.output_dir / "planning/visual_descriptions.json").is_file()
+    assert not (config.output_dir / "planning/corpus_descriptions.json").exists()
+    assert not any("Describe the corpus" in request.text for request in inference.requests)
 
 
 def test_explicit_contexts_are_preserved_and_semantic_pairs_bounded(tmp_path, monkeypatch):

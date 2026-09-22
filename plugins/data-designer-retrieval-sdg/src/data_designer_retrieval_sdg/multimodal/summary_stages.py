@@ -181,23 +181,6 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
         root / "document_descriptions.json",
         [{"document_id": key[0], "language": key[1], "description": value} for key, value in descriptions.items()],
     )
-    # Corpus descriptions are enrichment only; batching avoids silently omitting documents.
-    values = list(descriptions.values())
-    corpus = inference.generate(
-        [
-            Request(
-                prompts.render(
-                    "corpus_description",
-                    descriptions=values[i : i + 50],
-                    language="the language of the documents",
-                ),
-                Description,
-                "generator",
-            )
-            for i in range(0, len(values), 50)
-        ]
-    )
-    write_json(root / "corpus_descriptions.json", [v.model_dump() for v in corpus])
     if config.contexts_file is None:
         contexts = section_contexts(sources, config)
     # Section summaries need text, not bounded image attachments. Keep larger memberships

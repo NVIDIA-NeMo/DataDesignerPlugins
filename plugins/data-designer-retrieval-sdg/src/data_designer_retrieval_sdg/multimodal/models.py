@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
 from data_designer_retrieval_sdg.retrieval.models import SplitRatios
 from data_designer_retrieval_sdg.retrieval.query_groups import QueryProvenance
@@ -86,7 +87,7 @@ class MultimodalSDGConfig(StrictModel):
     summary_embedding_device: str = "cpu"
     summary_embedding_endpoint: str | None = Field(default=None, pattern=r"^https?://")
     summary_embedding_credential_env: str = Field(default="NVIDIA_API_KEY", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
-    summary_embedding_extra_body: dict[str, Any] = Field(default_factory=dict)
+    summary_embedding_extra_body: dict[str, Any] | None = Field(default_factory=dict)
     persona: str = "A reader seeking specific evidence and useful information from this corpus."
     max_context_chars: int = Field(default=100000, ge=1)
     related_contexts_per_context: int = Field(default=0, ge=0, le=2)
@@ -106,6 +107,12 @@ class MultimodalSDGConfig(StrictModel):
     seed: int = 42
     group_near_duplicates: bool = False
     resume: bool = False
+
+    @field_validator("summary_embedding_extra_body", mode="before")
+    @classmethod
+    def clear_embedding_options(cls, value: Any) -> Any:
+        """Let CLI users clear inherited hosted options with null instead of merging an empty mapping."""
+        return {} if value is None else value
 
     @model_validator(mode="after")
     def unique_instructions(self) -> MultimodalSDGConfig:
@@ -221,9 +228,47 @@ class QuerySlot(StrictModel):
 
 
 class QueryBatch(StrictModel):
-    """Addressable outcomes validated against the requested slots by the runner."""
+    """Addressable outcomes, with request-sized native schemas for correction and caching."""
 
     queries: list[QuerySlot]
+
+    @model_validator(mode="after")
+    def complete_slots(self) -> QueryBatch:
+        """Reject duplicate or noncontiguous slot IDs when reconstructing responses and caches."""
+        if sorted(item.slot for item in self.queries) != list(range(len(self.queries))):
+            raise ValueError("Return exactly one outcome for every requested slot")
+        return self
+
+    @classmethod
+    @cache
+    def for_slot_count(cls, count: int) -> type[QueryBatch]:
+        """Require every requested slot in native JSON Schema without imposing response order.
+
+        Args:
+            count: Positive number of requested zero-based query slots.
+
+        Returns:
+            A QueryBatch subclass that validates exact membership before caching.
+        """
+        if count < 1:
+            raise ValueError("Query slot count must be positive")
+        return create_model(
+            f"QueryBatch{count}",
+            __base__=cls,
+            queries=(
+                list[QuerySlot],
+                Field(
+                    min_length=count,
+                    max_length=count,
+                    json_schema_extra={
+                        "allOf": [
+                            {"contains": {"properties": {"slot": {"const": slot}}, "required": ["slot"]}}
+                            for slot in range(count)
+                        ]
+                    },
+                ),
+            ),
+        )
 
 
 class QueryJudgment(StrictModel):
