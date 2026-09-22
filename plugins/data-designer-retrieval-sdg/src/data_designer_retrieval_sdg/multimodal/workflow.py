@@ -109,7 +109,7 @@ def localization_reasons(
         source = sources[support.unit_id]
         if support.modality in {"text", "text_and_image"}:
             quote = " ".join(support.quote.split())
-            if not source.text.strip() or not quote:
+            if not source.text.strip() or (require_verbatim_quotes and not quote):
                 return ["missing_text_evidence"]
             if require_verbatim_quotes and not quote_verified(support.quote, source.text):
                 return ["unverified_text_evidence"]

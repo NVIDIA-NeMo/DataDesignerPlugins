@@ -155,9 +155,13 @@ handoff = run_multimodal_sdg(MultimodalSDGConfig.model_validate(settings))
    supply missing evidence to these judges.
 4. Localize source support: grade 2 means complete support; grade 1 means useful
    partial evidence. Drop out-of-context IDs and keep the highest grade per
-   repeated unit. Text support requires source text and a quote; image support
-   requires a source image and visual explanation. Quote fidelity is diagnostic
-   unless `require_verbatim_quotes: true` makes it a hard gate.
+   repeated unit. Text support requires source text; image support requires a
+   source image and visual explanation. In non-strict mode, quotes are optional
+   diagnostics for every modality: missing or non-matching quotes do not reject
+   otherwise valid support. With `require_verbatim_quotes: true`, text and
+   text+image supports must contain a nonempty, source-matching quote. Image-only
+   supports never require a text quote. All other quality and source-identity
+   checks remain unchanged.
 
 The packaged templates and weighted samplers derive from the MIT-licensed
 [ViDoRe v3 generation implementation](https://github.com/illuin-tech/vidore-v3-generation/tree/2cfd2f78b8ae4f4bedd87d67f373dc51c12a856e).

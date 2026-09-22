@@ -198,7 +198,6 @@ def test_recorded_query_rejections_cannot_be_exported_as_passes(tmp_path, change
     "support_changes,reason",
     [
         ({"unit_id": "not-in-context"}, "invalid_localized_identity"),
-        ({"quote": ""}, "missing_text_evidence"),
         ({"modality": "image", "visual_evidence": ""}, "missing_visual_evidence"),
     ],
 )
