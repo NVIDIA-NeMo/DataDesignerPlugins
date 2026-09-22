@@ -193,3 +193,24 @@ def test_invalid_slot_fails_response_validation(query, modality):
 
     with pytest.raises(ValidationError):
         QueryBatch.model_validate({"queries": [{"slot": 0, "query": query, "evidence_modality": modality}]})
+
+
+def test_image_histogram_counts_only_bounded_generation_including_abstentions(tmp_path):
+    from data_designer_retrieval_sdg.multimodal.reporting import generation_report
+
+    config = fixture_config(tmp_path)
+    sources = load_retrieval_sources(config.sources_file)
+    rows = [
+        {
+            "context": GenerationContext(context_id="large", unit_ids=[f"unit-{i}" for i in range(10)]).model_dump(),
+            "summary": {"summary": "Specifications", "visual_evidence": ""},
+            "slots": {"queries": []},
+        }
+    ]
+    bounded = generation_context_rows(rows.copy(), rows, sources, config)
+    for row in bounded:
+        row["slots"] = {"queries": [{"slot": 0, "query": None, "evidence_modality": "none"}]}
+    report = generation_report(sources, [], rows)
+    assert report["images_per_context"] == {"8": 1, "2": 1}
+    assert report["coverage"]["generated"]["units"] == 0
+    assert report["coverage"]["planned"]["units"] == 10

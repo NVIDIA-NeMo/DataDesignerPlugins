@@ -56,7 +56,11 @@ def generation_report(sources: list[RetrievalSource], candidates: list[Candidate
         if accepted
         else 0.0,
         "images_per_context": dict(
-            Counter(str(sum(len(by_id[key].images) for key in row["context"]["unit_ids"])) for row in outcomes)
+            Counter(
+                str(sum(len(by_id[key].images) for key in row["context"]["unit_ids"]))
+                for row in outcomes
+                if row["slots"]["queries"]
+            )
         ),
         "generated_modalities": dict(Counter(c.evidence_modality for c in candidates)),
         "requested_generated_modalities": dict(
