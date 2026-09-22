@@ -447,7 +447,7 @@ def test_export_mixed_inputs_writes_only_truthful_views(tmp_path: Path) -> None:
         generated,
         output,
         dataset_id="fixture/domain",
-        generator_model="nvidia/qwen/qwen3.8-27b",
+        generator_model="example/generator-model",
         judge_model="nvidia/nemotron-3-ultra-550b-a55b",
     )
 

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 from importlib.metadata import version
 from pathlib import Path
 
@@ -372,6 +373,9 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
     """
     from data_designer_retrieval_sdg.multimodal.export import export_multimodal_bundle
 
+    if config.combination_iterations and config.summary_embedding_endpoint:
+        if not os.environ.get(config.summary_embedding_credential_env):
+            raise ValueError(f"Set the credential environment variable {config.summary_embedding_credential_env}")
     root = config.output_dir.resolve()
     root.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(root) + ".lock", timeout=0):
@@ -398,7 +402,12 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
                     "jinja2",
                 )
                 + (
-                    ("sentence-transformers", "scikit-learn", "umap-learn", "numpy")
+                    (
+                        "httpx" if config.summary_embedding_endpoint else "sentence-transformers",
+                        "scikit-learn",
+                        "umap-learn",
+                        "numpy",
+                    )
                     if config.combination_iterations
                     else ()
                 )

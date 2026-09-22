@@ -5,10 +5,62 @@
 
 from __future__ import annotations
 
+import json
+import os
 import random
 from collections import defaultdict
 
 from data_designer_retrieval_sdg.multimodal.models import MultimodalSDGConfig
+from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
+
+
+def hosted_summary_embeddings(texts: list[str], config: MultimodalSDGConfig) -> list[list[float]]:
+    """Embed summary passages in bounded batches, caching exact requests for resume."""
+    import httpx
+    import numpy as np
+
+    credential = os.environ.get(config.summary_embedding_credential_env)
+    if not credential:
+        raise ValueError(f"Set the credential environment variable {config.summary_embedding_credential_env}")
+    vectors = []
+    with httpx.Client(timeout=600) as client:
+        for start in range(0, len(texts), 32):
+            batch = texts[start : start + 32]
+            body = {
+                "model": config.summary_embedding_model,
+                "input": batch,
+                "encoding_format": "float",
+                **config.summary_embedding_extra_body,
+            }
+            key = fingerprint({"endpoint": config.summary_embedding_endpoint, "body": body})
+            path = config.output_dir / "planning/summary_embeddings" / f"{key}.json"
+            if path.exists():
+                cached = json.loads(path.read_text())
+                embeddings = cached["embeddings"]
+                if cached["request_id"] != key or cached["sha256"] != fingerprint(embeddings):
+                    raise ValueError("Summary embedding cache integrity failure")
+            else:
+                response = client.post(
+                    config.summary_embedding_endpoint.rstrip("/") + "/embeddings",
+                    headers={"Authorization": f"Bearer {credential}"},
+                    json=body,
+                )
+                response.raise_for_status()
+                records = response.json()["data"]
+                if sorted(row["index"] for row in records) != list(range(len(batch))):
+                    raise ValueError("Summary embedding response indexes must match the input batch")
+                embeddings = [row["embedding"] for row in sorted(records, key=lambda row: row["index"])]
+            matrix = np.asarray(embeddings, dtype=float)
+            if (
+                matrix.ndim != 2
+                or matrix.shape[0] != len(batch)
+                or not matrix.shape[1]
+                or not np.isfinite(matrix).all()
+            ):
+                raise ValueError("Summary embeddings must be finite and aligned with summaries")
+            write_json(path, {"request_id": key, "embeddings": embeddings, "sha256": fingerprint(embeddings)})
+            vectors.extend(embeddings)
+    return vectors
 
 
 def sample_members(groups: dict[str, list[int]], size: int, rng: random.Random) -> tuple[int, ...] | None:
@@ -80,7 +132,7 @@ def cluster_combinations(vectors, documents: list[str], iterations: int) -> list
 
 
 def semantic_combinations(rows: list[dict], config: MultimodalSDGConfig) -> list[tuple[int, ...]]:
-    """Embed summaries locally and form combinations independently for each language."""
+    """Embed summaries with a configured local model or API; cluster each language separately."""
     if len(rows) < 12 or not config.combination_iterations:
         return []
     languages = defaultdict(list)
@@ -88,19 +140,25 @@ def semantic_combinations(rows: list[dict], config: MultimodalSDGConfig) -> list
         languages[row["context"]["language"]].append(index)
     if not any(len(indexes) >= 12 for indexes in languages.values()):
         return []
-    from sentence_transformers import SentenceTransformer
+    if not config.summary_embedding_endpoint:
+        from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(
-        config.summary_embedding_model,
-        revision=config.summary_embedding_revision,
-        device=config.summary_embedding_device,
-        trust_remote_code=False,
-    )
+        model = SentenceTransformer(
+            config.summary_embedding_model,
+            revision=config.summary_embedding_revision,
+            device=config.summary_embedding_device,
+            trust_remote_code=False,
+        )
     result = []
     for indexes in languages.values():
         if len(indexes) < 12:
             continue
-        vectors = model.encode([rows[i]["summary"]["summary"] for i in indexes], batch_size=32)
+        texts = [rows[i]["summary"]["summary"] for i in indexes]
+        vectors = (
+            hosted_summary_embeddings(texts, config)
+            if config.summary_embedding_endpoint
+            else model.encode(texts, batch_size=32)
+        )
         combinations = cluster_combinations(
             vectors,
             [rows[i]["document_ids"][0] for i in indexes],

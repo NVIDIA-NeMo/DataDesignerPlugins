@@ -48,13 +48,24 @@ numbers, filenames, dataset fields or page-break delimiters are interpreted.
 Explicit contexts replace automatic sections. Set `combination_iterations: 0`
 to generate only from supplied memberships (subject to selection and bounds).
 
-With `combination_iterations: 20`, local summary embeddings feed seeded
-UMAP/HDBSCAN clustering and related section pairs/triples, including combinations
-across documents. Install the plugin's `multimodal` extra and configure
-`summary_embedding_model`, preferably with an immutable `summary_embedding_revision`.
-The EA profile uses `Qwen/Qwen3-Embedding-0.6B` on CPU; `summary_embedding_device`
-can select an available local GPU. Language groups with fewer than twelve section
-summaries skip combinations. This stage does not use a hosted embedding endpoint.
+With `combination_iterations: 20`, summary embeddings feed seeded UMAP/HDBSCAN
+clustering and related section pairs/triples, including combinations across
+documents. Install the plugin's `multimodal` extra. The EA example uses
+[`nvidia/nemotron-3-embed-1b`](https://build.nvidia.com/nvidia/nemotron-3-embed-1b)
+through the public NVIDIA API, with `input_type: passage`. Set `NVIDIA_API_KEY`
+in the environment; only its variable name is recorded. The endpoint receives
+section-summary text, not images. Requests use batches of at most 32 summaries;
+responses are checked for complete, ordered, finite embeddings and cached for
+resume. `truncate: NONE` makes oversized inputs fail rather than silently truncate.
+Model, endpoint, credential-variable name and extra request fields are configurable
+independently of the generator and judge.
+
+For a local Sentence Transformers model, set `summary_embedding_endpoint: null`,
+`summary_embedding_extra_body: {}`, and `summary_embedding_model` to its Hugging
+Face ID or local path. Set `summary_embedding_revision` to an immutable revision
+and use `summary_embedding_device` to select CPU (default) or an available GPU.
+Revision and device settings apply only to local inference. Language groups with
+fewer than twelve section summaries skip combinations and embedding requests.
 
 Summary grading, deduplication and budget selection happen before the final
 eight-unit image/text generation bound. Larger selected memberships are split
@@ -78,9 +89,12 @@ contexts_file: /absolute/path/to/contexts.jsonl  # optional; replaces automatic 
 context_strategy: sections
 section_size: 5
 combination_iterations: 20
-summary_embedding_model: Qwen/Qwen3-Embedding-0.6B
-summary_embedding_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
-summary_embedding_device: cpu
+summary_embedding_model: nvidia/nemotron-3-embed-1b
+summary_embedding_endpoint: https://integrate.api.nvidia.com/v1
+summary_embedding_credential_env: NVIDIA_API_KEY
+summary_embedding_extra_body:
+  input_type: passage
+  truncate: NONE
 summary_count: 400
 output_dir: /absolute/path/to/new-sdg-run
 dataset_id: service-manuals

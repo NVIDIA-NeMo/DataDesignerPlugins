@@ -166,7 +166,7 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
     Args:
         sources: Complete canonical sources, whose text/assets are never rewritten.
         contexts: Validated caller contexts; automatic sections are used only without an override.
-        config: Run settings including optional local semantic combinations.
+        config: Run settings including optional semantic combinations.
         inference: Cached structured Data Designer calls.
 
     Returns:

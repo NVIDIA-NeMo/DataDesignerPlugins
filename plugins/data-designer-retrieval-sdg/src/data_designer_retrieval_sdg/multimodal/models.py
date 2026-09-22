@@ -84,6 +84,9 @@ class MultimodalSDGConfig(StrictModel):
     summary_embedding_model: str | None = None
     summary_embedding_revision: str | None = None
     summary_embedding_device: str = "cpu"
+    summary_embedding_endpoint: str | None = Field(default=None, pattern=r"^https?://")
+    summary_embedding_credential_env: str = Field(default="NVIDIA_API_KEY", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    summary_embedding_extra_body: dict[str, Any] = Field(default_factory=dict)
     persona: str = "A reader seeking specific evidence and useful information from this corpus."
     max_context_chars: int = Field(default=100000, ge=1)
     related_contexts_per_context: int = Field(default=0, ge=0, le=2)
@@ -117,6 +120,12 @@ class MultimodalSDGConfig(StrictModel):
             raise ValueError("semantic combinations require context_strategy=sections")
         if self.combination_iterations and not self.summary_embedding_model:
             raise ValueError("summary_embedding_model is required for semantic combinations")
+        if self.summary_embedding_endpoint and self.summary_embedding_revision:
+            raise ValueError("summary_embedding_revision applies only to local embeddings")
+        if {"model", "input", "encoding_format"}.intersection(self.summary_embedding_extra_body):
+            raise ValueError("summary_embedding_extra_body cannot override model, input or encoding_format")
+        if self.summary_embedding_extra_body and not self.summary_embedding_endpoint:
+            raise ValueError("summary_embedding_extra_body requires summary_embedding_endpoint")
         if self.combination_iterations and self.related_contexts_per_context:
             raise ValueError("semantic combinations and lexical related contexts are mutually exclusive")
         return self

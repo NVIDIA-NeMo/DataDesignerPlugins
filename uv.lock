@@ -629,6 +629,7 @@ dependencies = [
 
 [package.optional-dependencies]
 multimodal = [
+    { name = "httpx" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.9.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "sentence-transformers" },
@@ -639,6 +640,7 @@ multimodal = [
 requires-dist = [
     { name = "data-designer", specifier = ">=0.9.1" },
     { name = "filelock", specifier = ">=3.20,<4" },
+    { name = "httpx", marker = "extra == 'multimodal'", specifier = ">=0.28.1,<1" },
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "mcp", specifier = ">=1.29.0,<2" },
     { name = "nltk", specifier = ">=3.10.2,<3.11" },
