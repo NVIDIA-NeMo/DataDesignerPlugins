@@ -58,6 +58,8 @@ guidance.
 
 ## Development
 
+For a review of the current branch or a pull request, use the [`review-code` skill](.agents/skills/review-code/SKILL.md).
+
 Use the repo's `Makefile` targets for all development tasks:
 
 ```bash
