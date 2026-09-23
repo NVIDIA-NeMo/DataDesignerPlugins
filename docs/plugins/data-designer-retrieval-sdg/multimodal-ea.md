@@ -35,8 +35,16 @@ Context membership controls which evidence a model sees. It is **not** a query
 split group. Unselected units still belong to the full corpus. Unknown IDs fail.
 Oversized memberships are partitioned, retaining every source unit and interleaving
 documents to preserve opportunities for cross-document questions. The default
-bounds are eight units and 100,000 serialized source-text characters. These are
-not token limits; provider image/token limits may require smaller settings. A
+membership bound remains eight units. There is no independent source-character
+cap: `max_context_chars` defaults to `null` (an explicit value remains an opt-in
+source-text policy). The workflow constructs the complete prompt, including
+instructions, JSON escaping, enrichment and repeated evidence, and checks the
+installed DD secure renderer's limit (currently 512,000 characters). Fitting
+memberships are preserved; oversized memberships split on whole-unit boundaries.
+Generated queries are checked against all downstream prompts. If a judgment
+would overflow, its parent slots are recorded as `request_size_replanned` and
+new queries are generated for the smaller memberships; a multi-page query is
+never silently judged against partial evidence. A
 single indivisible unit above the bound fails with its ID; preprocess it into
 smaller canonical units rather than truncating it or changing its identity here.
 
@@ -95,7 +103,9 @@ be enabled together. Semantic combinations require the `sections` strategy.
 Install the candidate with its `multimodal` extra from the reviewed public commit before using this API;
 the existing published package does not yet provide it. No core-package patch
 is needed: the registered `retrieval-structured` column uses released Data
-Designer and retains schema validation and native bounded corrections.
+Designer and retains schema validation and bounded missing-response retries.
+In-conversation correction is disabled so appended error/response history cannot
+bypass the checked input budget; retries reuse the original checked request.
 
 Save an operator-owned YAML configuration:
 
@@ -118,14 +128,24 @@ generator:
   model: your-image-capable-generator
   endpoint: https://your-provider.example/v1
   credential_env: SDG_API_KEY
+  tokenizer_file: /absolute/path/to/deployment/tokenizer.json
+  context_window_tokens: 131072  # example only: use the deployed model's actual window
+  image_tokens_per_image: 4096  # example only: upper bound at your serving image resolution
+  request_overhead_tokens: 1024  # example only: upper bound for chat template/system/image wrappers
+  max_tokens: 8192
 judge:
   model: your-image-capable-judge
   endpoint: https://your-provider.example/v1
   credential_env: SDG_API_KEY
+  tokenizer_file: /absolute/path/to/deployment/tokenizer.json
+  context_window_tokens: 131072  # example only: use the deployed model's actual window
+  image_tokens_per_image: 4096  # example only: upper bound at your serving image resolution
+  request_overhead_tokens: 1024  # example only: upper bound for chat template/system/image wrappers
+  max_tokens: 8192
 concurrency: 8
 batch_size: 30
 max_units_per_context: 8
-max_context_chars: 100000
+max_context_chars: null
 judge_summaries: true
 summary_quality_threshold: 4
 require_verbatim_quotes: false
@@ -134,6 +154,19 @@ ratios: {train: 0.8, validation: 0.0, evaluation: 0.2}
 seed: 42
 resume: false
 ```
+
+The per-role context window, local tokenizer file and request overhead are
+required before live inference. Image requests additionally require a per-image
+token upper bound. These are deployment settings, not inferred from model names;
+the example values above are not universal defaults. Use the serving model's
+matching `tokenizer.json`, the configured image resolution/tiling maximum, and an
+overhead allowance covering its chat template, system prompt and image wrappers.
+Token accounting includes DD's structured-response instructions/schema, each
+image allowance and `max_tokens` output space. The renderer ceiling remains an
+independent check. Tokenizer truncation/padding are disabled for counting, and
+tokenizer content hashes enter request caches and run identity. Missing budget
+metadata fails before provider submission. Unsupported tokenizers must be
+exported to the supported local tokenizer format before running.
 
 Set the named credential environment variable without placing its value in
 YAML. Model identifiers are explicit; there is no hosted-model fallback. Paths

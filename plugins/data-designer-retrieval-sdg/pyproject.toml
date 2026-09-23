@@ -9,6 +9,7 @@ requires-python = ">=3.10"
 dependencies = [
     "data-designer>=0.9.1",
     "filelock>=3.20,<4",
+    "tokenizers>=0.22,<0.24",
     "jinja2>=3.1.6,<4",
     # Data Designer permits older transitive releases that are excluded by the
     # workspace security constraints. Publish the same floors for consumers.

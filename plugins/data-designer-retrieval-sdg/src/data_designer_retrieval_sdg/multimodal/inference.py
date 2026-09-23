@@ -21,6 +21,7 @@ from data_designer.interface import DataDesigner
 from pydantic import BaseModel
 
 from data_designer_retrieval_sdg.config import RetrievalStructuredColumnConfig
+from data_designer_retrieval_sdg.multimodal.bounds import check_request
 from data_designer_retrieval_sdg.multimodal.models import GenerationContext, MultimodalSDGConfig
 from data_designer_retrieval_sdg.multimodal.storage import digest, fingerprint, write_json
 from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
@@ -80,6 +81,9 @@ class DataDesignerInference:
                 "schema": request.schema.model_json_schema(),
                 "model": getattr(self.config, request.role).model_dump(mode="json"),
                 "images": [digest(path) for path in request.images],
+                "tokenizer_sha256": digest(getattr(self.config, request.role).tokenizer_file)
+                if getattr(self.config, request.role).tokenizer_file
+                else None,
             }
         )
 
@@ -104,6 +108,7 @@ class DataDesignerInference:
         """
         groups: dict[str, dict[str, Request]] = {}
         for request in requests:
+            check_request(request, self.config, require_model_budget=True)
             if self.cached(request) is None:
                 group = fingerprint([request.role, request.schema.model_json_schema(), bool(request.images)])
                 groups.setdefault(group, {})[self.request_key(request)] = request
@@ -123,6 +128,8 @@ class DataDesignerInference:
 
     def run_batch(self, items: list[tuple[str, Request]]) -> None:
         """Execute a homogeneous native DD batch and preserve every valid response."""
+        for _, item in items:
+            check_request(item, self.config, require_model_budget=True)
         request = items[0][1]
         model = getattr(self.config, request.role)
         attempt = self.root / "attempts" / uuid4().hex
@@ -180,6 +187,7 @@ class DataDesignerInference:
         designer.set_run_config(
             dd.RunConfig(
                 disable_early_shutdown=True,
+                max_conversation_correction_steps=0,
                 buffer_size=self.config.batch_size,
                 max_concurrent_row_groups=1,
                 display_tui=False,

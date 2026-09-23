@@ -63,7 +63,23 @@ def fixture_config(tmp_path: Path) -> MultimodalSDGConfig:
             json.dumps({"context_id": f"context-{i}", "unit_ids": [f"unit-{i}", "unit-11"]}) + "\n" for i in range(10)
         )
     )
-    model = ModelSettings(model="operator/vlm", endpoint="https://example.invalid/v1", credential_env="TEST_SDG_KEY")
+    from tokenizers import Tokenizer, models, pre_tokenizers
+
+    encoder = Tokenizer(
+        models.BPE(vocab={char: i for i, char in enumerate(sorted(pre_tokenizers.ByteLevel.alphabet()))}, merges=[])
+    )
+    encoder.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=False)
+    tokenizer_file = tmp_path / "tokenizer.json"
+    encoder.save(str(tokenizer_file))
+    model = ModelSettings(
+        model="operator/vlm",
+        endpoint="https://example.invalid/v1",
+        credential_env="TEST_SDG_KEY",
+        tokenizer_file=tokenizer_file,
+        context_window_tokens=2_000_000,
+        image_tokens_per_image=100,
+        request_overhead_tokens=32,
+    )
     return MultimodalSDGConfig(
         sources_file=source_file,
         contexts_file=context_file,

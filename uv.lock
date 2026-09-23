@@ -625,6 +625,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "starlette" },
+    { name = "tokenizers" },
 ]
 
 [package.optional-dependencies]
@@ -650,6 +651,7 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'multimodal'", specifier = ">=1.6,<2" },
     { name = "sentence-transformers", marker = "extra == 'multimodal'", specifier = ">=5.0,<7" },
     { name = "starlette", specifier = ">=1.4.1,<2" },
+    { name = "tokenizers", specifier = ">=0.22,<0.24" },
     { name = "umap-learn", marker = "extra == 'multimodal'", specifier = ">=0.5.7,<0.6" },
 ]
 provides-extras = ["multimodal"]

@@ -10,6 +10,7 @@ import unicodedata
 from collections import Counter, defaultdict
 
 from data_designer_retrieval_sdg.multimodal import prompts
+from data_designer_retrieval_sdg.multimodal.bounds import check_request
 from data_designer_retrieval_sdg.multimodal.inference import Request
 from data_designer_retrieval_sdg.multimodal.models import GenerationContext, MultimodalSDGConfig, TOCConfirmation
 from data_designer_retrieval_sdg.multimodal.planning import automatic_contexts, context_chars
@@ -81,7 +82,16 @@ def confirm_tocs(sources, config, inference) -> dict[str, dict]:
     """Confirm bounded candidate units through the existing schema/cache/retry path."""
     candidates = [source for source in sources if toc_candidate(source.text)]
     by_id = {s.unit_id: s for s in sources}
-    bounded = [s for s in candidates if context_chars([s.unit_id], by_id) <= config.max_context_chars]
+    bounded = [
+        s
+        for s in candidates
+        if config.max_context_chars is None or context_chars([s.unit_id], by_id) <= config.max_context_chars
+    ]
+    for source in bounded:
+        check_request(
+            Request(prompts.render("check_toc", page=source.text, language=source.language), TOCConfirmation, "judge"),
+            config,
+        )
     responses = (
         inference.generate(
             [

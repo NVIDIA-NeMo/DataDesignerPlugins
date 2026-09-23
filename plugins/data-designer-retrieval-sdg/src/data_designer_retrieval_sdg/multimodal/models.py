@@ -29,8 +29,19 @@ class ModelSettings(StrictModel):
     credential_env: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     temperature: float = Field(default=0.6, ge=0, le=2)
     max_tokens: int = Field(default=8192, gt=0)
+    context_window_tokens: int | None = Field(default=None, gt=0)
+    tokenizer_file: Path | None = None
+    image_tokens_per_image: int | None = Field(default=None, gt=0)
+    request_overhead_tokens: int | None = Field(default=None, ge=0)
     timeout: int = Field(default=600, gt=0)
     extra_body: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def explicit_budget(self):
+        """Prevent provider overrides from bypassing the checked request/output budget."""
+        if {"model", "messages", "max_tokens", "max_completion_tokens"}.intersection(self.extra_body):
+            raise ValueError("extra_body cannot override model, messages or output-token limits")
+        return self
 
 
 class QueryInstruction(StrictModel):
@@ -89,7 +100,7 @@ class MultimodalSDGConfig(StrictModel):
     summary_embedding_credential_env: str = Field(default="NVIDIA_API_KEY", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     summary_embedding_extra_body: dict[str, Any] | None = Field(default_factory=dict)
     persona: str = "A reader seeking specific evidence and useful information from this corpus."
-    max_context_chars: int = Field(default=100000, ge=1)
+    max_context_chars: int | None = Field(default=None, ge=1)
     related_contexts_per_context: int = Field(default=0, ge=0, le=2)
     related_summary_similarity: float = Field(default=0.2, gt=0, le=1)
     judge_summaries: bool = True

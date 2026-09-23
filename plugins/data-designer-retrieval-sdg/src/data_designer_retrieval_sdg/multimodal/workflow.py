@@ -7,12 +7,20 @@ from __future__ import annotations
 
 import json
 import os
+from functools import partial
 from importlib.metadata import version
 from pathlib import Path
 
 from filelock import FileLock
 
 from data_designer_retrieval_sdg.multimodal import prompts
+from data_designer_retrieval_sdg.multimodal.bounds import (
+    RequestTooLarge,
+    check_request,
+    fit_contexts,
+    split_context,
+    validate_deployment,
+)
 from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request, source_request
 from data_designer_retrieval_sdg.multimodal.models import (
     Candidate,
@@ -124,6 +132,24 @@ def quote_verified(quote: str, text: str) -> bool:
     return bool(normalized) and normalized in " ".join(text.casefold().split())
 
 
+def evidence_summary_requests(c, sources):
+    """Build the original-evidence summary request including image attachments."""
+    return [
+        source_request(
+            prompts.render(
+                "section_summary",
+                document_description="",
+                section="See supplied sources below.",
+                language=c.language,
+            ),
+            ContextSummary,
+            "generator",
+            c,
+            sources,
+        )
+    ]
+
+
 def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
     """Summarize original evidence and optionally judge each summary against it.
 
@@ -136,23 +162,9 @@ def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
     Returns:
         Complete summary records, including rejected summaries and empty query slots.
     """
-    summaries = inference.generate(
-        [
-            source_request(
-                prompts.render(
-                    "section_summary",
-                    document_description="",
-                    section="See supplied sources below.",
-                    language=c.language,
-                ),
-                ContextSummary,
-                "generator",
-                c,
-                sources,
-            )
-            for c in contexts
-        ]
-    )
+    builder = partial(evidence_summary_requests, sources=sources)
+    contexts = fit_contexts(contexts, builder, config)
+    summaries = inference.generate([builder(c)[0] for c in contexts])
     judgments = (
         inference.generate(
             [
@@ -203,6 +215,112 @@ def generation_context_rows(selected, outcomes, sources, config) -> list[dict]:
     return result
 
 
+def generation_requests(context, sources, config):
+    """Construct the exact query prompt for deterministic slots on this membership."""
+    instructions = context_instructions(config, context.context_id)
+    return [
+        source_request(
+            prompts.render(
+                "multi_section_query_generation"
+                if len({sources[k].document_id for k in context.unit_ids}) > 1
+                else "single_section_query_generation",
+                language=context.language,
+                query_modules=[item.model_dump() for item in instructions],
+            )
+            + "\nReturn one outcome per numbered slot (zero-based slot IDs). Return query=null and "
+            'evidence_modality=none for unsupported slots. Use JSON null without quotes, never the string "null". '
+            'Example abstention: {"slot": 1, "query": null, "evidence_modality": "none"}. '
+            "Do not invent figures or tables. "
+            "Use the supplied original text as well as images; text-only inputs require no images. "
+            "No generated answers are requested.",
+            QueryBatch.for_slot_count(len(instructions)),
+            "generator",
+            context,
+            sources,
+            language=context.language,
+            instructions=[{"slot": i, **item.model_dump()} for i, item in enumerate(instructions)],
+        )
+    ]
+
+
+def judgment_requests(context, slot, sources):
+    """Build every downstream prompt using the actual generated query and evidence."""
+    return [
+        Request(prompts.render("query_metadata", query=slot.query), QueryMetadata, "judge"),
+        Request(
+            prompts.render("self_sufficiency", summary=source_text(context, sources), query=slot.query),
+            SelfSufficiencyJudgment,
+            "judge",
+        ),
+        source_request(
+            prompts.render("relevancy", summary=source_text(context, sources), query=slot.query),
+            RelevanceJudgment,
+            "judge",
+            context,
+            sources,
+            query=slot.query,
+        ),
+        source_request(prompts.LOCALIZE, Localization, "judge", context, sources, query=slot.query),
+    ]
+
+
+def bounded_query_batches(selected, outcomes, sources, config, inference):
+    """Regenerate on smaller memberships when an actual downstream request cannot fit.
+
+    Do not judge a multi-page query against only a fragment. Preserve superseded
+    generated slots in outcomes, then generate new queries on the child contexts.
+    Each split strictly reduces membership size, bounding replanning depth.
+    """
+    pending, accepted, batches = list(selected), [], []
+    builder = partial(generation_requests, sources=sources, config=config)
+    while pending:
+        rows = []
+        for row in pending:
+            context = GenerationContext.model_validate(row["context"])
+            children = fit_contexts([context], builder, config)
+            rows.extend(child_rows(row, children, outcomes))
+        for row in rows:
+            row["instructions"] = [
+                item.model_dump() for item in context_instructions(config, row["context"]["context_id"])
+            ]
+        responses = inference.generate([builder(GenerationContext.model_validate(row["context"]))[0] for row in rows])
+        pending = []
+        for row, batch in zip(rows, responses, strict=True):
+            context = GenerationContext.model_validate(row["context"])
+            try:
+                for slot in batch.queries:
+                    if slot.query is not None:
+                        for request in judgment_requests(context, slot, sources):
+                            check_request(request, config)
+            except RequestTooLarge:
+                row["slots"] = batch.model_dump()
+                row["selection_reason"] = "request_size_replanned"
+                pending.extend(child_rows(row, split_context(context), outcomes))
+            else:
+                accepted.append(row)
+                batches.append(batch)
+    return accepted, batches
+
+
+def child_rows(row, contexts, outcomes):
+    """Record every partition's lineage and retain the original row when it fits."""
+    result = []
+    for context in contexts:
+        if context.context_id == row["context"]["context_id"]:
+            result.append(row)
+        else:
+            child = {
+                **row,
+                "context": context.model_dump(),
+                "slots": {"queries": []},
+                "selection_reason": "generation_context",
+                "parent_context_id": row["context"]["context_id"],
+            }
+            outcomes.append(child)
+            result.append(child)
+    return result
+
+
 def generate_candidates(
     config: MultimodalSDGConfig,
     sources: list[RetrievalSource],
@@ -222,36 +340,9 @@ def generate_candidates(
         outcomes.extend(summarize_contexts(additional, by_id, config, inference))
     selected = select_summaries(outcomes, config)
     selected = generation_context_rows(selected, outcomes, sources, config)
+    selected, batches = bounded_query_batches(selected, outcomes, by_id, config, inference)
     contexts = [GenerationContext.model_validate(row["context"]) for row in selected]
     instructions = {c.context_id: context_instructions(config, c.context_id) for c in contexts}
-    batches = inference.generate(
-        [
-            source_request(
-                prompts.render(
-                    "multi_section_query_generation"
-                    if len({by_id[k].document_id for k in context.unit_ids}) > 1
-                    else "single_section_query_generation",
-                    language=context.language,
-                    query_modules=[item.model_dump() for item in instructions[context.context_id]],
-                )
-                + "\nReturn one outcome per numbered slot (zero-based slot IDs). Return query=null and "
-                'evidence_modality=none for unsupported slots. Use JSON null without quotes, never the string "null". '
-                'Example abstention: {"slot": 1, "query": null, "evidence_modality": "none"}. '
-                "Do not invent figures or tables. "
-                "Use the supplied original text as well as images; text-only inputs require no images. "
-                "No generated answers are requested.",
-                QueryBatch.for_slot_count(len(instructions[context.context_id])),
-                "generator",
-                context,
-                by_id,
-                language=context.language,
-                instructions=[
-                    {"slot": i, **item.model_dump()} for i, item in enumerate(instructions[context.context_id])
-                ],
-            )
-            for context, row in zip(contexts, selected, strict=True)
-        ]
-    )
     pending = []
     for context, row, batch in zip(contexts, selected, batches, strict=True):
         if sorted(slot.slot for slot in batch.queries) != list(range(len(instructions[context.context_id]))):
@@ -266,19 +357,9 @@ def generate_candidates(
             if not slot.query or slot.evidence_modality == "none":
                 raise ValueError("Generated query must be nonempty and declare evidence")
             pending.append((context, slot))
-    metadata = inference.generate(
-        [Request(prompts.render("query_metadata", query=slot.query), QueryMetadata, "judge") for _, slot in pending]
-    )
-    sufficiency = inference.generate(
-        [
-            Request(
-                prompts.render("self_sufficiency", summary=source_text(c, by_id), query=slot.query),
-                SelfSufficiencyJudgment,
-                "judge",
-            )
-            for c, slot in pending
-        ]
-    )
+    judgments = [judgment_requests(c, slot, by_id) for c, slot in pending]
+    metadata = inference.generate([requests[0] for requests in judgments])
+    sufficiency = inference.generate([requests[1] for requests in judgments])
     query_judgments = [
         QueryJudgment(
             self_sufficiency=s.self_sufficiency,
@@ -289,27 +370,10 @@ def generate_candidates(
         )
         for s, m in zip(sufficiency, metadata, strict=True)
     ]
-    relevance = inference.generate(
-        [
-            source_request(
-                prompts.render("relevancy", summary=source_text(c, by_id), query=slot.query),
-                RelevanceJudgment,
-                "judge",
-                c,
-                by_id,
-                query=slot.query,
-            )
-            for c, slot in pending
-        ]
-    )
+    relevance = inference.generate([requests[2] for requests in judgments])
     reasons_by_index = [quality_reasons(q, r, config) for q, r in zip(query_judgments, relevance, strict=True)]
     localized_indexes = [i for i, reasons in enumerate(reasons_by_index) if not reasons]
-    localizations = inference.generate(
-        [
-            source_request(prompts.LOCALIZE, Localization, "judge", pending[i][0], by_id, query=pending[i][1].query)
-            for i in localized_indexes
-        ]
-    )
+    localizations = inference.generate([judgments[i][3] for i in localized_indexes])
     by_index = dict(zip(localized_indexes, localizations, strict=True))
     candidates = []
     for i, ((context, slot), query_judge, relevance_judge) in enumerate(
@@ -380,11 +444,17 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
     root.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(root) + ".lock", timeout=0):
         sources = load_retrieval_sources(config.sources_file)
+        validate_deployment(config, any(source.images for source in sources))
         contexts = load_contexts(config, sources)
         identity = {
             "config": config.model_dump(mode="json", exclude={"resume", "output_dir"}),
             "sources": [s.model_dump() for s in sources],
             "contexts": [c.model_dump() for c in contexts],
+            "tokenizers": {
+                role: digest(model.tokenizer_file)
+                for role in ("generator", "judge")
+                if (model := getattr(config, role)).tokenizer_file is not None
+            },
             "images": {image: digest(Path(image)) for s in sources for image in s.images},
             "implementation": {
                 p.relative_to(Path(__file__).parents[1]).as_posix(): digest(p)

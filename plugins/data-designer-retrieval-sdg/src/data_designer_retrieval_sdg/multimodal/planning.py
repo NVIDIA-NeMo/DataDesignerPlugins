@@ -59,7 +59,7 @@ def bounded_contexts(
     for context in contexts:
         documents = defaultdict(list)
         for key in context.unit_ids:
-            if context_chars([key], by_id) > config.max_context_chars:
+            if config.max_context_chars is not None and context_chars([key], by_id) > config.max_context_chars:
                 raise ValueError(f"Source unit {key!r} exceeds max_context_chars; prepare smaller canonical units")
             documents[by_id[key].document_id].append(key)
         ordered = [key for group in zip_longest(*documents.values()) for key in group if key is not None]
@@ -67,7 +67,10 @@ def bounded_contexts(
         for key in ordered:
             if current and (
                 len(current) == config.max_units_per_context
-                or context_chars(current + [key], by_id) > config.max_context_chars
+                or (
+                    config.max_context_chars is not None
+                    and context_chars(current + [key], by_id) > config.max_context_chars
+                )
             ):
                 chunks.append(current)
                 current = []

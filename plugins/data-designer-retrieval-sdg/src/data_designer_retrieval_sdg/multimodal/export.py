@@ -253,7 +253,10 @@ def export_multimodal_bundle(
                     mode="json", exclude={"generator", "judge", "sources_file", "contexts_file", "output_dir", "resume"}
                 ),
             },
-            "models": {"generator": config.generator.model_dump(), "judge": config.judge.model_dump()},
+            "models": {
+                "generator": config.generator.model_dump(mode="json"),
+                "judge": config.judge.model_dump(mode="json"),
+            },
             "shared_generator_judge": config.generator.model == config.judge.model
             and config.generator.endpoint == config.judge.endpoint,
             "dataset_id": config.dataset_id,
