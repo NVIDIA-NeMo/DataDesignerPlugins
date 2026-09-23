@@ -227,7 +227,7 @@ def select_summaries(rows: list[dict], config: MultimodalSDGConfig) -> list[dict
     limit = config.summary_count or len(kept)
     if config.summary_fraction is not None:
         limit = math.ceil(Decimal(str(config.summary_fraction)) * len(kept))
-    selected = priority_selection(kept, limit) if limit < len(kept) else kept
+    selected = priority_selection(kept, limit, seed=config.seed) if limit < len(kept) else kept
     selected_ids = {id(row) for row in selected}
     for row in kept:
         if id(row) not in selected_ids:
@@ -235,8 +235,20 @@ def select_summaries(rows: list[dict], config: MultimodalSDGConfig) -> list[dict
     return selected
 
 
-def priority_selection(rows: list[dict], limit: int) -> list[dict]:
-    """Apply the reference visual/multi-document summary budget in stable input order."""
+def priority_selection(rows: list[dict], limit: int, *, seed: int = 42) -> list[dict]:
+    """Apply reference category budgets without favoring early combination members.
+
+    Args:
+        rows: Eligible summaries after quality filtering and deduplication.
+        limit: Maximum number of summaries to select.
+        seed: Reproducible ordering seed within combined-summary categories.
+
+    Returns:
+        Budgeted summaries with the reference visual/multi-document priorities.
+        Single-section categories retain input order. Combined categories use
+        seeded source-membership hashes so lexicographic combination ordering
+        does not concentrate a capped sample on early source documents.
+    """
     buckets = [[] for _ in range(6)]
     for row in rows:
         category = (
@@ -245,6 +257,10 @@ def priority_selection(rows: list[dict], limit: int) -> list[dict]:
         if not row.get("has_visual_content", bool(row["summary"]["visual_evidence"])):
             category += 3
         buckets[category].append(row)
+    for index in (0, 1, 3, 4):
+        buckets[index].sort(
+            key=lambda row: fingerprint([seed, row["context"]["language"], sorted(row["context"]["unit_ids"])])
+        )
     positions = [0] * 6
     selected = []
     while len(selected) < limit:

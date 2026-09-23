@@ -199,9 +199,16 @@ in ten). Character bounds can still split those larger planning contexts. The
 example omits this optional setting; exact deduplication always remains active.
 
 Set either `summary_count` or `summary_fraction`, never both. Fractions round up
-after quality filtering/deduplication. Budgeting prioritizes visual multi-document
+after quality filtering/deduplication. Within each combined-summary priority
+category, budgeting uses a hash of `seed`, language and sorted source-unit IDs.
+This reproducible ordering prevents the cap from favoring early documents in
+lexicographically sorted combinations. It preserves the reference category
+priorities, rather than reproducing the reference implementation's incidental
+set iteration order. Single-section categories retain input order.
+
+Budgeting prioritizes visual multi-document
 combinations, visual single-document combinations, visual sections, then the
-corresponding nonvisual groups, retaining stable order within each group. The EA
+corresponding nonvisual groups. The EA
 recipe caps selection at 400 summaries. All selection reasons and representative
 IDs remain in `context_outcomes.json`; no corpus units are removed.
 

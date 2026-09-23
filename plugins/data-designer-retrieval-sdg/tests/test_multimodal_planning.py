@@ -4,6 +4,8 @@
 """Feature parity checks on invented sources, without benchmark-specific repairs."""
 
 import json
+import random
+from itertools import combinations
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -108,6 +110,43 @@ def test_summary_quality_then_best_representative_then_fraction(tmp_path):
     assert len(rows) == 4  # No source judgment is discarded.
     count_config = config.model_copy(update={"summary_count": 2, "summary_fraction": None})
     assert len(select_summaries(rows, count_config)) == 2
+
+
+def combined_summary_pool():
+    """Build lexicographically ordered cross-document pairs with equal quality."""
+    rows = []
+    units = [(f"doc-{doc}", f"doc-{doc}/unit-{unit}") for doc in range(8) for unit in range(3)]
+    for (left_doc, left), (right_doc, right) in combinations(units, 2):
+        if left_doc != right_doc:
+            row = summary_row(f"{left}+{right}", [left, right])
+            row.update(combined=True, document_ids=[left_doc, right_doc], has_visual_content=True)
+            rows.append(row)
+    return rows
+
+
+def test_combination_budget_does_not_concentrate_on_first_document(tmp_path):
+    config = fixture_config(tmp_path).model_copy(update={"summary_count": 24})
+    rows = combined_summary_pool()
+    # Taking the first combinations previously included doc-0 in every selection.
+    assert all("doc-0" in row["document_ids"] for row in rows[:24])
+    selected = select_summaries(rows, config)
+    assert len(selected) == 24
+    assert {doc for row in selected for doc in row["document_ids"]} == {f"doc-{i}" for i in range(8)}
+    assert sum("doc-0" in row["document_ids"] for row in selected) < 12
+
+
+def test_combination_budget_is_seeded_and_independent_of_enumeration(tmp_path):
+    config = fixture_config(tmp_path).model_copy(update={"summary_count": 24})
+    rows = combined_summary_pool()
+    state = random.getstate()
+    first = [row["context"]["context_id"] for row in select_summaries(rows, config)]
+    for row in rows:
+        row["context"]["unit_ids"].reverse()
+    repeated = [row["context"]["context_id"] for row in select_summaries(list(reversed(rows)), config)]
+    assert repeated == first
+    changed_seed = config.model_copy(update={"seed": config.seed + 1})
+    assert {row["context"]["context_id"] for row in select_summaries(rows, changed_seed)} != set(first)
+    assert random.getstate() == state
 
 
 def test_near_summary_dedup_protects_values_and_disjoint_evidence(tmp_path):
