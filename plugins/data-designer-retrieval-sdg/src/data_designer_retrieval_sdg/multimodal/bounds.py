@@ -28,10 +28,10 @@ def tokenizer(path: str, sha256: str):
 
 
 def validate_model_budget(model) -> None:
-    """Fail closed for live requests when deployment-specific limits are unknown."""
+    """Validate metadata only for an explicitly enabled local model-token budget."""
     if model.context_window_tokens is None or model.tokenizer_file is None or model.request_overhead_tokens is None:
         raise ValueError(
-            "Configure context_window_tokens, tokenizer_file and request_overhead_tokens for each model; "
+            "Configure context_window_tokens, tokenizer_file and request_overhead_tokens when enabling a local model-token budget; "
             "DD's rendering limit is not a model context window"
         )
     if model.max_tokens + model.request_overhead_tokens >= model.context_window_tokens:
@@ -42,25 +42,29 @@ def validate_deployment(config, has_images: bool) -> None:
     """Validate model budgets/assets before creating an immutable run directory."""
     for role in ("generator", "judge"):
         model = getattr(config, role)
+        if model.context_window_tokens is None:
+            continue
         validate_model_budget(model)
         if has_images and model.image_tokens_per_image is None:
             raise ValueError(f"Configure image_tokens_per_image for {role} before running image SDG")
         tokenizer(str(model.tokenizer_file), digest(model.tokenizer_file))
 
 
-def check_request(request, config, *, require_model_budget=False) -> None:
+def check_request(request, config) -> None:
     """Check DD's actual rendered text and the deployment's independent token budget.
 
     The native structured recipe appends schema instructions after rendering.
     Count them for model input, plus configured chat/system overhead, image-token
     upper bounds and max_tokens output space. Local tokenizer assets and all
     deployment bounds must match the serving configuration. No universal image
-    token formula or character-to-token ratio is assumed.
+    token formula or character-to-token ratio is assumed. Without an explicit
+    context window, only the mandatory DD rendering bound is checked locally;
+    the serving provider enforces its model context limit.
     """
     if len(request.text) > environment.MAX_RENDERED_LEN:
         raise RequestTooLarge(f"Rendered prompt exceeds DD limit ({environment.MAX_RENDERED_LEN} characters)")
     model = getattr(config, request.role)
-    if require_model_budget or model.context_window_tokens is not None:
+    if model.context_window_tokens is not None:
         validate_model_budget(model)
         if request.images and model.image_tokens_per_image is None:
             raise ValueError("Configure image_tokens_per_image as a serving-model upper bound for image requests")

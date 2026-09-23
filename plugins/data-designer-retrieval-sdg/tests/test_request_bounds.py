@@ -92,10 +92,8 @@ def test_model_budget_counts_schema_utf8_images_overhead_and_output(tmp_path):
         check_request(request, config)
 
 
-@pytest.mark.parametrize(
-    "field", ["context_window_tokens", "tokenizer_file", "request_overhead_tokens", "image_tokens_per_image"]
-)
-def test_live_requests_fail_closed_without_deployment_budget(tmp_path, field):
+@pytest.mark.parametrize("field", ["tokenizer_file", "request_overhead_tokens", "image_tokens_per_image"])
+def test_explicit_model_budget_requires_consistent_metadata(tmp_path, field):
     config = fixture_config(tmp_path)
     config.generator = config.generator.model_copy(update={field: None})
     inference = DataDesignerInference(tmp_path / "unused", config)
@@ -207,11 +205,42 @@ def test_combined_summary_workflow_submits_the_checked_request(tmp_path, monkeyp
         check_request(request, config)
 
 
-def test_missing_budget_does_not_create_an_unresumable_run(tmp_path):
+def test_incomplete_opt_in_budget_does_not_create_an_unresumable_run(tmp_path):
     from data_designer_retrieval_sdg.multimodal.workflow import run_multimodal_sdg
 
     config = fixture_config(tmp_path)
-    config.generator = config.generator.model_copy(update={"context_window_tokens": None})
+    config.generator = config.generator.model_copy(update={"tokenizer_file": None})
     with pytest.raises(ValueError, match="Configure"):
         run_multimodal_sdg(config)
     assert not config.output_dir.exists()
+
+
+def without_model_budgets(config):
+    from data_designer_retrieval_sdg.multimodal.models import ModelSettings
+
+    model = ModelSettings(model="operator/vlm", endpoint="https://example.invalid/v1", credential_env="TEST_SDG_KEY")
+    return config.model_copy(update={"generator": model, "judge": model})
+
+
+def test_default_live_inference_needs_no_local_model_metadata(tmp_path):
+    from test_multimodal_sdg import MissingInference
+
+    config = without_model_budgets(fixture_config(tmp_path))
+    inference = MissingInference(tmp_path / "inference", config)
+    with pytest.raises(RuntimeError, match="Missing structured"):
+        inference.generate([Request("short", ContextSummary, "generator", (tmp_path / "page.png",))])
+    assert inference.calls == config.missing_response_attempts  # Reached the transport, with normal retry semantics.
+    with pytest.raises(RequestTooLarge, match="DD limit"):
+        inference.generate([Request("x" * (environment.MAX_RENDERED_LEN + 1), ContextSummary, "generator")])
+    assert inference.calls == config.missing_response_attempts  # Oversized prompt never reaches transport.
+
+
+def test_default_workflow_runs_without_tokenizer_or_allowances(tmp_path, monkeypatch):
+    from test_multimodal_sdg import ScriptedInference
+
+    from data_designer_retrieval_sdg.multimodal.workflow import run_multimodal_sdg
+
+    config = without_model_budgets(fixture_config(tmp_path))
+    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    result = run_multimodal_sdg(config)
+    assert result.is_file()

@@ -128,19 +128,11 @@ generator:
   model: your-image-capable-generator
   endpoint: https://your-provider.example/v1
   credential_env: SDG_API_KEY
-  tokenizer_file: /absolute/path/to/deployment/tokenizer.json
-  context_window_tokens: 131072  # example only: use the deployed model's actual window
-  image_tokens_per_image: 4096  # example only: upper bound at your serving image resolution
-  request_overhead_tokens: 1024  # example only: upper bound for chat template/system/image wrappers
   max_tokens: 8192
 judge:
   model: your-image-capable-judge
   endpoint: https://your-provider.example/v1
   credential_env: SDG_API_KEY
-  tokenizer_file: /absolute/path/to/deployment/tokenizer.json
-  context_window_tokens: 131072  # example only: use the deployed model's actual window
-  image_tokens_per_image: 4096  # example only: upper bound at your serving image resolution
-  request_overhead_tokens: 1024  # example only: upper bound for chat template/system/image wrappers
   max_tokens: 8192
 concurrency: 8
 batch_size: 30
@@ -155,18 +147,21 @@ seed: 42
 resume: false
 ```
 
-The per-role context window, local tokenizer file and request overhead are
-required before live inference. Image requests additionally require a per-image
-token upper bound. These are deployment settings, not inferred from model names;
-the example values above are not universal defaults. Use the serving model's
-matching `tokenizer.json`, the configured image resolution/tiling maximum, and an
-overhead allowance covering its chat template, system prompt and image wrappers.
-Token accounting includes DD's structured-response instructions/schema, each
-image allowance and `max_tokens` output space. The renderer ceiling remains an
-independent check. Tokenizer truncation/padding are disabled for counting, and
-tokenizer content hashes enter request caches and run identity. Missing budget
-metadata fails before provider submission. Unsupported tokenizers must be
-exported to the supported local tokenizer format before running.
+Local model-token budgeting is optional. Normal runs need no tokenizer file,
+context-window declaration or overhead/image-token allowances. The DD rendered
+prompt ceiling and whole-unit splitting always apply; the serving provider
+remains responsible for its model context limit. Provider errors propagate
+through the existing failure path, without silently truncating evidence or
+pretending the DD ceiling guarantees model compatibility.
+
+For deployments that want local token preflight, set `context_window_tokens`
+for either model role and also supply its matching local `tokenizer_file` and
+`request_overhead_tokens`, plus `image_tokens_per_image` for image requests.
+Only roles with a configured context window enable this check. Incomplete opt-in
+settings fail early. Accounting includes DD's structured schema/instructions,
+image allowances and `max_tokens` output reserve. Tokenizer truncation/padding
+are disabled; active tokenizer hashes enter cache/run identity. Use deployment
+values rather than generic character-to-token or image-token estimates.
 
 Set the named credential environment variable without placing its value in
 YAML. Model identifiers are explicit; there is no hosted-model fallback. Paths

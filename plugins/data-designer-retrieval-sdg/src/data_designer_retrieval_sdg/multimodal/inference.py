@@ -82,7 +82,8 @@ class DataDesignerInference:
                 "model": getattr(self.config, request.role).model_dump(mode="json"),
                 "images": [digest(path) for path in request.images],
                 "tokenizer_sha256": digest(getattr(self.config, request.role).tokenizer_file)
-                if getattr(self.config, request.role).tokenizer_file
+                if getattr(self.config, request.role).context_window_tokens is not None
+                and getattr(self.config, request.role).tokenizer_file
                 else None,
             }
         )
@@ -108,7 +109,7 @@ class DataDesignerInference:
         """
         groups: dict[str, dict[str, Request]] = {}
         for request in requests:
-            check_request(request, self.config, require_model_budget=True)
+            check_request(request, self.config)
             if self.cached(request) is None:
                 group = fingerprint([request.role, request.schema.model_json_schema(), bool(request.images)])
                 groups.setdefault(group, {})[self.request_key(request)] = request
@@ -129,7 +130,7 @@ class DataDesignerInference:
     def run_batch(self, items: list[tuple[str, Request]]) -> None:
         """Execute a homogeneous native DD batch and preserve every valid response."""
         for _, item in items:
-            check_request(item, self.config, require_model_budget=True)
+            check_request(item, self.config)
         request = items[0][1]
         model = getattr(self.config, request.role)
         attempt = self.root / "attempts" / uuid4().hex
