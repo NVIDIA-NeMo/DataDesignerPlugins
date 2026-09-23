@@ -181,7 +181,7 @@ def render_document(
 
     add_data_table(doc, document.key_data, table_style)
 
-    if footer_text:
+    if footer_text is not None:
         apply_footer(doc, footer_text)
 
     # Word core properties travel with the file. Downstream extraction and

@@ -6,7 +6,7 @@ from typing import Literal
 from data_designer.config.base import ProcessorConfig
 from pydantic import Field, field_validator
 
-from data_designer_docx.render import CORE_PROPERTY_NAMES
+from data_designer_docx.render import CORE_PROPERTY_NAMES, WINDOWS_DEVICE_NAMES
 
 # Directories Data Designer creates, reads, or deletes inside a dataset folder.
 # Hardcoded rather than imported so this module stays free of engine imports; the
@@ -23,6 +23,7 @@ RESERVED_DIRECTORY_NAMES = frozenset(
 )
 
 DEFAULT_FILENAME_TEMPLATE = "document.docx"
+WINDOWS_INVALID_PATH_CHARS = frozenset('<>:"|?*')
 
 
 def validate_path_component(value: str, *, field: str, allow_nested: bool) -> str:
@@ -56,6 +57,12 @@ def validate_path_component(value: str, *, field: str, allow_nested: bool) -> st
     for segment in segments:
         if segment in {".", ".."}:
             raise ValueError(f"{field}={value!r} must not contain '.' or '..' path segments.")
+        if (
+            segment.endswith((".", " "))
+            or any(char in WINDOWS_INVALID_PATH_CHARS or ord(char) < 32 for char in segment)
+            or segment.split(".", 1)[0].upper() in WINDOWS_DEVICE_NAMES
+        ):
+            raise ValueError(f"{field}={value!r} contains a directory name that is invalid on Windows.")
         if segment.casefold() in RESERVED_DIRECTORY_NAMES:
             raise ValueError(
                 f"{field}={value!r} uses the Data Designer-managed directory {segment!r}. "

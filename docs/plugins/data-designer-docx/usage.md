@@ -94,4 +94,5 @@ for changing output quality.
 ## Rows without a valid document
 
 A row whose document column fails validation is skipped: its `docx_path` is
-null, a warning is logged, and the rest of the batch still renders.
+null, a warning is logged, and the rest of the batch still renders. Templates
+that refer to document fields are evaluated only for valid rows.

@@ -110,6 +110,8 @@ class TestDocxProcessorConfig:
             "PARQUET-FILES",
             "Tmp-Partial-Parquet-Files",
             "parquet-files\\documents",
+            "parquet-files.",
+            "parquet-files ",
         ],
     )
     def test_reserved_output_subdir_is_rejected(self, reserved: str) -> None:
@@ -124,7 +126,18 @@ class TestDocxProcessorConfig:
 
     @pytest.mark.parametrize(
         "bad_name",
-        ["../../outside", "/abs", "nested/name", "..", "processors-files", "PARQUET-FILES", "parquet-files\\docs"],
+        [
+            "../../outside",
+            "/abs",
+            "nested/name",
+            "..",
+            "processors-files",
+            "PARQUET-FILES",
+            "parquet-files\\docs",
+            "CON",
+            "COM1.txt",
+            "bad:name",
+        ],
     )
     def test_unsafe_processor_name_is_rejected(self, bad_name: str) -> None:
         """The processor name becomes a directory, so it is a traversal route too."""
@@ -292,6 +305,39 @@ class TestDocxProcessorPreviewIntegration:
         assert result.dataset["docx_path"].isna().sum() == 1
         assert len(list(artifact_path.rglob("*.docx"))) == 1
 
+    def test_invalid_document_with_field_template_is_skipped(self, tmp_path: Path) -> None:
+        """An invalid row must not abort templates that read document fields."""
+        artifact_path = tmp_path / "artifacts"
+        artifact_path.mkdir()
+        seed_df = pd.DataFrame(
+            {
+                "doc_id": ["BAD", "GOOD"],
+                "document": [json.dumps({"nope": True}), make_document("Good").model_dump_json()],
+            }
+        )
+        builder = DataDesignerConfigBuilder()
+        builder.with_seed_dataset(DataFrameSeedSource(df=seed_df))
+        builder.add_column(ExpressionColumnConfig(name="doc_label", expr="{{ doc_id }}"))
+        builder.add_processor(
+            DocxProcessorConfig(name="docs", document_column="document", filename_template="{{ document.title }}.docx")
+        )
+
+        result = DataDesigner(artifact_path=artifact_path).preview(builder, num_records=2)
+
+        assert pd.isna(result.dataset["docx_path"].iloc[0])
+        assert result.dataset["docx_path"].iloc[1] == "documents/docs/Good.docx"
+        assert len(list(artifact_path.rglob("*.docx"))) == 1
+
+    def test_existing_output_column_is_not_overwritten(self, tmp_path: Path) -> None:
+        processor = build_processor(tmp_path)
+        data = pd.DataFrame({"document": [make_document().model_dump()], "docx_path": ["existing"]})
+
+        with pytest.raises(ValueError, match="already exists"):
+            processor.process_after_batch(data, current_batch_number=0)
+
+        assert data["docx_path"].iloc[0] == "existing"
+        assert not list(tmp_path.rglob("*.docx"))
+
 
 class TestStructuredStringPreservation:
     """Regression tests for JSON-decoding of already-decoded document mappings.
@@ -363,6 +409,15 @@ class TestFilenameCollisions:
 
         assert processor.unique_filename("same") == "same-1.docx"
 
+    def test_seeds_case_insensitive_extension(self, tmp_path: Path) -> None:
+        output_dir = self.make_processor_dir(tmp_path)
+        (output_dir / "same.DOCX").write_bytes(b"existing")
+
+        processor = build_processor(tmp_path, filename_template="same.docx")
+        processor.seed_used_filenames(output_dir)
+
+        assert processor.unique_filename("same") == "same-1.docx"
+
     def test_output_dir_stays_inside_dataset(self, tmp_path: Path) -> None:
         processor = build_processor(tmp_path)
         assert processor.output_dir.is_relative_to((tmp_path / "dataset").resolve())
@@ -405,6 +460,17 @@ class TestFilenameCollisions:
 
 
 class TestFooterTargeting:
+    def test_empty_footer_clears_template_footer(self, tmp_path: Path) -> None:
+        """A rendered empty footer should remove the template's old footer text."""
+        template_path = tmp_path / "template.docx"
+        template = Document()
+        template.sections[0].footer.paragraphs[0].text = "Old footer"
+        template.save(str(template_path))
+
+        path = render_document(make_document(), tmp_path / "out.docx", template_path=template_path, footer_text="")
+
+        assert Document(str(path)).sections[0].footer.paragraphs[0].text == ""
+
     def test_footer_applies_to_every_section(self, tmp_path: Path) -> None:
         """Generated content lands in the template's last section, not the first."""
         template_path = tmp_path / "two-section-template.docx"

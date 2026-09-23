@@ -124,7 +124,11 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
         if self._seeded_from_disk:
             return
         if output_dir.is_dir():
-            existing = {collision_key(path.name) for path in output_dir.glob(f"*{DOCX_SUFFIX}")}
+            existing = {
+                collision_key(path.name)
+                for path in output_dir.iterdir()
+                if path.is_file() and path.suffix.casefold() == DOCX_SUFFIX
+            }
             self._used_filenames.update(existing)
             if existing:
                 logger.debug(f"Seeded {len(existing)} existing document name(s) from {output_dir}.")
@@ -198,7 +202,8 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
         """Pre-render every configured template across the batch.
 
         Args:
-            records: The batch records, with nested JSON decoded for template access.
+            records: Valid batch records with nested JSON decoded for template
+                access, except for the document's preserved string values.
             columns: Column names allowed as template references.
 
         Returns:
@@ -244,13 +249,25 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
                 f"Column {self.config.document_column!r} not found in the dataset. "
                 f"Available columns: {sorted(data.columns)}"
             )
+        if self.config.output_path_column in data.columns:
+            raise ValueError(
+                f"Output column {self.config.output_path_column!r} already exists. "
+                "Choose a new output_path_column so existing data is not overwritten."
+            )
 
         columns = data.columns.to_list()
-        # Documents are read from the raw records; only the template-facing copy is
-        # recursively JSON-decoded, since that decoding rewrites string leaves.
+        # Parse before rendering templates: an invalid document must not cause a
+        # template such as {{ document.title }} to abort the entire batch.
         raw_records = data.to_dict(orient="records")
+        valid_rows = []
+        documents = []
         template_records = []
-        for record in raw_records:
+        for row, record in enumerate(raw_records):
+            document = self.parse_document(record.get(self.config.document_column))
+            if document is None:
+                continue
+            valid_rows.append(row)
+            documents.append(document)
             template_record = deserialize_json_values(record)
             document_value = record[self.config.document_column]
             if isinstance(document_value, Mapping):
@@ -267,24 +284,21 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
         output_dir.mkdir(parents=True, exist_ok=True)
         self.seed_used_filenames(output_dir)
 
-        written: list[str | None] = []
-        for row, record in enumerate(raw_records):
-            document = self.parse_document(record.get(self.config.document_column))
-            if document is None:
-                written.append(None)
-                continue
-            filename = self.unique_filename(options["filenames"][row])
+        written: list[str | None] = [None] * len(raw_records)
+        for index, row in enumerate(valid_rows):
+            document = documents[index]
+            filename = self.unique_filename(options["filenames"][index])
             render_document(
                 document,
                 output_dir / filename,
-                metadata={label: values[row] for label, values in options["metadata"].items()},
+                metadata={label: values[index] for label, values in options["metadata"].items()},
                 template_path=self.config.template_path,
-                footer_text=options["footers"][row] if options["footers"] else None,
+                footer_text=options["footers"][index] if options["footers"] else None,
                 table_style=self.config.table_style,
                 number_sections=self.config.number_sections,
-                core_properties={prop: values[row] for prop, values in options["core_properties"].items()},
+                core_properties={prop: values[index] for prop, values in options["core_properties"].items()},
             )
-            written.append(self.relative_path(filename))
+            written[row] = self.relative_path(filename)
 
         data[self.config.output_path_column] = written
         logger.info(f"📄 Wrote {sum(path is not None for path in written)} .docx file(s) to {output_dir}")

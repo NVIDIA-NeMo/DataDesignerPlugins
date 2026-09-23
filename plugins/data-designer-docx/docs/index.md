@@ -51,7 +51,7 @@ parquet and marks the dataset terminal for resume.
 
 **Output location.** Documents are written to `<output_subdir>/<name>/`, never
 under `processors-files/`. Both components are validated as contained, relative,
-non-reserved path segments, and the resolved directory is asserted to sit beneath
+non-reserved path segments that also work on Windows, and the resolved directory is asserted to sit beneath
 the dataset directory before anything is written. Data Designer reads every directory there back as a
 parquet dataset, so `.docx` files placed there make `preview()` fail with
 *"Parquet magic bytes not found in footer"*. Binary artifacts get their own
@@ -96,7 +96,11 @@ macOS and Windows treat `A.docx` and `a.docx` as the same file, and the set is
 seeded from documents already on disk. A resumed run therefore cannot overwrite a
 document written by a batch that completed before the resume.
 
+**Output column.** If `output_path_column` already exists in a batch, the
+processor raises an error before writing files so it cannot overwrite row data.
+
 **Footers.** Generated content is appended after any body content the template
 already has, so it lands in the template's final section. `footer_template` is
 applied to every section rather than just the first, which would otherwise leave
-the generated pages showing the template's own footer.
+the generated pages showing the template's own footer. An empty rendered footer
+also clears footer text inherited from the template.
