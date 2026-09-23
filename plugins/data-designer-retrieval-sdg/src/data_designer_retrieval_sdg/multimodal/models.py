@@ -167,6 +167,13 @@ class Description(StrictModel):
     description: str
 
 
+class TOCConfirmation(StrictModel):
+    """A recorded classification, not permission to trust printed page offsets."""
+
+    explanation: str
+    has_table_of_contents: bool = Field(strict=True)
+
+
 class VisualDescription(Description):
     """Visual enrichment kept separate from original source text."""
 

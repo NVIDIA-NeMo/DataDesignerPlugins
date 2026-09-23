@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections import defaultdict
 
 from data_designer_retrieval_sdg.multimodal import prompts
@@ -16,47 +15,13 @@ from data_designer_retrieval_sdg.multimodal.models import (
     ContextSummary,
     Description,
     GenerationContext,
-    MultimodalSDGConfig,
     SummaryJudgment,
     VisualDescription,
 )
 from data_designer_retrieval_sdg.multimodal.planning import automatic_contexts, bounded_contexts
+from data_designer_retrieval_sdg.multimodal.sections import section_contexts, verify_section_coverage
 from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
 from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
-
-
-def section_contexts(sources: list[RetrievalSource], config: MultimodalSDGConfig) -> list[GenerationContext]:
-    """Form heading-aware sections from whole generic units in caller-provided reading order.
-
-    Unit identity is never parsed as a page number. Without heading boundaries,
-    use the reference five-unit section size. A heading starting inside the last
-    unit is also visible to the following section, retaining whole-unit evidence.
-    """
-    by_id = {s.unit_id: s for s in sources}
-    output = []
-    for document in automatic_contexts(sources, "document"):
-        pending = []
-        for key in document.unit_ids:
-            pending.append(key)
-            if len(pending) >= config.section_size:
-                output.append(
-                    GenerationContext(
-                        context_id="section_" + fingerprint([document.context_id, pending])[:32],
-                        unit_ids=pending,
-                        language=document.language,
-                    )
-                )
-                text = by_id[key].text
-                pending = [key] if config.section_size > 1 and re.search(r"\n#{1,5} ", text) else []
-        if pending and (not output or pending != output[-1].unit_ids):
-            output.append(
-                GenerationContext(
-                    context_id="section_" + fingerprint([document.context_id, pending])[:32],
-                    unit_ids=pending,
-                    language=document.language,
-                )
-            )
-    return output
 
 
 def visual_description(visual: dict, unit_id: str) -> str:
@@ -174,6 +139,8 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
     """
     root = config.output_dir / "planning"
     by_id = {s.unit_id: s for s in sources}
+    if config.contexts_file is None:
+        contexts = section_contexts(sources, config, inference)
     visual = visual_enrichment(sources, inference)
     write_json(root / "visual_descriptions.json", visual)
     descriptions = describe_documents(sources, visual, config, inference)
@@ -181,11 +148,11 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
         root / "document_descriptions.json",
         [{"document_id": key[0], "language": key[1], "description": value} for key, value in descriptions.items()],
     )
-    if config.contexts_file is None:
-        contexts = section_contexts(sources, config)
     # Section summaries need text, not bounded image attachments. Keep larger memberships
     # for semantic combinations and deduplication; bound image requests after selection.
     contexts = bounded_enriched_contexts(contexts, sources, visual, config)
+    if config.contexts_file is None:
+        verify_section_coverage(contexts, sources, 2 * config.section_size)
     summaries = inference.generate(
         [
             Request(

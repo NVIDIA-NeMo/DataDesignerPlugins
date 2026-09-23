@@ -1,8 +1,10 @@
-The query templates, module definitions, summary grading and selection/clustering
-algorithms are adapted from illuin-tech/vidore-v3-generation at revision
+The query templates, module definitions, heading/TOC section planning, summary
+grading and selection/clustering algorithms are adapted from illuin-tech/vidore-v3-generation at revision
 2cfd2f78b8ae4f4bedd87d67f373dc51c12a856e (https://github.com/illuin-tech/vidore-v3-generation).
 They operate on the generic retrieval source contract; no benchmark dataset
-loader, filenames, page-number schema, or external source checkout is required.
+loader, filenames, or external source checkout is required. Optional generic
+page_number metadata is used only for corroborated TOC alignment; source units
+are never split or reconstructed from parsed markdown offsets.
 
 MIT License
 

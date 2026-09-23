@@ -42,9 +42,24 @@ smaller canonical units rather than truncating it or changing its identity here.
 
 The Nemotron EA profile selects `context_strategy: sections`. It describes
 images separately from original source text, describes documents, and
-summarizes five-unit sections in document/language input order. A markdown heading
-inside a boundary unit keeps that whole unit in the next section too. No page
-numbers, filenames, dataset fields or page-break delimiters are interpreted.
+summarizes whole-unit sections in document/language input order. Automatic
+sections use nonrepeated markdown headings and confirmed table-of-contents (TOC)
+boundaries. Likely TOC units receive a structured judge request through the same
+content-addressed cache and bounded retry path as other inference. A confirmation
+does not authorize trusting the printed page numbers: titles must match normalized
+source lines, or two distinct title/page anchors must establish a consistent
+offset into explicit, strictly increasing `page_number` metadata. Unit IDs and
+filenames are never parsed as page numbers. Missing/ambiguous offsets, invalid
+pages and backward boundaries are rejected; Roman labels and unsupported TOC
+formats fall back to headings or fixed-size sections.
+
+`section_size` is the target (default 5); structural sections can span up to twice
+that many units (default 10). Gaps without usable structure use the target size.
+A heading inside a unit maps to the start of that whole unit; text is never split
+or reconstructed. Every source unit must appear exactly once in reading order
+within its document/language, including the final unit. Coverage is checked again
+after enriched-text bounding. `planning/section_boundaries.json` records TOC
+confirmations, accepted/rejected mappings, detected boundaries and coverage.
 Explicit contexts replace automatic sections. Set `combination_iterations: 0`
 to generate only from supplied memberships (subject to selection and bounds).
 
