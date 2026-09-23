@@ -16,6 +16,17 @@ Browse available Data Designer plugins by what they add to your data generation 
       <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">github</span></span>
     </span>
   </a>
+  <a class="plugin-doc-card" href="data-designer-nemotron-bharat-translation/" aria-label="Open data-designer-nemotron-bharat-translation documentation">
+    <span class="plugin-doc-card__header">
+      <span class="plugin-doc-card__title">data-designer-nemotron-bharat-translation</span>
+      <span class="plugin-doc-card__version">v0.1.0</span>
+    </span>
+    <span class="plugin-doc-card__description">Document translation (with optional windowing for long documents and deterministic script remapping) plugin for Nemotron Bharat Indic-language pretraining data</span>
+    <span class="plugin-doc-card__section">
+      <span class="plugin-doc-card__label">Entry points</span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">document-translation</span></span>
+    </span>
+  </a>
   <a class="plugin-doc-card" href="data-designer-retrieval-sdg/" aria-label="Open data-designer-retrieval-sdg documentation">
     <span class="plugin-doc-card__header">
       <span class="plugin-doc-card__title">data-designer-retrieval-sdg</span>
