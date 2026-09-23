@@ -30,12 +30,12 @@ Browse available Data Designer plugins by what they add to your data generation 
   <a class="plugin-doc-card" href="data-designer-retrieval-sdg/" aria-label="Open data-designer-retrieval-sdg documentation">
     <span class="plugin-doc-card__header">
       <span class="plugin-doc-card__title">data-designer-retrieval-sdg</span>
-      <span class="plugin-doc-card__version">v0.2.1</span>
+      <span class="plugin-doc-card__version">v0.3.0a1</span>
     </span>
     <span class="plugin-doc-card__description">Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion</span>
     <span class="plugin-doc-card__section">
       <span class="plugin-doc-card__label">Entry points</span>
-      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">document-chunker</span><span class="plugin-doc-chip">embedding-dedup</span></span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">document-chunker</span><span class="plugin-doc-chip">embedding-dedup</span><span class="plugin-doc-chip">retrieval-structured</span></span>
     </span>
   </a>
   <a class="plugin-doc-card" href="data-designer-template/" aria-label="Open data-designer-template documentation">

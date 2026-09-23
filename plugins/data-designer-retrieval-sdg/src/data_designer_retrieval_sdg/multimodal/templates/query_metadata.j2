@@ -1,0 +1,28 @@
+Classify the query as written and determine whether it contains its own answer.
+
+This is metadata labeling for retrieval training, not a quality or instruction-following
+judgment. Do not reject the query and do not infer a requested label. Use exactly one
+actual_query_type and one actual_query_format from the definitions below.
+
+Query types:
+- open-ended: asks for an explanation, synthesis, rationale, or broad qualitative account.
+- compare-contrast: asks to compare or distinguish two or more entities, groups, or conditions.
+- enumerative: asks for a list, set, categories, factors, steps, or multiple named items.
+- numerical: requires a numerical value, calculation, quantitative comparison, or trend.
+- boolean: can be answered primarily yes/no or true/false.
+- extractive: asks for one directly stated fact, entity, definition, date, or short span.
+- multi-hop: requires combining distinct facts or evidence steps that are not merely a list,
+  comparison, or single calculation. Use this only when the query itself signals that composition.
+
+Query formats:
+- question: an interrogative sentence or question-like request.
+- instruction: an imperative or directive such as explain, identify, summarize, or compare.
+- keyword: a search-style phrase rather than a complete question or instruction.
+
+Set has_answer=true only when the query states or embeds the substantive answer it asks the
+retriever to find. Necessary premises, constraints, entity names, dates, and quantities needed
+to formulate the information need are not by themselves answer leakage. A yes/no question does
+not contain its answer merely because it names the proposition to verify.
+
+Query:
+<query>{{ query }}</query>

@@ -1,7 +1,7 @@
 # data-designer-retrieval-sdg
 
 Data Designer toolkit for **retriever synthetic data generation**. The
-package registers two `data_designer.plugins` entry points, ships a
+package registers three `data_designer.plugins` entry points, ships a
 ready-made multi-step QA generation pipeline, and exposes a CLI that
 generates QA pairs and converts them into training formats compatible
 with [Automodel](https://github.com/NVIDIA-NeMo/Automodel) retriever
@@ -9,18 +9,35 @@ finetuning.
 
 ## Plugins
 
-A single package contributes two plugins to DataDesigner's registries
+A single package contributes three plugins to DataDesigner's registries
 via `[project.entry-points."data_designer.plugins"]`:
 
 | Slug | Type | Purpose |
 |------|------|---------|
 | `embedding-dedup` | column generator | Generic cosine-similarity dedup of any list-valued column. Implements native `agenerate()` for the async engine. |
 | `document-chunker` | seed reader | Sentence-chunks a directory of text files and emits structured sections, with optional multi-document bundling. |
+| `retrieval-structured` | column generator | Native structured generation accepting one complete bare or JSON-fenced object, with schema validation and bounded corrections. |
 
-Both are registered automatically through Python entry points when the
+All are registered automatically through Python entry points when the
 package is installed (see [Installation](#installation)).
 
+## Retrieval data from text and images
+
+For new multimodal fine-tuning workflows, use the
+[retrieval-first EA candidate](docs/multimodal-ea.md): direct text/image query
+generation, source-blind query judging, source-aware relevance and graded
+positive localization, followed by grouped-query export over a shared corpus.
+It accepts generic unit/context JSONL and requires explicit generator/judge
+models. It has no dataset-specific adapters or external benchmark dependencies.
+
+The existing QA pipeline and conversion CLI remain available for existing
+clients. Their [QA input contract](docs/retrieval-inputs.md) is separate from the
+new EA entry point. PDF parsing/OCR remain caller-owned preprocessing.
+
 ## Native async and resumable generation
+
+This section describes the existing QA `generate` command. The EA workflow has
+its own documented immutable request cache and explicit resume policy.
 
 `embedding-dedup` implements `agenerate()` directly on top of
 `model.agenerate_text_embeddings`, so the column participates in
@@ -42,7 +59,12 @@ data-designer-retrieval-sdg generate \
 Use `--resume if_possible` to resume when compatible artifacts are available and
 start fresh otherwise. DataDesigner owns checkpoint discovery, configuration
 compatibility, partial-result cleanup, and the behavior of every resume mode. The
-plugin does not maintain a second resume state or inspect corpus bytes.
+plugin does not maintain a second resume state. For canonical
+`RetrievalSourcesFile` inputs, it creates content-addressed snapshots of the
+ordered source rows and image bytes under the artifact path before handing the
+rows to Data Designer. This makes source changes visible to Data Designer's
+native configuration fingerprint. The legacy document-chunker path retains its
+existing resume behavior.
 
 `--buffer-size` controls DataDesigner's checkpoint/write granularity and remains
 part of the resolved config. DataDesigner still profiles the completed dataset
@@ -274,10 +296,10 @@ from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 config_builder.add_column(
     EmbeddingDedupColumnConfig(
         name="deduplicated_qa_pairs",
-        source_column="qa_generation",   # upstream column with the items
-        items_key="pairs",               # key under the source column ("None" if the column is already a list)
-        text_field="question",           # field on each item to embed
-        model_alias="embed",             # registered embedding model alias
+        source_column="qa_generation",  # upstream column with the items
+        items_key="pairs",  # key under the source column ("None" if the column is already a list)
+        text_field="question",  # field on each item to embed
+        model_alias="embed",  # registered embedding model alias
         similarity_threshold=0.9,
     )
 )
@@ -295,7 +317,7 @@ seed_source = DocumentChunkerSeedSource(
     file_extensions=[".txt", ".md"],
     sentences_per_chunk=5,
     num_sections=1,
-    multi_doc=False,                # set True for bundle-per-row mode
+    multi_doc=False,  # set True for bundle-per-row mode
 )
 ```
 

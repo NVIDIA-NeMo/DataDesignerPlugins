@@ -1,0 +1,48 @@
+-- allium: 3
+-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+-- Scope: Native-text support at the grounding-judge and recipe-export boundary.
+-- Excludes: A deterministic proof of semantic entailment or visual accuracy.
+
+contract NativeTextEvidence {
+    export_candidates: (records: Any) -> Any
+
+    @invariant BindQuotesToPositiveSourceUnits
+        -- Every supplied native-text evidence quote names a declared positive
+        -- unit and occurs in that unit's original supplied text after whitespace
+        -- normalization only. Empty/whitespace quotes, changed case/numbers,
+        -- paraphrases, image transcriptions and generated answer/evidence text
+        -- cannot replace an actual source-text match. Validate supplied quotes
+        -- regardless of the candidate's modality label or presence of images.
+
+    @invariant RequireNativeSupportWhenPixelsCouldConfound
+        -- For text_only candidates with any image-bearing positive unit,
+        -- require matching quotes covering every positive unit. Missing quotes
+        -- or uncovered positives cause quarantine with a stable diagnostic.
+        -- A nonempty native title is not sufficient to bypass this requirement.
+
+    @invariant PreserveTextCompatibilityAndImageEvidence
+        -- Candidates whose positives are entirely text-only may omit
+        -- native-text quotes at this gate. Independent source assessment is
+        -- still mandatory for verified export. Image-grounded
+        -- candidates need not invent native-text quotes. The shared grounding
+        -- prompt requests supporting quotes for every new text_only judgement.
+
+    @invariant RetainSemanticJudgementAndProvenance
+        -- The grounding judge must determine whether quoted native text supports
+        -- every material answer claim without consulting pixels. Quote membership
+        -- alone is not proof of entailment. Pixel-dependent support remains
+        -- image_grounded even when some unrelated native text is present.
+        -- Generated evidence is never authoritative source text. Preserve all
+        -- existing query/grounding gates and original modality labels; quarantine
+        -- failed candidates without rewriting or automatically relabelling them.
+        -- Retain supplied quotes in the portable source-record judge audit.
+
+    @invariant IndependentlyVerifyNumericEvidence
+        -- The answer-blind source assessment directs independent reading of
+        -- every needed number, date and table cell from the positive source, with
+        -- row/column labels and units checked. Uncertain or unreadable material
+        -- values are unsupported, not accepted by trusting generated claims.
+        -- A prompt-contract test proves these instructions are present, not
+        -- that a probabilistic judge always reads pixels or numbers correctly.
+}
