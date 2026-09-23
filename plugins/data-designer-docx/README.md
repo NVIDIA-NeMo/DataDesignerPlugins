@@ -43,4 +43,8 @@ config_builder.add_processor(
 Files land in `<artifact_path>/<dataset>/documents/word-documents/`, and the
 relative path of each one is written back into the dataset as `docx_path`.
 
+Data Designer 0.9.1 through 0.9.3 do not include this DOCX folder in their artifact inventory
+or standard Hub upload. Upload the folder separately at the same relative path
+when publishing a dataset; see the [artifact publishing note](docs/index.md#artifact-publishing-limitation).
+
 See [`docs/`](docs/) for the full field reference and design notes.

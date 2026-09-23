@@ -3,11 +3,13 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 from data_designer.config import ExpressionColumnConfig
 from data_designer.config.config_builder import DataDesignerConfigBuilder
+from data_designer.config.run_config import ResumeMode
 from data_designer.config.seed_source_dataframe import DataFrameSeedSource
 from data_designer.engine.testing.utils import assert_valid_plugin
 from data_designer.interface.data_designer import DataDesigner
@@ -56,6 +58,11 @@ class BoundDocxProcessor(DocxProcessor):
     def base_dataset_path(self) -> Path:
         return self._base_dataset_path
 
+    @property
+    def artifact_storage(self) -> SimpleNamespace:
+        """Expose the managed paths used by the output guard."""
+        return self._artifact_storage
+
 
 def build_processor(tmp_path: Path, **overrides: object) -> BoundDocxProcessor:
     """Construct a BoundDocxProcessor over a temporary dataset directory."""
@@ -64,6 +71,13 @@ def build_processor(tmp_path: Path, **overrides: object) -> BoundDocxProcessor:
 
     processor = BoundDocxProcessor.__new__(BoundDocxProcessor)
     processor._base_dataset_path = dataset_path
+    processor._artifact_storage = SimpleNamespace(
+        final_dataset_path=dataset_path / "parquet-files",
+        partial_results_path=dataset_path / "tmp-partial-parquet-files",
+        dropped_columns_dataset_path=dataset_path / "dropped-columns-parquet-files",
+        processors_outputs_path=dataset_path / "processors-files",
+        media_storage=SimpleNamespace(images_dir=dataset_path / "images"),
+    )
     processor._config = DocxProcessorConfig(name="docs", document_column="document", **overrides)
     processor._initialize()
     return processor
@@ -93,6 +107,9 @@ class TestDocxProcessorConfig:
             "./processors-files",
             "foo/../parquet-files",
             "nested/images",
+            "PARQUET-FILES",
+            "Tmp-Partial-Parquet-Files",
+            "parquet-files\\documents",
         ],
     )
     def test_reserved_output_subdir_is_rejected(self, reserved: str) -> None:
@@ -100,12 +117,15 @@ class TestDocxProcessorConfig:
         with pytest.raises(ValidationError):
             DocxProcessorConfig(name="docs", document_column="document", output_subdir=reserved)
 
-    @pytest.mark.parametrize("escaping", ["../outside", "/private/tmp/outside", "a/../../outside", ""])
+    @pytest.mark.parametrize("escaping", ["../outside", "/private/tmp/outside", "a/../../outside", "", "/", "\\"])
     def test_escaping_output_subdir_is_rejected(self, escaping: str) -> None:
         with pytest.raises(ValidationError):
             DocxProcessorConfig(name="docs", document_column="document", output_subdir=escaping)
 
-    @pytest.mark.parametrize("bad_name", ["../../outside", "/abs", "nested/name", "..", "processors-files"])
+    @pytest.mark.parametrize(
+        "bad_name",
+        ["../../outside", "/abs", "nested/name", "..", "processors-files", "PARQUET-FILES", "parquet-files\\docs"],
+    )
     def test_unsafe_processor_name_is_rejected(self, bad_name: str) -> None:
         """The processor name becomes a directory, so it is a traversal route too."""
         with pytest.raises(ValidationError):
@@ -114,6 +134,11 @@ class TestDocxProcessorConfig:
     def test_nested_output_subdir_is_allowed(self) -> None:
         config = DocxProcessorConfig(name="docs", document_column="document", output_subdir="out/word")
         assert config.output_subdir == "out/word"
+
+    @pytest.mark.parametrize("property_name", ["autor", "_element", "created", "revision"])
+    def test_unsupported_core_property_is_rejected(self, property_name: str) -> None:
+        with pytest.raises(ValidationError, match="Unsupported core properties"):
+            DocxProcessorConfig(name="docs", document_column="document", core_property_columns={property_name: "value"})
 
 
 class TestSafeFilename:
@@ -124,6 +149,13 @@ class TestSafeFilename:
             ("already.docx", "already.docx"),
             ("../../etc/passwd", "etc-passwd.docx"),
             ("///", "document.docx"),
+            ("CON", "_CON.docx"),
+            ("NUL.txt", "_NUL.txt.docx"),
+            ("COM1", "_COM1.docx"),
+            ("LPT9", "_LPT9.docx"),
+            ("CON.txt", "_CON.txt.docx"),
+            ("PRN", "_PRN.docx"),
+            ("AUX", "_AUX.docx"),
         ],
     )
     def test_sanitizes(self, raw: str, expected: str) -> None:
@@ -142,6 +174,10 @@ class TestNormalizeRows:
 
 
 class TestRenderDocument:
+    def test_invalid_core_property_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Unsupported Word core property"):
+            render_document(make_document(), tmp_path / "out.docx", core_properties={"_element": "bad"})
+
     def test_writes_readable_docx(self, tmp_path: Path) -> None:
         path = render_document(
             make_document(),
@@ -275,13 +311,21 @@ class TestStructuredStringPreservation:
     def test_scalar_looking_strings_survive_as_mapping(self, tmp_path: Path) -> None:
         artifact_path = tmp_path / "artifacts"
         artifact_path.mkdir()
-        seed_df = pd.DataFrame({"doc_id": ["POL-1"], "document": [json.dumps(self.numeric_document())]})
+        document = self.numeric_document()
+        document["title"] = "true"
+        document["subtitle"] = "null"
+        seed_df = pd.DataFrame({"doc_id": ["POL-1"], "document": [document]})
 
         builder = DataDesignerConfigBuilder()
         builder.with_seed_dataset(DataFrameSeedSource(df=seed_df))
         builder.add_column(ExpressionColumnConfig(name="doc_label", expr="{{ doc_id }}"))
         builder.add_processor(
-            DocxProcessorConfig(name="docs", document_column="document", filename_template="{{ doc_id }}.docx")
+            DocxProcessorConfig(
+                name="docs",
+                document_column="document",
+                filename_template="{{ document.title }}.docx",
+                metadata_columns={"Subtitle": "{{ document.subtitle }}"},
+            )
         )
 
         result = DataDesigner(artifact_path=artifact_path).preview(builder, num_records=1)
@@ -289,6 +333,8 @@ class TestStructuredStringPreservation:
         assert result.dataset["docx_path"].notna().all(), "row was skipped instead of rendered"
         written = sorted(artifact_path.rglob("*.docx"))
         assert len(written) == 1
+        assert written[0].name == "true.docx"
+        assert Document(str(written[0])).tables[0].rows[0].cells[1].text == "null"
         cells = [cell.text for cell in Document(str(written[0])).tables[-1].rows[1].cells]
         assert cells == ["30", "true", "null"], f"string leaves were coerced: {cells}"
 
@@ -320,6 +366,42 @@ class TestFilenameCollisions:
     def test_output_dir_stays_inside_dataset(self, tmp_path: Path) -> None:
         processor = build_processor(tmp_path)
         assert processor.output_dir.is_relative_to((tmp_path / "dataset").resolve())
+
+    def test_runtime_guard_uses_managed_paths(self, tmp_path: Path) -> None:
+        processor = build_processor(tmp_path, output_subdir="custom-output")
+        storage = processor.artifact_storage
+        storage.final_dataset_path = tmp_path / "dataset" / "CUSTOM-OUTPUT"
+        with pytest.raises(ValueError, match="Data Designer-managed"):
+            _ = processor.output_dir
+
+    def test_create_resume_preserves_existing_document(self, tmp_path: Path) -> None:
+        """A public resume must retain the first document and give the next a new name."""
+        artifact_path = tmp_path / "artifacts"
+        artifact_path.mkdir()
+        seed_df = pd.DataFrame(
+            {
+                "doc_id": ["POL-1", "POL-2"],
+                "document": [make_document("First").model_dump_json(), make_document("Second").model_dump_json()],
+            }
+        )
+        builder = DataDesignerConfigBuilder()
+        builder.with_seed_dataset(DataFrameSeedSource(df=seed_df))
+        builder.add_column(ExpressionColumnConfig(name="doc_label", expr="{{ doc_id }}"))
+        builder.add_processor(
+            DocxProcessorConfig(name="docs", document_column="document", filename_template="same.docx")
+        )
+        designer = DataDesigner(artifact_path=artifact_path)
+        first = designer.create(builder, num_records=1, dataset_name="resume-docx")
+        first_path = first.artifact_storage.base_dataset_path / "documents/docs/same.docx"
+        original = first_path.read_bytes()
+
+        resumed = designer.create(builder, num_records=2, dataset_name="resume-docx", resume=ResumeMode.ALWAYS)
+
+        assert first_path.read_bytes() == original
+        assert sorted(resumed.load_dataset()["docx_path"].tolist()) == [
+            "documents/docs/same-1.docx",
+            "documents/docs/same.docx",
+        ]
 
 
 class TestFooterTargeting:

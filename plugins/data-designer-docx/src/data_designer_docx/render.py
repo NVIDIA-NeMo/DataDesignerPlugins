@@ -20,6 +20,24 @@ from docx.shared import Pt
 from data_designer_docx.schema import DocTable, WordDocument
 
 UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+WINDOWS_DEVICE_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+)
+CORE_PROPERTY_NAMES = frozenset(
+    {
+        "author",
+        "category",
+        "comments",
+        "content_status",
+        "identifier",
+        "keywords",
+        "language",
+        "last_modified_by",
+        "subject",
+        "title",
+        "version",
+    }
+)
 
 # "Table Grid" ships with the python-docx default template. Corporate templates
 # usually define their own; see `table_style` on the processor config.
@@ -33,7 +51,10 @@ def safe_filename(name: str, *, suffix: str = ".docx", max_length: int = 120) ->
         stem = stem[: -len(suffix)]
     if not stem:
         stem = "document"
-    return stem[:max_length] + suffix
+    stem = stem[:max_length].rstrip(" .")
+    if stem.split(".", 1)[0].upper() in WINDOWS_DEVICE_NAMES:
+        stem = f"_{stem}"[:max_length]
+    return stem + suffix
 
 
 def normalize_rows(table: DocTable) -> list[list[str]]:
@@ -123,7 +144,7 @@ def render_document(
         template_path: Optional ``.docx`` whose styles, header, and footer are
             inherited. The template should contain styles only — any body
             content in it will appear above the generated content.
-        footer_text: Optional footer applied to the first section.
+        footer_text: Optional footer applied to every section.
         table_style: Table style name. Must exist in the (template) document.
         number_sections: Prefix section headings with ``1.``, ``2.``, ...
         core_properties: Optional Word core properties (author, category, ...).
@@ -168,7 +189,9 @@ def render_document(
     if core_properties:
         props = doc.core_properties
         for key, value in core_properties.items():
-            if hasattr(props, key) and value is not None:
+            if key not in CORE_PROPERTY_NAMES:
+                raise ValueError(f"Unsupported Word core property: {key!r}")
+            if value is not None:
                 setattr(props, key, str(value))
 
     doc.save(str(output_path))

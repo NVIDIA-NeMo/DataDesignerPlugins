@@ -6,6 +6,8 @@ from typing import Literal
 from data_designer.config.base import ProcessorConfig
 from pydantic import Field, field_validator
 
+from data_designer_docx.render import CORE_PROPERTY_NAMES
+
 # Directories Data Designer creates, reads, or deletes inside a dataset folder.
 # Hardcoded rather than imported so this module stays free of engine imports; the
 # processor additionally asserts containment against the live artifact storage at
@@ -43,14 +45,18 @@ def validate_path_component(value: str, *, field: str, allow_nested: bool) -> st
     if value.startswith("/") or (len(value) > 1 and value[1] == ":"):
         raise ValueError(f"{field}={value!r} must be relative to the dataset directory, not absolute.")
 
-    segments = [segment for segment in value.split("/") if segment]
+    # Backslashes are path separators on Windows, even when this config is
+    # validated on a POSIX development machine.
+    segments = [segment for segment in value.replace("\\", "/").split("/") if segment]
+    if not segments:
+        raise ValueError(f"{field} must contain a directory name.")
     if not allow_nested and len(segments) > 1:
         raise ValueError(f"{field}={value!r} must be a single directory name, not a nested path.")
 
     for segment in segments:
         if segment in {".", ".."}:
             raise ValueError(f"{field}={value!r} must not contain '.' or '..' path segments.")
-        if segment in RESERVED_DIRECTORY_NAMES:
+        if segment.casefold() in RESERVED_DIRECTORY_NAMES:
             raise ValueError(
                 f"{field}={value!r} uses the Data Designer-managed directory {segment!r}. "
                 "Data Designer reads or deletes these folders, so documents written there "
@@ -143,3 +149,14 @@ class DocxProcessorConfig(ProcessorConfig):
     def validate_name_is_safe_directory(cls, value: str) -> str:
         """The processor name becomes a directory, so it must be a single safe component."""
         return validate_path_component(value, field="name", allow_nested=False)
+
+    @field_validator("core_property_columns")
+    @classmethod
+    def validate_core_property_names(cls, value: dict[str, str]) -> dict[str, str]:
+        """Reject unsupported or non-string Word core properties before generation."""
+        unsupported = set(value) - CORE_PROPERTY_NAMES
+        if unsupported:
+            raise ValueError(
+                f"Unsupported core properties: {sorted(unsupported)}. Supported: {sorted(CORE_PROPERTY_NAMES)}"
+            )
+        return value

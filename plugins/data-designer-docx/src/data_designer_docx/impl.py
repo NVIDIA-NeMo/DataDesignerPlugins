@@ -85,6 +85,19 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
                 f"Refusing to write documents to {candidate}, which is outside the dataset "
                 f"directory {base}. Check output_subdir and the processor name."
             )
+        storage = self.artifact_storage
+        managed_paths = (
+            storage.final_dataset_path,
+            storage.partial_results_path,
+            storage.dropped_columns_dataset_path,
+            storage.processors_outputs_path,
+            storage.media_storage.images_dir,
+        )
+        candidate_parts = tuple(part.casefold() for part in candidate.parts)
+        for managed_path in managed_paths:
+            managed_parts = tuple(part.casefold() for part in managed_path.resolve().parts)
+            if candidate_parts[: len(managed_parts)] == managed_parts:
+                raise ValueError(f"Refusing to write documents inside Data Designer-managed directory {managed_path}.")
         return candidate
 
     def relative_path(self, filename: str) -> str:
@@ -236,7 +249,18 @@ class DocxProcessor(WithJinja2UserTemplateRendering, Processor[DocxProcessorConf
         # Documents are read from the raw records; only the template-facing copy is
         # recursively JSON-decoded, since that decoding rewrites string leaves.
         raw_records = data.to_dict(orient="records")
-        template_records = [deserialize_json_values(record) for record in raw_records]
+        template_records = []
+        for record in raw_records:
+            template_record = deserialize_json_values(record)
+            document_value = record[self.config.document_column]
+            if isinstance(document_value, Mapping):
+                template_record[self.config.document_column] = document_value
+            elif isinstance(document_value, str):
+                try:
+                    template_record[self.config.document_column] = json.loads(document_value)
+                except ValueError:
+                    template_record[self.config.document_column] = document_value
+            template_records.append(template_record)
         options = self.render_options(template_records, columns)
 
         output_dir = self.output_dir
