@@ -12,6 +12,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "data-designer-docx",
     "data-designer-github",
     "data-designer-plugins-workspace",
     "data-designer-retrieval-sdg",
@@ -435,6 +436,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6c/4c/fb3791f43b5b0abd054ed55f1a4e13e10187090ee43eaf6801cfc8e713b9/data_designer_config-0.9.1.tar.gz", hash = "sha256:d4aca73a5b21284729e6f5b05ed1eba7c6e1b7c77d591c6e4e2f330b508d5c39", size = 151409, upload-time = "2026-08-11T20:24:14.236Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/37/f8/a12b44092eaabb2fa431474eef069885c6d4aed576677d7c344095051733/data_designer_config-0.9.1-py3-none-any.whl", hash = "sha256:8944578a74f28980b7b06b5b12c5e866da313af3fe6b5cc5d446bedf5756744e", size = 128696, upload-time = "2026-08-11T20:24:12.669Z" },
+]
+
+[[package]]
+name = "data-designer-docx"
+version = "0.1.0"
+source = { editable = "plugins/data-designer-docx" }
+dependencies = [
+    { name = "data-designer" },
+    { name = "python-docx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "data-designer", specifier = ">=0.9.1" },
+    { name = "python-docx", specifier = ">=1.1.0" },
 ]
 
 [[package]]
@@ -2151,6 +2167,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
+]
+
+[[package]]
+name = "python-docx"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lxml" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a9/f7/eddfe33871520adab45aaa1a71f0402a2252050c14c7e3009446c8f4701c/python_docx-1.2.0.tar.gz", hash = "sha256:7bc9d7b7d8a69c9c02ca09216118c86552704edc23bac179283f2e38f86220ce", size = 5723256, upload-time = "2025-06-16T20:46:27.921Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/00/1e03a4989fa5795da308cd774f05b704ace555a70f9bf9d3be057b680bcf/python_docx-1.2.0-py3-none-any.whl", hash = "sha256:3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7", size = 252987, upload-time = "2025-06-16T20:46:22.506Z" },
 ]
 
 [[package]]
