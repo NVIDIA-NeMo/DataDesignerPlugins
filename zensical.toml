@@ -29,6 +29,9 @@ nav = [
       {"Overview" = "plugins/data-designer-github/index.md"},
       {"Usage" = "plugins/data-designer-github/usage.md"},
     ]},
+    {"data-designer-nemotron-bharat-translation" = [
+      {"Overview" = "plugins/data-designer-nemotron-bharat-translation/index.md"},
+    ]},
     {"data-designer-retrieval-sdg" = [
       {"Overview" = "plugins/data-designer-retrieval-sdg/index.md"},
     ]},
