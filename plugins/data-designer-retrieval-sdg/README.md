@@ -1,7 +1,7 @@
 # data-designer-retrieval-sdg
 
 Data Designer toolkit for **retriever synthetic data generation**. The
-package registers two `data_designer.plugins` entry points, ships a
+package registers three `data_designer.plugins` entry points, ships a
 ready-made multi-step QA generation pipeline, and exposes a CLI that
 generates QA pairs and converts them into training formats compatible
 with [Automodel](https://github.com/NVIDIA-NeMo/Automodel) retriever
@@ -9,18 +9,166 @@ finetuning.
 
 ## Plugins
 
-A single package contributes two plugins to DataDesigner's registries
+A single package contributes three plugins to DataDesigner's registries
 via `[project.entry-points."data_designer.plugins"]`:
 
 | Slug | Type | Purpose |
 |------|------|---------|
 | `embedding-dedup` | column generator | Generic cosine-similarity dedup of any list-valued column. Implements native `agenerate()` for the async engine. |
 | `document-chunker` | seed reader | Sentence-chunks a directory of text files and emits structured sections, with optional multi-document bundling. |
+| `retrieval-structured` | column generator | Native structured generation accepting one complete bare or JSON-fenced object, with schema validation and bounded corrections. |
 
-Both are registered automatically through Python entry points when the
+All are registered automatically through Python entry points when the
 package is installed (see [Installation](#installation)).
 
+## Retrieval data from text and images
+
+For new multimodal fine-tuning workflows, use the
+[retrieval-first EA candidate](docs/multimodal-ea.md): direct text/image query
+generation, query-only answer-leak checks, source-aware quality judging and graded
+positive localization, followed by grouped-query export over a shared corpus.
+It accepts generic unit/context JSONL and requires explicit generator/judge
+models. It has no dataset-specific adapters or external benchmark dependencies.
+
+The existing QA pipeline and conversion CLI remain available for existing
+clients. Their [QA input contract](docs/retrieval-inputs.md) is separate from the
+new EA entry point. PDF parsing/OCR remain caller-owned preprocessing.
+
+### VLM-based SDG workflow
+
+Vision-language model (VLM) based synthetic data generation (SDG) turns your
+source text and images into retrieval queries with graded supporting sources.
+The chart follows the Nemotron EA profile's `context_strategy: sections` path.
+A **unit** is one retrievable item, such as a page; a **context** is a group of
+units shown together when generating a query.
+
+```text
+YOUR PREPROCESSING
+  Documents / PDFs
+        |
+        v
+  Extract text / OCR and render images
+        |
+        v
+  sources.jsonl: stable unit IDs + document IDs + text and/or images
+        |
+        v
+DATA DESIGNER RETRIEVAL SDG PLUGIN
+  +------------------------------------------------------------------+
+  | 1. Plan sections and summarize                                   |
+  |    Group whole units in reading order; describe visual content   |
+  |    and documents, then summarize each section.                   |
+  |    Optional contexts.jsonl supplies your own groups of units.    |
+  +------------------------------------------------------------------+
+        |
+        v
+  +------------------------------------------------------------------+
+  | 2. Add related section combinations (optional)                   |
+  |    Embed summary text, cluster related sections, and summarize   |
+  |    pairs/triples, including sections from different documents.   |
+  +------------------------------------------------------------------+
+        |
+        v
+  +------------------------------------------------------------------+
+  | 3. Select contexts for query generation                          |
+  |    Judge each summary: all four scores >= 4/5 by default.        |
+  |      - Richness: enough useful detail                            |
+  |      - Persona relevance: useful to the configured target reader |
+  |      - Query potential: supports varied, specific questions      |
+  |      - Clarity: concepts are understandable                      |
+  |    Remove duplicates and apply the summary-selection budget.     |
+  |    Split oversized contexts at whole-unit boundaries.            |
+  +------------------------------------------------------------------+
+        |
+        v
+  +------------------------------------------------------------------+
+  | 4. Generate candidate queries with the VLM                       |
+  |    Read ORIGINAL text + images for each selected context.        |
+  |    Vary source scope: one page, multiple pages, or documents.    |
+  |    Sample one text, one figure, and one table task by default.   |
+  |    Vary task: lookup, explanation, comparison, yes/no, lists,    |
+  |    or calculation; combine evidence when appropriate.            |
+  |    Vary format: question, instruction, or keyword search.        |
+  |    Vary evidence coverage: sources meet all or part of the need. |
+  |    Generate queries, not answers.                                |
+  +------------------------------------------------------------------+
+        |                                  |
+        | Candidate query                  +--> Unsupported task:
+        v                                       record abstention
+  +------------------------------------------------------------------+
+  | 5. Judge queries and identify supporting source units            |
+  |    Query alone: check for leaked answers.                        |
+  |    Query + original text: judge self-sufficiency.                |
+  |    Query + original text/images: judge relevance and support.    |
+  |    Label support: 2 = complete, 1 = useful partial evidence.     |
+  +------------------------------------------------------------------+
+        |
+        v
+  Relevance and self-sufficiency >= 4/5 (default),
+  no leaked answer, and valid supporting source units?
+        |
+        +--- No ---> Keep rejection and judge details for inspection
+        |
+        Yes
+        v
+  +------------------------------------------------------------------+
+  | 6. Export a portable retrieval bundle                            |
+  |    Accepted queries + graded positives + full eligible corpus.   |
+  |    Split by query group; package images, training views,         |
+  |    evaluation data, and provenance.                              |
+  +------------------------------------------------------------------+
+        |
+        v
+NEMOTRON RECIPE (DOWNSTREAM)
+  Mine hard negatives -> Fine-tune embedding model -> Evaluate
+```
+
+Summaries and visual descriptions guide planning; they never replace original
+corpus text or images. Units that are not selected for generation remain in the
+exported corpus. The summary embedding model processes text and is separate
+from the VLM generator/judge and the embedding model being fine-tuned.
+
+By default, all four summary grades (information richness, persona relevance,
+query-generation potential, and conceptual clarity) must reach 4/5. Semantic
+combinations are skipped for language groups with fewer than twelve summaries.
+See the [multimodal EA guide](docs/multimodal-ea.md) for configuration, quality
+gates, audit artifacts, and resumable execution.
+
+### Query variations
+
+Step 4 varies both the evidence available to the generator and the kind of
+query requested. Queries should read like standalone searches by someone who
+has not seen the source, without referring to "this page" or "the figure".
+
+| Dimension | Variations and how they arise |
+|---|---|
+| Source scope | A single unit, multiple units from one document, or units from different documents. When units are pages, these correspond to single-page, multi-page, and cross-document contexts. Sections group nearby units; optional semantic combinations join related sections; `contexts_file` lets you supply explicit memberships. A larger context does not require every query to use every page or document. |
+| Evidence | Text passages, figures/charts/diagrams, and tables. The generator sees original text and attached images together. Recorded evidence can be text, image, or both; a requested task category is not proof of which modality actually supports the query. Unsupported tasks return an abstention. |
+| Reasoning/task | **Extractive:** retrieve a specific fact. **Open-ended:** explain or synthesize concepts. **Compare-contrast:** compare entities. **Boolean:** answer yes/no, potentially through several reasoning steps. **Enumerative:** list items meeting a condition. **Numerical:** calculate from data, beyond simply reading a value. Text/figure pools include open-ended tasks; the table pool includes numerical tasks. |
+| Multi-hop | The prompts encourage combining information across pages when appropriate. Multi-hop is also an observed query label, but is not a separately sampled task in the default module pools. Cross-document context alone does not establish multi-hop reasoning. |
+| Query format | A natural-language question, an instruction, or a keyword-style search. The default sampler restricts boolean tasks to questions and excludes keyword format for enumerative tasks. |
+| Evidence coverage (answerability) | Generate queries whose information need is fully or partly covered by the supplied sources. A source can be a useful retrieval positive even when additional sources are needed. No answers are generated; supporting units receive independently judged relevance grades. Partial coverage still requires valid source support and passing the query-quality gates; missing evidence is not guaranteed to exist elsewhere in the corpus. |
+
+For example, if the sources contain the relevant evidence, queries could include:
+
+- **Single-page / text / extractive:** "What is the maximum operating temperature of the PX-200 pump?"
+- **Multi-page / tables / numerical:** "How much did North Division revenue grow between 2023 and 2024?"
+- **Cross-document / text and diagrams / comparison:** "Compare the cooling mechanisms used by the PX-200 and PX-300 pumps."
+
+These are illustrative examples, not generated results or required combinations.
+With the default instructions, each context gets three requested slots: one
+weighted task from each of the text, figure, and table pools. Sampling is
+reproducible for a fixed seed and context ID. Abstentions and quality filtering
+can reduce the number of accepted queries, so the final dataset need not be
+balanced across these dimensions. Requested type/format and observed labels
+are recorded; matching the requested style is diagnostic, not an acceptance
+gate. Use custom `instructions` and `instructions_per_context` to control the
+requested tasks; see the [multimodal EA guide](docs/multimodal-ea.md).
+
 ## Native async and resumable generation
+
+This section describes the existing QA `generate` command. The EA workflow has
+its own documented immutable request cache and explicit resume policy.
 
 `embedding-dedup` implements `agenerate()` directly on top of
 `model.agenerate_text_embeddings`, so the column participates in
@@ -42,7 +190,12 @@ data-designer-retrieval-sdg generate \
 Use `--resume if_possible` to resume when compatible artifacts are available and
 start fresh otherwise. DataDesigner owns checkpoint discovery, configuration
 compatibility, partial-result cleanup, and the behavior of every resume mode. The
-plugin does not maintain a second resume state or inspect corpus bytes.
+plugin does not maintain a second resume state. For canonical
+`RetrievalSourcesFile` inputs, it creates content-addressed snapshots of the
+ordered source rows and image bytes under the artifact path before handing the
+rows to Data Designer. This makes source changes visible to Data Designer's
+native configuration fingerprint. The legacy document-chunker path retains its
+existing resume behavior.
 
 `--buffer-size` controls DataDesigner's checkpoint/write granularity and remains
 part of the resolved config. DataDesigner still profiles the completed dataset
@@ -274,10 +427,10 @@ from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
 config_builder.add_column(
     EmbeddingDedupColumnConfig(
         name="deduplicated_qa_pairs",
-        source_column="qa_generation",   # upstream column with the items
-        items_key="pairs",               # key under the source column ("None" if the column is already a list)
-        text_field="question",           # field on each item to embed
-        model_alias="embed",             # registered embedding model alias
+        source_column="qa_generation",  # upstream column with the items
+        items_key="pairs",  # key under the source column ("None" if the column is already a list)
+        text_field="question",  # field on each item to embed
+        model_alias="embed",  # registered embedding model alias
         similarity_threshold=0.9,
     )
 )
@@ -295,7 +448,7 @@ seed_source = DocumentChunkerSeedSource(
     file_extensions=[".txt", ".md"],
     sentences_per_chunk=5,
     num_sections=1,
-    multi_doc=False,                # set True for bundle-per-row mode
+    multi_doc=False,  # set True for bundle-per-row mode
 )
 ```
 

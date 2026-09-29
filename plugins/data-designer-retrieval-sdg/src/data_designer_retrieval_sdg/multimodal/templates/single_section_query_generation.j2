@@ -1,0 +1,62 @@
+<mission>
+You are an assistant specialized in document understanding tasks. You will be given page images of a single document section. Carefully analyze the images and generate queries based on the visible content. The queries should simulate a user who does not have access to the document and is searching a large knowledge base via a search engine.
+</mission>
+
+<definitions>
+- A query is said to be fully answerable if the page contains a precise and complete answer to the query.
+- A query is said to be partially answerable if the page contains relevant information that is directly related to the query but some key information is missing and must be retrieved in other pages or documents in order to give a precise and complete answer.
+- An open-ended query is an explanatory or descriptive query that synthesizes  information; may be broad in scope and focused on qualitative aspects of the summary
+- A compare-contrast query is a query that requires comparing and/or contrasting multiple entities or topics that are closely related to each other
+- An enumerative query is a query that asks to list all examples that possess a common property, optionally requesting details about the specifics of each example.
+- A numerical query is a query that asks for a specific number or calculated number given a summary. The query should require more than simply reading numbers directly from the page.
+- A boolean query is a yes/no query that may involve multiple steps of reasoning.
+- An extractive query is a clear and specific query that can be answered using only a specific piece of information.
+- A multi-hop query is a complex query that requires retrieving and integrating information from multiple sources or steps to produce a complete answer.
+- A question query is a complete sentence that ends with a query mark, typically used to seek specific information or clarification (e.g., "What are the main causes of climate change?").
+- A keyword query is a brief, often fragmented phrase or set of terms used to search or filter information, without forming a full grammatical sentence (e.g., "climate change impacts agriculture").
+- A instruction query is a directive that describes a task to be performed on the documents, often in the form of a command or request (e.g., "Summarize the main causes of climate change.").
+</definitions>
+
+<rules>
+<queries>
+- Generate queries only in {{ language }}.
+- Make queries diverse, natural, and plausible for someone unfamiliar with the document.
+- Each query must be standalone; do not reference “the page”, “the table”, “the figure”, “the document”, “the text”, “the table of contents”, etc.
+- Rephrase; avoid copying wording from the source so semantic matching, not surface matching, is tested.
+- You may include queries about relationships or trends often shown in tables/figures/graphs, but never refer to a specific table/figure.
+- Avoid overly generic queries that apply to any document (e.g., “What is the title?”, “How many sections are there?”, “Who are the authors?”).
+- Keep each query concise (8–25 words).
+- When appropriate, write multi-hop queries that integrate information across the provided pages.
+</queries>
+</rules>
+
+<examples>
+Poor query: Based on the results shown, how much more expensive is a luxury sedan compared to a compact car?
+(The query explicitly refers to the results shown on the document, which is not allowed)
+Better query: How much more expensive is a luxury sedan compared to a compact car?
+
+Poor query: How does the aircraft's weight affect its velocity according to the graph?
+(The query explicitly refers to the graph in the page, which is not allowed. Also, without context it is not clear which specific plane the query is referring to.)
+Better query: How does a plane weight affect its velocity?
+
+Poor query: What are the different sections of the document?
+(The query could be asked about any document, which is not allowed)
+</examples>
+
+<instructions>
+Generate a list of {{ query_modules|length }} queries, one for each of the following instructions.
+
+Here are the constraints for each query:
+
+{%- for module in query_modules %}
+
+Query {{ loop.index }}
+Type: {{ module.query_type|capitalize }}
+Format: {{ module.format|capitalize }}
+Answerability: {{ module.answerability|capitalize }}
+
+{{ module.instruction }}
+
+{%- endfor %}
+Here are the images on which your queries should be based.
+</instructions>

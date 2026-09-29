@@ -1,0 +1,13 @@
+The summaries below summarise several sections from documents.
+
+{% for summary in summaries %}
+{{ summary }}
+
+<!-- Text separation -->
+{% endfor %}
+
+Task:
+Write a combined summary of the texts presented above that is centered around related information between the summaries.
+Write in markdown format. Avoid always using lists.
+Don't include non related information. Write the combined summary in {{ language }}. Return the summary inside a json as follows:
+{"summary": ..., "visual_evidence": ""}

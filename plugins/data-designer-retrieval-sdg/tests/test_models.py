@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import pytest
+from pydantic import ValidationError
+
 from data_designer_retrieval_sdg.models import (
     ArtifactItem,
     DocumentArtifacts,
@@ -31,6 +34,9 @@ def test_question_answer_pair() -> None:
     pair = QuestionAnswerPair(
         question="What?",
         answer="This.",
+        evidence="Supporting text.",
+        query_surface="question",
+        positive_unit_ids=["unit-1"],
         question_complexity=4,
         query_type="multi_hop",
         reasoning_type="factual",
@@ -51,6 +57,9 @@ def test_question_answer_pairs_container() -> None:
             QuestionAnswerPair(
                 question="Q1",
                 answer="A1",
+                evidence="Supporting text.",
+                query_surface="question",
+                positive_unit_ids=["unit-1"],
                 question_complexity=4,
                 query_type="structural",
                 reasoning_type="relational",
@@ -65,15 +74,28 @@ def test_question_answer_pairs_container() -> None:
 
 def test_qa_evaluation_round_trip() -> None:
     evl = QAEvaluation(
+        candidate_index=0,
         relevance=QAEvaluationCriterion(score=8, justification="relevant"),
         accuracy=QAEvaluationCriterion(score=9, justification="accurate"),
         context_support=QAEvaluationCriterion(score=7, justification="supported"),
         clarity=QAEvaluationCriterion(score=8, justification="clear"),
         overall=QAOverallEvaluation(score=8.0, assessment="good"),
         improvements="none",
+        answer_grounded=True,
+        answer_resolves_query=True,
+        unsupported_claims=[],
+        positive_source_relevant=True,
+        evidence_modality="text_only",
+        answer_not_revealed_by_query=True,
+        source_language_preserved=True,
     )
     data = evl.model_dump()
     assert QAEvaluation.model_validate(data).overall.score == 8.0
+    assert evl.passes_grounding
+    assert not evl.model_copy(update={"answer_resolves_query": False}).passes_grounding
+    del data["answer_resolves_query"]
+    with pytest.raises(ValidationError, match="answer_resolves_query"):
+        QAEvaluation.model_validate(data)
 
 
 def test_qa_pair_evaluations() -> None:

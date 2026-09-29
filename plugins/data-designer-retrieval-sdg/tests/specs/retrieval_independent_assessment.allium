@@ -1,0 +1,115 @@
+-- allium: 3
+-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+-- Scope: Independent reading and verification of immutable retrieval candidates.
+-- Excludes: Proof of visual accuracy, independent human labels, or answer repair.
+
+contract IndependentSourceAssessment {
+    verify_candidates: (records: Any) -> Any
+
+    @invariant ReadSourcesWithoutGeneratedAnswers
+        -- After query-only judging and selection, assess every surviving query
+        -- against its declared positive sources. The assessment sees only the
+        -- candidate index, query, positive identifiers, actual source text and
+        -- images, and language. Generated answers, evidence, hop summaries and
+        -- extracted document artifacts never enter this request.
+        -- Record an independently read answer, supporting evidence, uncertainty,
+        -- relevance, modality, native quotes and language assessment per index.
+
+    @invariant CompareWithoutReinterpretingSources
+        -- Final verification compares the unchanged candidate answer and claimed
+        -- evidence against the independent assessment. It receives no raw source
+        -- text or images. Material contradictions, omissions, unsupported added
+        -- claims and unresolved queries must fail, not trigger answer repair.
+        -- Assess precise quantities, dates, units and entity/time alignment;
+        -- semantic paraphrases are not rejected merely for different wording.
+
+    @invariant ScopeRecurringInformationNeeds
+        -- Generation requires an edition, date or anchored window for recurring
+        -- rankings, bills and histories when the requested facts vary by period.
+        -- An account/entity name or unanchored duration alone does not fix time.
+        -- Use only source-supported scope. If none is available, choose a
+        -- supported evergreen need or abstain; never invent or repair a date.
+        -- The blind query judge marks retrieval_discriminative false when a
+        -- recurring-period query is ambiguous, without inferring its source.
+        -- Genuinely evergreen needs do not require artificial temporal anchors.
+        -- Apply these distinctions across languages and all query surfaces.
+
+    @invariant PreserveRequestedMeaningAndFocus
+        -- Answers and independent readings are concise but complete for the
+        -- immutable query, preserving semantic categories and necessary context.
+        -- Geographic coverage is not an asset class; neighboring entries need
+        -- not be the requested category merely because they share a list/column.
+        -- Do not add adjacent facts not needed to resolve the query. Retain all
+        -- requested facts, including every member of a genuinely requested list.
+        -- Independent readings identify unresolved category ambiguity rather
+        -- than copying lists or guessing. Final comparison rejects category
+        -- substitutions using existing grounded/support criteria, not new fields.
+        -- These principles apply in every source language. Native-renderer and
+        -- gate tests prove instruction delivery/isolation and quarantine, not
+        -- that a probabilistic model always follows the semantic instructions.
+
+    @invariant LeaveRequestedInformationUnresolved
+        -- Generation leaves the requested result unknown across all source
+        -- languages and question/instruction/keyword forms. Necessary scope and
+        -- input values are not answers to a different unresolved request.
+        -- The blind judge marks plausible_information_need false when the query
+        -- recognizably supplies its own requested result, without reconstructing
+        -- unavailable sources/answers or using outside model knowledge.
+        -- Final source-free comparison rejects an answer that only completes
+        -- grammar, expands abbreviations, translates or paraphrases a result
+        -- already supplied in the query: both answer_not_revealed_by_query and
+        -- answer_resolves_query are false even with perfect grounding scores.
+        -- Genuine additional explanation/comparison needs remain possible; do
+        -- not invent an unstated need or adjacent facts to rescue a candidate.
+        -- Keyword form does not exempt natural-language relationships from this
+        -- rule. Naming inputs can provide scope; stating their defining relation
+        -- can already supply the requested definition, even without algebra.
+        -- Generation, blind judging and final comparison share an illustrative
+        -- natural-language contrast between those cases. An explicitly requested
+        -- new explanation, comparison or reference may remain unresolved; do not
+        -- infer that request merely from search-like form. Permitting a query
+        -- surface does not establish its semantic acceptability.
+        -- Tests prove request delivery and false-criterion quarantine, not
+        -- that model decisions always obey the semantic contract.
+
+    @invariant NativeJudgeResponseFormat
+        -- The three existing judges request one schema-conforming JSON object
+        -- inside one Markdown json code block, with no bare JSON or outside text.
+        -- This reinforces the native response recipe without replacing its
+        -- schema/parser, weakening rejection gates or adding another stage.
+        -- Preserve the existing blind/source-aware/source-free boundaries.
+
+    @invariant FailClosedAndBindEvidence
+        -- Historical records remain readable. Export quarantines a candidate
+        -- lacking an independent assessment with an explicit stable reason.
+        -- Duplicate or out-of-range assessment indexes fail validation. Bind
+        -- each assessment to exactly the candidate's declared positive IDs.
+        -- Unanswerable, uncertain, irrelevant or wrong-language assessments,
+        -- or missing independent answer/support, cannot be rescued by final
+        -- positive scores. Source-derived booleans, modality and native quotes
+        -- must agree with the final judgement. Never silently relabel records.
+        -- Validate the assessment's own quotes against real positive-unit text,
+        -- even when the final judge omits or changes them. Generated evidence
+        -- never becomes native text or an authoritative source transcription.
+
+    @invariant SharedPipelineAndDurableAudit
+        -- Fresh text-only and image-bearing candidates use the same mandatory
+        -- reading and comparison stages. No opt-out quality switch exists.
+        -- Empty candidate rows skip both stages and invent no assessments.
+        -- Preserve all existing query, modality, leakage and export gates.
+        -- Portable source records retain independent assessments, unchanged
+        -- candidates and final comparisons; provenance identifies this contract.
+
+    @invariant HonestLimitations
+        -- Independent reading may still be wrong, and correlated mistakes can
+        -- pass comparison. Deterministic tests establish isolation and gate
+        -- behavior, not probabilistic model accuracy or retrieval improvement.
+
+    @invariant ExecutableRequestBoundary
+        -- Every declared model request, including system/user prompts and
+        -- structured response instructions, renders under the host's default
+        -- secure template policy. Do not widen permitted operations to make
+        -- a prompt run. Information isolation also holds at this rendered
+        -- request boundary, not merely in a generic template implementation.
+}

@@ -17,8 +17,13 @@ from data_designer.engine.storage.artifact_storage import ResumeMode
 from data_designer.interface import DataDesigner
 
 from data_designer_retrieval_sdg.pipeline import build_model_providers, build_qa_generation_pipeline
+from data_designer_retrieval_sdg.retrieval.source_file import (
+    RetrievalSourcesFile,
+    snapshot_retrieval_sources,
+    validate_generated_source_coverage,
+)
 from data_designer_retrieval_sdg.run_artifacts import write_generation_run_artifacts
-from data_designer_retrieval_sdg.run_config import ConfigSource, GenerationRunConfig
+from data_designer_retrieval_sdg.run_config import ConfigSource, GenerationRunConfig, config_source_from_path
 from data_designer_retrieval_sdg.seed_reader import DocumentChunkerSeedReader
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
@@ -45,8 +50,22 @@ class GenerationPreviewResult:
     num_preview_records: int
 
 
-def _count_seed_records(seed_source: DocumentChunkerSeedSource) -> int:
+def _prepare_seed_source(
+    source: DocumentChunkerSeedSource | RetrievalSourcesFile,
+    artifact_path: Path,
+) -> DocumentChunkerSeedSource | dd.LocalFileSeedSource:
+    """Translate canonical input into native seeds without changing the pipeline."""
+    if isinstance(source, RetrievalSourcesFile):
+        snapshot = snapshot_retrieval_sources(source.path, artifact_path)
+        return dd.LocalFileSeedSource(path=str(snapshot))
+    return source
+
+
+def _count_seed_records(seed_source: DocumentChunkerSeedSource | dd.LocalFileSeedSource) -> int:
     """Return the number of records produced by a seed source manifest."""
+    if isinstance(seed_source, dd.LocalFileSeedSource):
+        with Path(seed_source.path).open(encoding="utf-8") as stream:
+            return sum(1 for _ in stream)
     reader = DocumentChunkerSeedReader()
     reader.attach(seed_source, PlaintextResolver())
     return reader.get_seed_dataset_size()
@@ -83,7 +102,9 @@ def _validate_dataset_name(dataset_name: str, artifact_path: Path) -> str:
     return dataset_name
 
 
-def _resolve_dataset_name(seed_source: DocumentChunkerSeedSource, artifact_path: Path, dataset_name: str | None) -> str:
+def _resolve_dataset_name(
+    seed_source: DocumentChunkerSeedSource | RetrievalSourcesFile, artifact_path: Path, dataset_name: str | None
+) -> str:
     """Return an explicit or source-derived dataset name after validation."""
     source_name = Path(str(seed_source.path)).name
     resolved_name = dataset_name if dataset_name is not None else source_name or "retrieval_sdg"
@@ -127,8 +148,15 @@ def run_generation(
 
     model_providers, _ = build_model_providers(model_providers=config.model_providers)
     config = config.model_copy(update={"model_providers": model_providers})
+    if isinstance(config.seed_source, RetrievalSourcesFile):
+        source = config.seed_source.model_copy(update={"path": config.seed_source.path.resolve()})
+        config = config.model_copy(update={"seed_source": source})
+        config_sources = (*config_sources, config_source_from_path(source.path))
     dataset_name = _resolve_dataset_name(config.seed_source, config.artifact_path, config.dataset_name)
-    num_records = config.num_records if config.num_records is not None else _count_seed_records(config.seed_source)
+    seed_source = _prepare_seed_source(config.seed_source, config.artifact_path)
+    num_records = config.num_records if config.num_records is not None else _count_seed_records(seed_source)
+    if isinstance(seed_source, dd.LocalFileSeedSource) and num_records > _count_seed_records(seed_source):
+        raise ValueError("num_records exceeds the available canonical retrieval sources")
     if num_records <= 0:
         raise SeedReaderError("The seed source produced no records")
 
@@ -138,7 +166,7 @@ def run_generation(
     data_designer.set_run_config(dd.RunConfig(disable_early_shutdown=True, buffer_size=config.buffer_size))
 
     config_builder = build_qa_generation_pipeline(
-        seed_source=config.seed_source,
+        seed_source=seed_source,
         start_index=0,
         end_index=num_records - 1,
         **config.pipeline.to_pipeline_kwargs(),
@@ -153,6 +181,11 @@ def run_generation(
     output_path = config.output_dir / f"{resolved_dataset_name}.jsonl"
     result.export(output_path, format="jsonl")
     actual_num_records = result.count_records()
+    if isinstance(seed_source, dd.LocalFileSeedSource):
+        validate_generated_source_coverage(Path(seed_source.path), output_path, num_records)
+        if actual_num_records != num_records:
+            raise ValueError("Generated record count does not match the canonical source selection")
+        config_sources = (*config_sources, config_source_from_path(seed_source.path))
     dataset_path = Path(result.artifact_storage.base_dataset_path)
     run_artifacts = write_generation_run_artifacts(
         config,
@@ -181,7 +214,10 @@ def run_generation(
 
 
 def preview_generation(config: GenerationRunConfig, num_records: int = 1) -> GenerationPreviewResult:
-    """Run a non-persisted preview using the same translated generation config.
+    """Preview the shared pipeline without persisting a generated dataset.
+
+    Canonical inputs and image copies are retained under ``artifact_path`` so
+    preview and generation use the same content-addressed source representation.
 
     Args:
         config: Fully translated generation run configuration.
@@ -201,14 +237,17 @@ def preview_generation(config: GenerationRunConfig, num_records: int = 1) -> Gen
 
     model_providers, _ = build_model_providers(model_providers=config.model_providers)
     config = config.model_copy(update={"model_providers": model_providers})
-    total_records = config.num_records if config.num_records is not None else _count_seed_records(config.seed_source)
+    seed_source = _prepare_seed_source(config.seed_source, config.artifact_path)
+    total_records = config.num_records if config.num_records is not None else _count_seed_records(seed_source)
+    if isinstance(seed_source, dd.LocalFileSeedSource) and total_records > _count_seed_records(seed_source):
+        raise ValueError("num_records exceeds the available canonical retrieval sources")
     if total_records <= 0:
         raise SeedReaderError("The seed source produced no records")
 
     data_designer = DataDesigner(artifact_path=config.artifact_path, model_providers=config.model_providers)
     data_designer.set_run_config(dd.RunConfig(disable_early_shutdown=True, buffer_size=config.buffer_size))
     config_builder = build_qa_generation_pipeline(
-        seed_source=config.seed_source,
+        seed_source=seed_source,
         start_index=0,
         end_index=min(config.buffer_size - 1, total_records - 1),
         **config.pipeline.to_pipeline_kwargs(),

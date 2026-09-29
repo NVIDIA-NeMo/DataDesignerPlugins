@@ -1,0 +1,212 @@
+{
+  "text": {
+    "weights": [
+      2,
+      3,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "modules": [
+      {
+        "type": "extractive",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "text",
+        "instruction": "If you see paragraphs, select one important piece of information from any paragraph. Then, create a query that can be fully answered using only that key information.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "open-ended",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "text",
+        "instruction": "If you see paragraphs, create a comprehensive, open-ended query that can be fully answered using the data or concepts shown. This query should be broad in scope or focus on qualitative aspects of the information, rather than asking for specific numerical values or entities.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "open-ended",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "text",
+        "instruction": "If you see paragraphs, create a broad or open-ended query that is inspired by the information shown in one of the paragraphs. The query should be partially answerable based on the paragraph's content, it may also require additional knowledge or interpretation to fully address.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "boolean",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "text",
+        "instruction": "If you see paragraphs, identify one important statement that can be logically concluded from the data in one of those paragraphs. This statement should be either true (affirmation) or false (negation) based on the information provided. Your reasoning may involve multiple steps. Then, create a yes/no query that captures this statement.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "boolean",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "text",
+        "instruction": "If you see paragraphs, find a complex statement (affirmative or negative) that:\na) Involves multiple logical steps to reach\nb) Could theoretically be partially deduced from information present on the document\nc) Cannot actually be fully deduced because some necessary information is missing from the document\nYou must generate a fully answerable yes/no query that has this complex statement as its answer.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "compare-contrast",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "text",
+        "instruction": "If you see paragraphs, identify two closely related entities or topics within the text. Based on these entities or topics, create a query that:\na) Requires comparing and/or contrasting them\nb) Can be fully answered using the information provided in the text\nIf no suitable compare-contrast query can be formulated, or if this task is not applicable to the given document, return null.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "compare-contrast",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "text",
+        "instruction": "If you see paragraphs, select one entity or topic mentioned in any of these paragraphs. Think of another entity or topic that is not mentioned anywhere on the document, but could be meaningfully compared or contrasted with the selected entity/topic. Formulate a query that:\na) Asks to compare and/or contrast the selected entity/topic with the one you thought ofb) Can be partially answered using information from the document, but requires additional knowledge to fully answer.\nIf you cannot create a relevant compare-contrast query, or if this task doesn't apply to the content of the document, return null.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "enumerative",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "text",
+        "instruction": "If you see paragraphs, identify entities or topics mentioned in these paragraphs that have some relation to each other. Determine a specific property that is common among these related entities or topics. Formulate an enumerative query that:\na) Asks to list all examples that possess this specific property\nb) Optionally, requests details about the specifics of each example. The requested details may be absent from the document.\nIf you can't create such a query return null instead."
+      }
+    ]
+  },
+  "figure": {
+    "weights": [
+      2,
+      3,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "modules": [
+      {
+        "type": "extractive",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "figure",
+        "instruction": "If you see images or charts, choose one important piece of information from any of these figures. Then, create a clear and specific query that can be fully answered using only that chosen piece of information.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "open-ended",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "figure",
+        "instruction": "If you see images or charts, based on the information displayed in the figures, create a comprehensive, open-ended query that can be fully answered using the data or concepts shown. This query should be broad in scope or focus on qualitative aspects of the information, rather than asking for specific numerical values or entities.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "open-ended",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "figure",
+        "instruction": "If you see images or charts, create a broad or open-ended query that is inspired by the information shown in one of the figures on the document. The query should be partially answerable based on the figure's content, it may also require additional knowledge or interpretation to fully address.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "boolean",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "figure",
+        "instruction": "If you see images or charts, identify one important statement that can be logically concluded from the data in one of those figures. This statement should be either true (affirmation) or false (negation) based on the information provided. Your reasoning may involve multiple steps. Then, create a yes/no query that captures this statement.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "boolean",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "figure",
+        "instruction": "If you see images or charts, find a complex statement (affirmative or negative) that:\na) Involves multiple logical steps to reach\nb) Could theoretically be partially deduced from one or multiple figures\nc) Cannot actually be fully deduced because some necessary information is missing from the document\nYou must generate a fully answerable yes/no query that has this complex statement as its answer.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "compare-contrast",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "figure",
+        "instruction": "If you see images or charts, identify two entities or topics that are closely related to each other. These can be from a single figure or across multiple figures. Based on these two entities or topics, create a query that requires comparing and/or contrasting them. Ensure that the query can be fully answered using the information provided in the figure(s). If you cannot find two closely related entities or topics suitable for a compare-contrast query, or if this task is not applicable to the content of the document, return null.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "compare-contrast",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "figure",
+        "instruction": "If you see images or charts, select one entity or topic depicted in any of these figures. Think of another related entity or topic that is not shown in the document. Create a query that:\na) Requires comparing and/or contrasting the selected entity with the off-document entity.\nb) Can be partially answered using information from the document, but needs additional information to be fully answered.\nIf it's not possible to create such a compare-contrast query, or if this task doesn't apply to the content of the document, return null.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "enumerative",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "figure",
+        "instruction": "If you see images or charts, identify entities or topics mentioned in these figures that have some relation to each other. Determine a specific property that is common among these related entities or topics. Formulate an enumerative query that:\na) Asks to list all examples that possess this specific property\nb) Optionally, requests details about the specifics of each example. The requested details may be absent from the document.\nIf you can't create such a query return null instead."
+      }
+    ]
+  },
+  "table": {
+    "weights": [
+      1,
+      0.5,
+      0.5,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "modules": [
+      {
+        "type": "extractive",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "table",
+        "instruction": "If you see tables, choose one important piece of information from any of these tables. Then, create a clear and specific query that can be fully answered using only that chosen piece of information.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "boolean",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "table",
+        "instruction": "If you see tables, identify one important statement that can be logically concluded from the data in one of those tables. This statement should be either true (affirmation) or false (negation) based on the information provided. Your reasoning may involve multiple steps. Then, create a fully answerable yes/no query that captures this statement.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "boolean",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "table",
+        "instruction": "If you see tables, find a complex statement (affirmative or negative) that:\na) Involves multiple logical steps to reach\nb) Could theoretically be partially deduced from one or multiple tables\nc) Cannot actually be fully deduced because some necessary information is missing from the document\nYou must generate a partially answerable yes/no query that has this complex statement as its answer.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "numerical",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "table",
+        "instruction": "If you see tables, look for relationships between the data that require some mathematical calculation to reveal an interesting insight. Then, formulate a specific query that can be answered using this calculated insight. The query should require more than simply reading numbers directly from the table(s). If no meaningful numerical querys can be derived, respond with null."
+      },
+      {
+        "type": "numerical",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "table",
+        "instruction": "If you see tables, look for a piece of interesting information that could be calculated using data from one or more of these tables. However, this calculation should also require some additional information that is not present on the document. Based on this, create a partially answerable query that requires a numerical calculation and cannot be completely answered because some necessary information is missing from the document.\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "compare-contrast",
+        "format": "any",
+        "answerability": "fully answerable",
+        "modality": "table",
+        "instruction": "If you see tables, find two entities or topics within these tables that are closely related or similar. Using these two entities or topics, create a fully answerable query that requires comparing and/or contrasting the two entities. The query should encourage analysis of similarities and/or differences between the chosen entities. If you cannot find suitable entities for comparison, or if the table content doesn't allow for meaningful compare-contrast querys, return null as the result."
+      },
+      {
+        "type": "compare-contrast",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "table",
+        "instruction": "If you see tables, choose one entity or topic mentioned in any of these tables. Think of another entity or topic that is related but not present on the document. Create a query that:\na) Asks to compare and/or contrast the chosen entity with the one not on the document\nb) Can be partially answered using information from the document, but requires additional information not present on the document for a complete answer\nIf you can't create such a query return null instead."
+      },
+      {
+        "type": "enumerative",
+        "format": "any",
+        "answerability": "partially answerable",
+        "modality": "table",
+        "instruction": "If you see tables, identify entities or topics mentioned in these tables that have some relation to each other. Determine a specific property that is common among these related entities or topics. Formulate an enumerative query that:\na) Asks to list all examples that possess this specific property\nb) Optionally, requests details about the specifics of each example. The requested details may be absent from the document.\nIf you can't create such a query return null instead."
+      }
+    ]
+  }
+}

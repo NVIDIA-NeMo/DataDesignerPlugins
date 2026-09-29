@@ -71,6 +71,15 @@
             "name": "embedding-dedup",
             "value": "data_designer_retrieval_sdg.plugins:embedding_dedup_plugin"
           }
+        },
+        {
+          "name": "retrieval-structured",
+          "plugin_type": "column-generator",
+          "entry_point": {
+            "group": "data_designer.plugins",
+            "name": "retrieval-structured",
+            "value": "data_designer_retrieval_sdg.plugins:retrieval_structured_plugin"
+          }
         }
       ]
     }

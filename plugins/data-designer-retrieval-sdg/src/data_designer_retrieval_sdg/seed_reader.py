@@ -28,11 +28,31 @@ from data_designer_retrieval_sdg.chunking import (
     build_source_id,
     chunks_to_sections_structured,
     load_multi_doc_manifest,
+    normalize_source_id,
     text_to_sentence_chunks,
 )
 from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
 
 logger = logging.getLogger(__name__)
+
+
+def _build_retrieval_units(chunks: list[dict[str, Any]], default_document_id: str) -> list[dict[str, Any]]:
+    """Convert text chunks into canonical modality-neutral retrieval units."""
+    units: list[dict[str, Any]] = []
+    for chunk in chunks:
+        document_id = normalize_source_id(str(chunk.get("doc_id") or default_document_id))
+        document_segment = int(chunk.get("doc_chunk_index") or chunk["chunk_id"])
+        units.append(
+            {
+                "unit_id": f"{document_id}#segment-{document_segment}",
+                "document_id": document_id,
+                "text": str(chunk["text"]),
+                "images": [],
+                "source_uri": str(chunk.get("doc_path") or document_id),
+                "segment_id": int(chunk["chunk_id"]),
+            }
+        )
+    return units
 
 
 def _path_matches_extensions(relative_path: str, extensions: list[str] | None) -> bool:
@@ -65,6 +85,9 @@ class DocumentChunkerSeedReader(FileSystemSeedReader[DocumentChunkerSeedSource])
       joined with ``"\\n\\n=== Document Boundary ===\\n\\n"`` separators.
     - ``chunks``: ``list[dict]`` of sentence chunks with metadata.
     - ``sections_structured``: ``list[str]`` of formatted section blocks.
+    - ``retrieval_units``: one canonical text retrieval unit per chunk.
+    - ``images``: an empty list for every text-only row.
+    - ``language``: configured language code or the ``"source"`` sentinel.
     - ``bundle_id``: stable hash of the bundle members (single-doc rows
       have an empty string).
     - ``bundle_members``: ``list[str]`` of relative paths (mirrors
@@ -79,6 +102,9 @@ class DocumentChunkerSeedReader(FileSystemSeedReader[DocumentChunkerSeedSource])
         "text",
         "chunks",
         "sections_structured",
+        "retrieval_units",
+        "images",
+        "language",
         "bundle_id",
         "bundle_members",
         "is_multi_doc",
@@ -195,6 +221,9 @@ class DocumentChunkerSeedReader(FileSystemSeedReader[DocumentChunkerSeedSource])
             "text": content,
             "chunks": chunks,
             "sections_structured": sections,
+            "retrieval_units": _build_retrieval_units(chunks, relative_path),
+            "images": [],
+            "language": self.source.language,
             "bundle_id": "",
             "bundle_members": [relative_path],
             "is_multi_doc": False,
@@ -241,6 +270,9 @@ class DocumentChunkerSeedReader(FileSystemSeedReader[DocumentChunkerSeedSource])
             "text": combined_text,
             "chunks": bundle_chunks,
             "sections_structured": sections,
+            "retrieval_units": _build_retrieval_units(bundle_chunks, build_source_id(bundle_members)),
+            "images": [],
+            "language": self.source.language,
             "bundle_id": build_bundle_id(bundle_members),
             "bundle_members": bundle_members,
             "is_multi_doc": True,
