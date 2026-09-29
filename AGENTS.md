@@ -48,6 +48,16 @@ name = "data-designer-my-plugin"
 my-plugin = "data_designer_my_plugin.plugin:plugin"
 ```
 
+# Plugin Architecture
+
+Every plugin follows the same three-file pattern under `src/<pkg>/`, shown in `plugins/data-designer-template/`:
+
+- `config.py` — a Pydantic config class (e.g. subclassing `SingleColumnConfig` from `data_designer.config.base`) declaring the column type literal, fields, `required_columns`, and `side_effect_columns`.
+- `impl.py` — the generator/processor implementation (e.g. subclassing `ColumnGeneratorFullColumn[YourConfig]` from `data_designer.engine.column_generators.generators.base`), implementing `generate(self, data: pd.DataFrame) -> pd.DataFrame`.
+- `plugin.py` — wires `config.py` and `impl.py` together into a `Plugin(config_qualified_name=..., impl_qualified_name=..., plugin_type=PluginType.COLUMN_GENERATOR)` instance, exposed via the `data_designer.plugins` entry point.
+
+`devtools/ddp/src/ddp/` is the monorepo tooling package (the `ddp` CLI): `scaffold.py` (new plugin scaffolding), `catalog.py`/`catalog_config.py` (catalog registration/validation), `validate_plugins.py`/`validate_release.py` (plugin and release validation), `codeowners.py`, `license_headers.py`, `bump_version.py`, `package_index.py`, `plugin_docs.py`. `cli.py` is the entry point that dispatches to these.
+
 # Understanding DataDesigner
 
 If in doubt, refer to the DataDesigner codebase and implementation over documentation.
