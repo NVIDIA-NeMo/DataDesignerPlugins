@@ -7,12 +7,17 @@ version = "0.2.1"
 description = "Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion"
 requires-python = ">=3.10"
 dependencies = [
-    "data-designer>=0.9.1",
+    "data-designer>=0.9.4",
+    "click>=8.3.3,<9",
+    "lxml>=6.1.1,<7",
+    "urllib3>=2.8.0,<3",
     # Data Designer permits older transitive releases that are excluded by the
     # workspace security constraints. Publish the same floors for consumers.
     "anyio>=4.14.2,<5",
     "mcp>=1.29.0,<2",
     "nltk>=3.10.3,<3.11",
+    # Pydantic 2.14 breaks CliApp.run in the supported pydantic-settings releases.
+    "pydantic>=2.9.2,<2.14",
     "pydantic-settings>=2.14,<3",
     "pyyaml>=6.0",
     "pyarrow>=24.0.0,<25",
