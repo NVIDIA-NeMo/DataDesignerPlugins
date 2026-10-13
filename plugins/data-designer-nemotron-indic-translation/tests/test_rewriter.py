@@ -3,8 +3,8 @@
 
 import asyncio
 
-from data_designer_nemotron_bharat_translation.evaluator import ErrorSpan, TranslationEvaluation
-from data_designer_nemotron_bharat_translation.rewriter import Rewriter
+from data_designer_nemotron_indic_translation.evaluator import ErrorSpan, TranslationEvaluation
+from data_designer_nemotron_indic_translation.rewriter import Rewriter
 
 
 class FakeModelFacade:

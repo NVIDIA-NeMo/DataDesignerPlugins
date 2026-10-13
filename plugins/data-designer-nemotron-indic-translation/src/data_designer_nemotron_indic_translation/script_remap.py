@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from data_designer_nemotron_bharat_translation.bengali_meitei_mapping import transliterate
+from data_designer_nemotron_indic_translation.bengali_meitei_mapping import transliterate
 
 #: Maps (source_script, target_script) ISO 15924 code pairs to their deterministic remapper.
 SCRIPT_REMAPPERS: dict[tuple[str, str], Callable[[str], str]] = {

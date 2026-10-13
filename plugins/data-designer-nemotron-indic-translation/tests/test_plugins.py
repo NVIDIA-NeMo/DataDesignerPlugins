@@ -4,7 +4,7 @@
 import pytest
 from data_designer.engine.testing.utils import assert_valid_plugin
 
-from data_designer_nemotron_bharat_translation.plugins import document_translation_plugin
+from data_designer_nemotron_indic_translation.plugins import document_translation_plugin
 
 ALL_PLUGINS = [document_translation_plugin]
 

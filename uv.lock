@@ -14,7 +14,7 @@ resolution-markers = [
 members = [
     "data-designer-docx",
     "data-designer-github",
-    "data-designer-nemotron-bharat-translation",
+    "data-designer-nemotron-indic-translation",
     "data-designer-plugins-workspace",
     "data-designer-retrieval-sdg",
     "data-designer-template",
@@ -557,9 +557,9 @@ requires-dist = [
 ]
 
 [[package]]
-name = "data-designer-nemotron-bharat-translation"
+name = "data-designer-nemotron-indic-translation"
 version = "0.1.0"
-source = { editable = "plugins/data-designer-nemotron-bharat-translation" }
+source = { editable = "plugins/data-designer-nemotron-indic-translation" }
 dependencies = [
     { name = "click" },
     { name = "data-designer" },

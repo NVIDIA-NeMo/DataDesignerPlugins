@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from data_designer_nemotron_bharat_translation.translator import Translator
+from data_designer_nemotron_indic_translation.translator import Translator
 
 
 class FakeModelFacade:

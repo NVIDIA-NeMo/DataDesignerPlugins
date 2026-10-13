@@ -7,16 +7,16 @@ import warnings
 import pytest
 from pydantic import ValidationError
 
-from data_designer_nemotron_bharat_translation.config import DocumentTranslationConfig
-from data_designer_nemotron_bharat_translation.document_translation import (
+from data_designer_nemotron_indic_translation.config import DocumentTranslationConfig
+from data_designer_nemotron_indic_translation.document_translation import (
     DocumentTranslationColumnGenerator,
     TranslationEvaluation,
 )
-from data_designer_nemotron_bharat_translation.language_codes import (
+from data_designer_nemotron_indic_translation.language_codes import (
     BODHAN_LANGUAGE_DESCRIPTIONS,
     GENERIC_LANGUAGE_DESCRIPTIONS,
 )
-from data_designer_nemotron_bharat_translation.prompts import BODHAN_TRANSLATION_PROMPT, GENERIC_TRANSLATION_PROMPT
+from data_designer_nemotron_indic_translation.prompts import BODHAN_TRANSLATION_PROMPT, GENERIC_TRANSLATION_PROMPT
 
 
 class FakeModelFacade:

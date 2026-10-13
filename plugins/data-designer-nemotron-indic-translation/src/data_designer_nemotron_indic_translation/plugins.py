@@ -14,7 +14,7 @@ One ``data_designer.plugins`` entry point is wired here:
 from data_designer.plugins.plugin import Plugin, PluginType
 
 document_translation_plugin = Plugin(
-    config_qualified_name="data_designer_nemotron_bharat_translation.config.DocumentTranslationConfig",
-    impl_qualified_name="data_designer_nemotron_bharat_translation.document_translation.DocumentTranslationColumnGenerator",
+    config_qualified_name="data_designer_nemotron_indic_translation.config.DocumentTranslationConfig",
+    impl_qualified_name="data_designer_nemotron_indic_translation.document_translation.DocumentTranslationColumnGenerator",
     plugin_type=PluginType.COLUMN_GENERATOR,
 )

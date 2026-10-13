@@ -3,7 +3,7 @@
 
 import asyncio
 
-from data_designer_nemotron_bharat_translation.evaluator import Evaluator, TranslationEvaluation
+from data_designer_nemotron_indic_translation.evaluator import Evaluator, TranslationEvaluation
 
 
 class FakeModelFacade:
