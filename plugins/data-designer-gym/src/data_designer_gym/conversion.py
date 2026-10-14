@@ -274,6 +274,9 @@ def normalize_rollouts(
                 "agent_ref": rollout.get("agent_ref", task.get("agent_ref")),
                 "failure_class": rollout.get(FAILURE_CLASS_KEY),
                 "failure_terminal": rollout.get(FAILURE_TERMINAL_KEY, False),
+                "mask_sample": rollout.get("mask_sample"),
+                "failure_kind": rollout.get("failure_kind"),
+                "failure_reason": rollout.get("failure_reason"),
                 "task": task,
                 "rollout": rollout,
             }

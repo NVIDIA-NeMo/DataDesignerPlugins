@@ -211,6 +211,9 @@ def test_normalize_rollouts_includes_failure_sidecar(tmp_path: Path, generic_row
                 "_ng_rollout_index": 0,
                 "_ng_failure_class": "timeout",
                 "_ng_failure_terminal": True,
+                "mask_sample": True,
+                "failure_kind": "timeout",
+                "failure_reason": "deadline exceeded",
             }
         ],
     )
@@ -221,6 +224,9 @@ def test_normalize_rollouts_includes_failure_sidecar(tmp_path: Path, generic_row
     assert normalized["status"] == "failed"
     assert normalized["failure_class"] == "timeout"
     assert normalized["failure_terminal"] is True
+    assert normalized["mask_sample"] is True
+    assert normalized["failure_kind"] == "timeout"
+    assert normalized["failure_reason"] == "deadline exceeded"
 
 
 @pytest.mark.parametrize(

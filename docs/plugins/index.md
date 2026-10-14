@@ -21,10 +21,10 @@ Browse available Data Designer plugins by what they add to your data generation 
       <span class="plugin-doc-card__title">data-designer-gym</span>
       <span class="plugin-doc-card__version">v0.1.0</span>
     </span>
-    <span class="plugin-doc-card__description">Export and ingest Gym tasks with Data Designer</span>
+    <span class="plugin-doc-card__description">Execute Gym resources and harnesses, export tasks, and ingest rollouts with Data Designer</span>
     <span class="plugin-doc-card__section">
       <span class="plugin-doc-card__label">Entry points</span>
-      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">gym</span></span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">gym</span><span class="plugin-doc-chip">gym-harness</span><span class="plugin-doc-chip">gym-resource</span></span>
     </span>
   </a>
   <a class="plugin-doc-card" href="data-designer-retrieval-sdg/" aria-label="Open data-designer-retrieval-sdg documentation">
