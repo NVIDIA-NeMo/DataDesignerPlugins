@@ -3,7 +3,7 @@
 
 import pytest
 
-from data_designer_nemotron_bharat_translation.language_codes import (
+from data_designer_nemotron_indic_translation.language_codes import (
     BODHAN_LANGUAGE_DESCRIPTIONS,
     GENERIC_LANGUAGE_DESCRIPTIONS,
     TARGET_LANGUAGE_CODES,

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-from data_designer_nemotron_bharat_translation.bengali_meitei_mapping import (
+from data_designer_nemotron_indic_translation.bengali_meitei_mapping import (
     BENGALI_DROP,
     BENGALI_MULTI,
     BENGALI_NUKTA,

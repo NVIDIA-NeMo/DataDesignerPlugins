@@ -45,7 +45,7 @@ from data_designer.engine.models.recipes.response_recipes import TextResponseRec
 from jinja2 import Template
 from tokenizers import Tokenizer
 
-from data_designer_nemotron_bharat_translation.prompts import MERGE_PROMPT
+from data_designer_nemotron_indic_translation.prompts import MERGE_PROMPT
 
 
 class Translator:

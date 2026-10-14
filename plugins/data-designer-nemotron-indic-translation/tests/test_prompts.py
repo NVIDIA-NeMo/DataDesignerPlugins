@@ -4,7 +4,7 @@
 import pytest
 from jinja2 import Template
 
-from data_designer_nemotron_bharat_translation.prompts import (
+from data_designer_nemotron_indic_translation.prompts import (
     GENERIC_TRANSLATION_PROMPT_NATIVE_NUMERALS,
     NATIVE_NUMBERS_DOC,
     native_numbers_doc,

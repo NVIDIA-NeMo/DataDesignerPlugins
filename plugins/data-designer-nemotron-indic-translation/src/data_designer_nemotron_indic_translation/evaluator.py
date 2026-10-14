@@ -3,7 +3,7 @@
 
 """Shared MQM evaluation logic for ``document-translation``.
 
-Mirrors :class:`~data_designer_nemotron_bharat_translation.translator.Translator`:
+Mirrors :class:`~data_designer_nemotron_indic_translation.translator.Translator`:
 :class:`Evaluator` renders one combined evaluation prompt -- ``text``,
 ``translation_result.translated_text``, ``source_language_description``,
 and ``target_language_description`` all in a single user turn -- and parses

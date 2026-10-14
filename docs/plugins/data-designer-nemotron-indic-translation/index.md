@@ -1,12 +1,12 @@
-# data-designer-nemotron-bharat-translation
+# data-designer-nemotron-indic-translation
 
-A document translation column generator plugin for Nemotron Bharat's Indic
+A document translation column generator plugin for Nemotron Indic
 pretraining data pipelines.
 
 ## Installation
 
 ```bash
-uv add data-designer data-designer-nemotron-bharat-translation
+uv add data-designer data-designer-nemotron-indic-translation
 ```
 
 ## Column types

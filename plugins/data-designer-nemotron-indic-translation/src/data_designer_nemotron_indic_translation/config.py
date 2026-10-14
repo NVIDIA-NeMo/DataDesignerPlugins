@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Column config for the Nemotron Bharat document-translation plugin.
+"""Column config for the Nemotron Indic document-translation plugin.
 
 :class:`DocumentTranslationConfig` -- direct translate + MQM evaluate +
 optional rewrite loop. Translation optionally runs through overlapping
@@ -19,12 +19,12 @@ from typing import Literal
 from data_designer.config.base import SingleColumnConfig
 from pydantic import Field, model_validator
 
-from data_designer_nemotron_bharat_translation.language_codes import (
+from data_designer_nemotron_indic_translation.language_codes import (
     BODHAN_LANGUAGE_DESCRIPTIONS,
     GENERIC_LANGUAGE_DESCRIPTIONS,
     parse_bcp47,
 )
-from data_designer_nemotron_bharat_translation.prompts import (
+from data_designer_nemotron_indic_translation.prompts import (
     BODHAN_TRANSLATION_PROMPT,
     GENERIC_EVALUATION_PROMPT,
     GENERIC_REWRITE_PROMPT,
@@ -33,7 +33,7 @@ from data_designer_nemotron_bharat_translation.prompts import (
     MERGE_PROMPT,
     NATIVE_NUMBERS_DOC,
 )
-from data_designer_nemotron_bharat_translation.script_remap import SCRIPT_REMAPPERS, can_remap_script
+from data_designer_nemotron_indic_translation.script_remap import SCRIPT_REMAPPERS, can_remap_script
 
 _TRANSLATION_MODE_PROMPTS = {"generic": GENERIC_TRANSLATION_PROMPT, "bodhan": BODHAN_TRANSLATION_PROMPT}
 _TRANSLATION_MODE_LANGUAGE_DESCRIPTIONS = {
@@ -88,7 +88,7 @@ class DocumentTranslationConfig(SingleColumnConfig):
     evaluation -- when ``keep_window_traces`` is also set (the default),
     one dict per window (``"window"``, ``"translated_window"``,
     ``"extracted_window"``, ``"extracted_translated_window"``; see
-    :class:`~data_designer_nemotron_bharat_translation.translator.Translator`)
+    :class:`~data_designer_nemotron_indic_translation.translator.Translator`)
     is written to ``<name>_window_traces``/``<name>_intermediate_window_traces``.
     Evaluation always runs over the whole document; only the initial
     translation is windowed. The rewrite loop is incompatible with
@@ -107,7 +107,7 @@ class DocumentTranslationConfig(SingleColumnConfig):
     (``target_language="mni-Beng-IN"``) and remapping into Meetei Mayek
     (``target_language_script="Mtei"``), since the translation model has no
     way to produce Meetei Mayek directly. Only
-    :data:`~data_designer_nemotron_bharat_translation.script_remap.SCRIPT_REMAPPERS`
+    :data:`~data_designer_nemotron_indic_translation.script_remap.SCRIPT_REMAPPERS`
     pairs are supported (currently Bengali -> Meetei Mayek only); an
     unsupported ``(target_language, target_language_script)`` pair raises
     ``ValueError`` at config construction time. The pre-remap translation
@@ -136,7 +136,7 @@ class DocumentTranslationConfig(SingleColumnConfig):
     uses ``evaluation_prompt``, regardless of which style was drawn for
     translation -- there is no native-numeral evaluation prompt variant.
     ``translation_prompt_native_numerals`` defaults to
-    :data:`~data_designer_nemotron_bharat_translation.prompts.GENERIC_TRANSLATION_PROMPT_NATIVE_NUMERALS`
+    :data:`~data_designer_nemotron_indic_translation.prompts.GENERIC_TRANSLATION_PROMPT_NATIVE_NUMERALS`
     but can be overridden, e.g. to keep a customized ``translation_prompt``
     consistent with its native-numeral counterpart -- overriding
     ``translation_prompt`` without also overriding
@@ -150,7 +150,7 @@ class DocumentTranslationConfig(SingleColumnConfig):
     must contain a literal ``{native_numbers_doc}`` placeholder (single
     braces) for the per-language legend, and ``target_language`` (and
     ``intermediate_language``, if set) must have an entry in
-    :data:`~data_designer_nemotron_bharat_translation.prompts.NATIVE_NUMBERS_DOC`
+    :data:`~data_designer_nemotron_indic_translation.prompts.NATIVE_NUMBERS_DOC`
     -- both raise ``ValueError`` at config construction time when
     ``native_numeral_probability`` is set and violated. Which style was
     drawn for a row is recorded in ``<name>_numeral_style`` (``"native"``

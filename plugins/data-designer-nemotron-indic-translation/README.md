@@ -1,6 +1,6 @@
-# data-designer-nemotron-bharat-translation
+# data-designer-nemotron-indic-translation
 
-A document translation column generator plugin for Nemotron Bharat's Indic
+A document translation column generator plugin for Nemotron Indic
 pretraining data pipelines. It registers one `data_designer.plugins` entry
 point, `document-translation`, that translates a text column into a fixed
 target language, scores the result with an MQM-based evaluator, and
@@ -49,7 +49,7 @@ optionally self-corrects via a rewrite loop.
 The plugin targets all 22 constitutionally scheduled Indic languages, plus
 English, as BCP-47 `language-Script-Region` codes (see
 `language_codes.TARGET_LANGUAGE_CODES`). The table below is the suggested
-model selection used for Nemotron Bharat's own data preparation runs --
+model selection used for Nemotron Indic's own data preparation runs --
 your own config can mix models differently via `model_alias`/
 `evaluator_model_alias`/`translation_mode`.
 
@@ -99,7 +99,7 @@ your own config can mix models differently via `model_alias`/
 ## Installation
 
 ```bash
-uv add data-designer data-designer-nemotron-bharat-translation
+uv add data-designer data-designer-nemotron-indic-translation
 ```
 
 ## Usage
@@ -114,7 +114,7 @@ examples below cover the four model-selection cases from the table above
 
 ```python
 from data_designer.config.config_builder import DataDesignerConfigBuilder
-from data_designer_nemotron_bharat_translation.config import DocumentTranslationConfig
+from data_designer_nemotron_indic_translation.config import DocumentTranslationConfig
 
 builder = DataDesignerConfigBuilder()
 builder.add_column(

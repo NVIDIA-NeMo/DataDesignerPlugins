@@ -3,7 +3,7 @@
 
 import pytest
 
-from data_designer_nemotron_bharat_translation.script_remap import can_remap_script, remap_script
+from data_designer_nemotron_indic_translation.script_remap import can_remap_script, remap_script
 
 
 def test_can_remap_script_true_for_supported_pair() -> None:
