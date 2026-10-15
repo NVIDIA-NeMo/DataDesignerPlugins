@@ -52,7 +52,8 @@ def test_bodhan_language_descriptions_includes_meetei_mayek_for_remap_evaluation
 
 def test_bodhan_language_descriptions_cover_all_22_languages() -> None:
     assert BODHAN_LANGUAGE_DESCRIPTIONS["hi-Deva-IN"] == "Hindi"
-    assert set(TARGET_LANGUAGE_CODES) <= set(BODHAN_LANGUAGE_DESCRIPTIONS)
+    native_script_codes = {c for c in TARGET_LANGUAGE_CODES if c == "en-Latn-IN" or not c.endswith("-Latn-IN")}
+    assert native_script_codes <= set(BODHAN_LANGUAGE_DESCRIPTIONS)
 
 
 def test_describe_target_language_omits_adjective_for_native_region() -> None:

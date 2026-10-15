@@ -100,9 +100,13 @@ NATIVE_REGION: dict[str, str] = {
 # plus English, each in its default native script, region India, using the
 # ISO 639-1 two-letter code where one exists and the ISO 639-2/3
 # three-letter code otherwise (Bodo, Dogri, Konkani, Maithili, Manipuri,
-# Santali). Manipuri carries two codes: the Bengali-script intermediate
-# stage and the Meetei Mayek final stage (see
+# Santali). Manipuri carries two native-script codes: the Bengali-script
+# intermediate stage and the Meetei Mayek final stage (see
 # DocumentTranslationConfig.target_language_script) -- both need a description.
+# The list ends with a Latin-script (romanized) variant of each of the 22
+# scheduled languages, e.g. "hi-Latn-IN"; these are only described for the
+# generic translation mode, since BODHAN_LANGUAGE_DESCRIPTIONS has no
+# romanized entries.
 TARGET_LANGUAGE_CODES: list[str] = [
     "en-Latn-IN",
     "bn-Beng-IN",
@@ -128,6 +132,28 @@ TARGET_LANGUAGE_CODES: list[str] = [
     "mni-Beng-IN",
     "mni-Mtei-IN",
     "sat-Olck-IN",
+    "bn-Latn-IN",
+    "gu-Latn-IN",
+    "hi-Latn-IN",
+    "kn-Latn-IN",
+    "ml-Latn-IN",
+    "mr-Latn-IN",
+    "ne-Latn-IN",
+    "or-Latn-IN",
+    "pa-Latn-IN",
+    "ta-Latn-IN",
+    "te-Latn-IN",
+    "ur-Latn-IN",
+    "as-Latn-IN",
+    "ks-Latn-IN",
+    "sa-Latn-IN",
+    "sd-Latn-IN",
+    "brx-Latn-IN",
+    "doi-Latn-IN",
+    "gom-Latn-IN",
+    "mai-Latn-IN",
+    "mni-Latn-IN",
+    "sat-Latn-IN",
 ]
 
 
