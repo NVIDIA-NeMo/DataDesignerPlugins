@@ -4,6 +4,8 @@ Call NVIDIA NeMo Gym resources and harnesses inside the Data Designer DAG, or ex
 
 ## Resource and harness columns
 
+For a two-turn Pi conversation with durable history and an agent-server restart, see the optional [persistent Pi service](examples/pi_sessions/README.md). It extends upstream Gym's Pi adapter in a separate runtime and works with the existing harness columns.
+
 The package also installs `gym-resource` and `gym-harness` column generators. These execute inside the DD DAG and declare dependencies on every request, session, identity, and provenance source path.
 
 ```python
