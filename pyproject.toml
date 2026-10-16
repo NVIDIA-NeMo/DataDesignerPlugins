@@ -21,16 +21,19 @@ members = [
 package = false
 required-version = ">=0.7.10"
 constraint-dependencies = [
-    "cryptography>=48.0.1,<50",
+    "anyio>=4.14.2,<5",
+    "click>=8.3.3,<9",
+    "cryptography>=50.0.0,<51",
     "idna>=3.18",
+    "lxml>=6.1.1,<7",
     "mcp>=1.29.0,<2",
-    "nltk>=3.10.2,<3.11",
+    "nltk>=3.10.3,<3.11",
     "pillow>=12.3.0",
     "pyarrow>=24.0.0,<25",
-    "pyjwt>=2.13.0",
+    "pyjwt>=2.15.1,<3",
     "python-multipart>=0.0.32",
     "starlette>=1.4.1",
-    "urllib3>=2.7.0",
+    "urllib3>=2.8.0,<3",
 ]
 
 [tool.ddp.catalog]
@@ -43,7 +46,7 @@ package-index-url = "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
 package-assets-url = "https://github.com/NVIDIA-NeMo/DataDesignerPlugins/releases/download/ddp-package-assets/"
 package-assets-release-tag = "ddp-package-assets"
 release-ref-template = "{package}/v{version}"
-default-data-designer-requirement = "data-designer>=0.5.7"
+default-data-designer-requirement = "data-designer>=0.9.4"
 author-name = "NVIDIA Corporation"
 
 [tool.ruff]

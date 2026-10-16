@@ -831,8 +831,8 @@ def test_main_includes_template_plugin() -> None:
                 "specifier": ">=3.10",
             },
             "data_designer": {
-                "requirement": "data-designer>=0.5.7",
-                "specifier": ">=0.5.7",
+                "requirement": "data-designer>=0.9.4",
+                "specifier": ">=0.9.4",
                 "marker": None,
             },
         },
