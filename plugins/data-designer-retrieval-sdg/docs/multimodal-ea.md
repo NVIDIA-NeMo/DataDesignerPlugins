@@ -6,9 +6,10 @@ recipe and AutoModel's native retrieval datasets/miner. It has no benchmark
 loaders, dataset-name switches, fixed domains, corpus-specific prompts, section
 repairs, or dependency on an external generation repository.
 
-The older `generate` / `run_generation` QA interface remains available for
-existing clients; it is **not** the multimodal EA recipe entry point. This path
-does not generate answers or apply the older answer-comparison policy.
+The original text QA pipeline uses `generate` / `run_generation` with a
+`DocumentChunkerSeedSource`. The multimodal workflow uses its own configuration
+and entry point below. It generates queries and supporting-source judgments
+without generating answers.
 
 ## Inputs and ownership
 
@@ -316,6 +317,13 @@ before setting `resume: true`.
 Query generation uses a request-sized schema requiring exactly one outcome for
 each requested slot. Missing, duplicate and extra slots undergo native correction
 before any response is cached; response order and explicit abstentions are preserved.
+Export writes a complete bundle in a temporary sibling directory, then publishes
+it by rename. An interruption before publication leaves the destination absent.
+If publication finishes before the run completion record is saved, explicit
+resume reuses the bundle only when every file matches the regenerated export.
+Partial or different destinations are preserved and rejected; resume does not
+repair them. Export recovery reuses successful cached inference responses.
+
 Successful cached requests are reused. Changed inputs/configuration/code or
 corrupt caches fail instead of silently regenerating or mixing results.
 
@@ -364,3 +372,27 @@ in `test_multimodal_sdg.py`.
 Dataset ingestion, domain-specific prompts and corpus repairs belong in caller
 preprocessing. Native mining and its checks belong to the recipe/AutoModel. The
 generation plugin operates on the canonical source and context contracts above.
+
+### Mixed-modality positive sets
+
+The additive `mixed` view preserves the complete corpus and every localized positive,
+including queries supported by both a text-only unit and an image-only unit. Existing
+`text`, `image`, and `image_and_text` views retain their eligibility rules. A query is
+excluded from those views if any positive cannot be represented; its positives are
+never dropped to make it fit.
+
+`views/mixed/corpus/shared` uses Parquet columns `docid`, `text`, and `image`.
+Absent images are null binary cells, and image-only units retain empty text.
+`synthetic_eval/mixed/corpus.jsonl` omits `image_path` for text-only units. Training
+positives and evaluation qrels retain their original grades. Unselected corpus units
+remain available but unjudged; this export does not mine negatives.
+
+Select the `mixed` view with
+`resolve_portable_training_input(bundle / "generation_result.json", "mixed")`
+from `nemotron.recipes.embed.sdg_manifest`. Bundle inspection uses
+`inspect_vl_bundle(bundle / "run_manifest.json", view="mixed")`.
+
+The recipe's dataset adapter normalizes null images to AutoModel's empty-string
+representation. Direct raw `WikiSSNQDataset` loading is not an equivalent
+compatibility claim. Validation covers bundle inspection and image decoding,
+not a training step or retrieval-quality result.

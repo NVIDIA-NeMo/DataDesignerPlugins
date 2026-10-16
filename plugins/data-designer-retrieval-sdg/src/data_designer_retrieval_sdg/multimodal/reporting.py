@@ -6,7 +6,7 @@
 from collections import Counter
 
 from data_designer_retrieval_sdg.multimodal.models import Candidate
-from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
+from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 
 
 def generation_report(sources: list[RetrievalSource], candidates: list[Candidate], outcomes: list[dict]) -> dict:

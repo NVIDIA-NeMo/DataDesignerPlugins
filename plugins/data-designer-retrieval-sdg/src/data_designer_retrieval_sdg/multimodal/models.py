@@ -11,8 +11,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
-from data_designer_retrieval_sdg.retrieval.models import SplitRatios
-from data_designer_retrieval_sdg.retrieval.query_groups import QueryProvenance
+from data_designer_retrieval_sdg.multimodal.query_groups import QueryProvenance
+from data_designer_retrieval_sdg.multimodal.source_models import SplitRatios
 
 
 class StrictModel(BaseModel):

@@ -9,7 +9,7 @@ from data_designer.engine.processing.ginja import environment
 
 from data_designer_retrieval_sdg.multimodal.models import GenerationContext
 from data_designer_retrieval_sdg.multimodal.storage import digest, fingerprint
-from data_designer_retrieval_sdg.structured import RetrievalStructuredResponseRecipe
+from data_designer_retrieval_sdg.multimodal.structured import RetrievalStructuredResponseRecipe
 
 
 class RequestTooLarge(ValueError):

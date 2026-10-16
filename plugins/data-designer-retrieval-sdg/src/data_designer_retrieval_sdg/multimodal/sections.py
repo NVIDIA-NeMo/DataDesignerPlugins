@@ -14,8 +14,8 @@ from data_designer_retrieval_sdg.multimodal.bounds import check_request
 from data_designer_retrieval_sdg.multimodal.inference import Request
 from data_designer_retrieval_sdg.multimodal.models import GenerationContext, MultimodalSDGConfig, TOCConfirmation
 from data_designer_retrieval_sdg.multimodal.planning import automatic_contexts, context_chars
+from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
-from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
 
 
 def structural_lines(text: str) -> list[str]:

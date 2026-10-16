@@ -5,22 +5,30 @@
 
 from __future__ import annotations
 
+import errno
+import tempfile
 from collections import Counter
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from filelock import FileLock
 
 from data_designer_retrieval_sdg.multimodal.models import Candidate, GenerationContext, MultimodalSDGConfig
+from data_designer_retrieval_sdg.multimodal.query_groups import (
+    QueryGroupInput,
+    assign_query_group_splits,
+    normalized_query,
+    resolve_query_groups,
+)
+from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import artifact, digest, write_bytes, write_json, write_jsonl
-from data_designer_retrieval_sdg.retrieval.export import assign_query_group_splits
-from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
-from data_designer_retrieval_sdg.retrieval.query_groups import QueryGroupInput, normalized_query, resolve_query_groups
 
 VIEWS = {
     "text": ("id", "TextQADataset"),
     "image": ("image_filename", "ColPaliDataset"),
     "image_and_text": ("docid", "WikiSSNQDataset"),
+    "mixed": ("docid", "WikiSSNQDataset"),
 }
 
 
@@ -55,7 +63,10 @@ def view_candidates(view: str, units: list[dict], candidates: list[Candidate]) -
     return [
         c
         for c in candidates
-        if all(s.unit_id in ids and (view == "image_and_text" or s.modality == view) for s in c.localization.supports)
+        if all(
+            s.unit_id in ids and (view in {"image_and_text", "mixed"} or s.modality == view)
+            for s in c.localization.supports
+        )
     ]
 
 
@@ -85,7 +96,7 @@ def write_view(
             if view != "image":
                 row["text"] = unit["text"]
             if view != "text":
-                row["image"] = (root / unit["images"][0]).read_bytes()
+                row["image"] = (root / unit["images"][0]).read_bytes() if unit["images"] else None
             rows.append(row)
         pq.write_table(
             pa.Table.from_pylist(rows, schema=pa.schema(fields)), corpus / f"part-{offset // 32:05d}.parquet"
@@ -136,7 +147,7 @@ def write_view(
         row = {"_id": unit["unit_id"], "title": "", "metadata": {"source_document_id": unit["document_id"]}}
         if view != "image":
             row["text"] = unit["text"]
-        if view != "text":
+        if view != "text" and unit["images"]:
             row["image_path"] = unit["images"][0]
         documents.append(row)
     write_jsonl(evaluation / "corpus.jsonl", documents)
@@ -144,7 +155,66 @@ def write_view(
     return query_assignments
 
 
+def bundle_files(root: Path) -> dict[str, str]:
+    """Hash regular bundle files and reject symbolic links before resume comparison.
+
+    Args:
+        root: A completed candidate bundle directory.
+
+    Returns:
+        Relative file paths and their content hashes.
+
+    Raises:
+        ValueError: The tree contains symbolic links or nonregular entries, or is not a directory.
+    """
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("Bundle must be a regular directory")
+    paths = list(root.rglob("*"))
+    if any(path.is_symlink() or not (path.is_file() or path.is_dir()) for path in paths):
+        raise ValueError("Bundle must contain only regular files and directories, without symbolic links")
+    return {path.relative_to(root).as_posix(): digest(path) for path in paths if path.is_file()}
+
+
 def export_multimodal_bundle(
+    root: Path,
+    sources: list[RetrievalSource],
+    candidates: list[Candidate],
+    outcomes: list[dict],
+    config: MultimodalSDGConfig,
+) -> Path:
+    """Publish a complete portable bundle, retaining an identical bundle on resume.
+
+    Args:
+        root: Destination that must be absent, or byte-identical on explicit resume.
+        sources: Complete canonical corpus, including unselected distractors.
+        candidates: Every terminal candidate and its original gate judgments.
+        outcomes: Context summaries and generation slots, including abstentions.
+        config: Generation and export policy, including explicit resume permission.
+
+    Returns:
+        The published portable generation_result.json path.
+
+    Raises:
+        FileExistsError: A non-resumed, partial, or different destination exists.
+        ValueError: Candidates violate quality or source integrity requirements.
+    """
+    root = Path(root)
+    root.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(root) + ".export.lock", timeout=0):
+        if root.exists() and not config.resume:
+            raise FileExistsError(errno.EEXIST, "Export destination already exists", str(root))
+        with tempfile.TemporaryDirectory(prefix=f".{root.name}-staging-", dir=root.parent) as directory:
+            staged = Path(directory) / "bundle"
+            write_multimodal_bundle(staged, sources, candidates, outcomes, config)
+            if root.exists() or root.is_symlink():
+                if not config.resume or bundle_files(root) != bundle_files(staged):
+                    raise FileExistsError(errno.EEXIST, "Existing export is partial or differs", str(root))
+            else:
+                staged.rename(root)
+    return root / "generation_result.json"
+
+
+def write_multimodal_bundle(
     root: Path,
     sources: list[RetrievalSource],
     candidates: list[Candidate],
@@ -196,7 +266,11 @@ def export_multimodal_bundle(
     write_json(root / "context_outcomes.json", outcomes)
     query_assignments, view_counts = {}, {}
     for view in VIEWS:
-        eligible = [unit for unit in units if (bool(unit["text"].strip()) if view == "text" else bool(unit["images"]))]
+        eligible = [
+            unit
+            for unit in units
+            if view == "mixed" or (bool(unit["text"].strip()) if view == "text" else bool(unit["images"]))
+        ]
         if not eligible:
             continue
         selected = view_candidates(view, eligible, accepted)

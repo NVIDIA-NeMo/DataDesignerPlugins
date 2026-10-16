@@ -20,11 +20,11 @@ from data_designer.engine.storage.artifact_storage import ArtifactStorage, Resum
 from data_designer.interface import DataDesigner
 from pydantic import BaseModel
 
-from data_designer_retrieval_sdg.config import RetrievalStructuredColumnConfig
 from data_designer_retrieval_sdg.multimodal.bounds import check_request
+from data_designer_retrieval_sdg.multimodal.config import RetrievalStructuredColumnConfig
 from data_designer_retrieval_sdg.multimodal.models import GenerationContext, MultimodalSDGConfig
+from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import digest, fingerprint, write_json
-from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
 
 
 @dataclass(frozen=True)
@@ -217,9 +217,17 @@ class DataDesignerInference:
             attempt: Directory for immutable completion evidence.
         """
         expected = {key: item for key, item in items}
+        batches = sorted(dataset.glob("batch_*.parquet"))
+        seen: set[str] = set()
+        # Reject ambiguous identities before publishing any response from this attempt.
+        for batch in batches:
+            for key in pq.read_table(batch, columns=["request_id"]).column("request_id").to_pylist():
+                if key not in expected or key in seen:
+                    raise ValueError("Unexpected or duplicate Data Designer response identity")
+                seen.add(key)
         found: set[str] = set()
         invalid: list[str] = []
-        for batch in sorted(dataset.glob("batch_*.parquet")):
+        for batch in batches:
             for row in pq.read_table(batch).to_pylist():
                 key = row["request_id"]
                 if key not in expected or key in found:

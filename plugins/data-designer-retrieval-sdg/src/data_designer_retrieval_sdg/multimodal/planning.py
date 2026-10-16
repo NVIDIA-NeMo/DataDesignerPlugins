@@ -21,8 +21,8 @@ from data_designer_retrieval_sdg.multimodal.models import (
     QueryInstruction,
 )
 from data_designer_retrieval_sdg.multimodal.sampling import sample_instructions
+from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import fingerprint
-from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
 
 
 def context_chars(ids: list[str], sources: dict[str, RetrievalSource]) -> int:

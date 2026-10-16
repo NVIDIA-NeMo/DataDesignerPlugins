@@ -42,9 +42,9 @@ from data_designer_retrieval_sdg.multimodal.planning import (
     related_contexts,
     select_summaries,
 )
+from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
+from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import artifact, digest, fingerprint, write_bytes, write_json
-from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
-from data_designer_retrieval_sdg.retrieval.source_file import load_retrieval_sources
 
 
 def load_contexts(config: MultimodalSDGConfig, sources: list[RetrievalSource]) -> list[GenerationContext]:

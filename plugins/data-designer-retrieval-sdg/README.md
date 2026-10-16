@@ -2,7 +2,7 @@
 
 Data Designer toolkit for **retriever synthetic data generation**. The
 package registers three `data_designer.plugins` entry points, ships a
-ready-made multi-step QA generation pipeline, and exposes a CLI that
+ready-made four-stage text QA generation pipeline, and exposes a CLI that
 generates QA pairs and converts them into training formats compatible
 with [Automodel](https://github.com/NVIDIA-NeMo/Automodel) retriever
 finetuning.
@@ -30,9 +30,21 @@ positive localization, followed by grouped-query export over a shared corpus.
 It accepts generic unit/context JSONL and requires explicit generator/judge
 models. It has no dataset-specific adapters or external benchmark dependencies.
 
-The existing QA pipeline and conversion CLI remain available for existing
-clients. Their [QA input contract](docs/retrieval-inputs.md) is separate from the
-new EA entry point. PDF parsing/OCR remain caller-owned preprocessing.
+The plugin provides two generation workflows:
+
+- **Text QA:** `generate --input-dir` and `build_qa_generation_pipeline` use the
+  original four stages: extract artifacts, generate question-answer pairs,
+  deduplicate pairs, and evaluate them. The prompts, output schemas, and
+  document-chunker columns are unchanged.
+- **Multimodal retrieval:** the [standalone multimodal workflow](docs/multimodal-ea.md)
+  generates retrieval queries with graded supporting sources from prepared text
+  and image units. It does not generate answers. PDF parsing and rendering remain
+  caller-owned preprocessing.
+
+The experimental query-first QA builder and its `retrieval-sources` input to
+`generate` have been removed. Use the standalone multimodal configuration for
+source JSONL. To resume an interrupted query-first QA run, use the version that
+created it; its checkpoints cannot be resumed through either remaining pipeline.
 
 ### VLM-based SDG workflow
 
@@ -190,12 +202,7 @@ data-designer-retrieval-sdg generate \
 Use `--resume if_possible` to resume when compatible artifacts are available and
 start fresh otherwise. DataDesigner owns checkpoint discovery, configuration
 compatibility, partial-result cleanup, and the behavior of every resume mode. The
-plugin does not maintain a second resume state. For canonical
-`RetrievalSourcesFile` inputs, it creates content-addressed snapshots of the
-ordered source rows and image bytes under the artifact path before handing the
-rows to Data Designer. This makes source changes visible to Data Designer's
-native configuration fingerprint. The legacy document-chunker path retains its
-existing resume behavior.
+text generation runner does not maintain a second resume state.
 
 `--buffer-size` controls DataDesigner's checkpoint/write granularity and remains
 part of the resolved config. DataDesigner still profiles the completed dataset
@@ -422,7 +429,7 @@ custom header value, and non-allowlisted custom body values.
 ### `embedding-dedup` column
 
 ```python
-from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
+from data_designer_retrieval_sdg import EmbeddingDedupColumnConfig
 
 config_builder.add_column(
     EmbeddingDedupColumnConfig(
@@ -439,7 +446,7 @@ config_builder.add_column(
 ### `document-chunker` seed reader
 
 ```python
-from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
+from data_designer_retrieval_sdg import DocumentChunkerSeedSource
 
 seed_source = DocumentChunkerSeedSource(
     path="./docs",

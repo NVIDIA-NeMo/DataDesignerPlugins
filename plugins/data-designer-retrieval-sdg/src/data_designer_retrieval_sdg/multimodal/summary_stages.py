@@ -22,8 +22,8 @@ from data_designer_retrieval_sdg.multimodal.models import (
 )
 from data_designer_retrieval_sdg.multimodal.planning import automatic_contexts, bounded_contexts
 from data_designer_retrieval_sdg.multimodal.sections import section_contexts, verify_section_coverage
+from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
-from data_designer_retrieval_sdg.retrieval.models import RetrievalSource
 
 
 def visual_description(visual: dict, unit_id: str) -> str:
