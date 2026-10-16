@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Run from the repository root after copying this file to ./sdg.yaml.
+sources_file: ./plugins/data-designer-retrieval-sdg/docs/assets/first-run/sources.jsonl
+output_dir: ./runs/first-retrieval-bundle
+dataset_id: dgx-b200-tutorial
+context_strategy: unit
+generator:
+  model: <generator-model>
+  endpoint: https://api.example.com/v1
+  credential_env: SDG_API_KEY
+  temperature: 0
+  max_tokens: 4096
+  timeout: 90
+judge:
+  model: <judge-model>
+  endpoint: https://api.example.com/v1
+  credential_env: SDG_API_KEY
+  temperature: 0
+  max_tokens: 8192
+  timeout: 90
+concurrency: 1
+batch_size: 1
+missing_response_attempts: 1
+seed: 42
+instructions:
+- name: software-purpose
+  instruction: Ask one standalone question about the purpose of software described in the
+    original source text. Identify the DGX B200 system and relevant software in the
+    question. Do not include the answer. Return null if no useful question is supported.
+  modality: text
+  format: question
+  answerability: fully answerable
+- name: topology-relationship
+  instruction: Ask one standalone question about a connection or grouping visible in the
+    system topology diagram. Identify the DGX B200 system and the relevant components
+    in the question. Require visual evidence rather than only reading the page title. Do
+    not include the answer. Return null if no useful diagram question is supported.
+  modality: image
+  format: question
+  answerability: fully answerable

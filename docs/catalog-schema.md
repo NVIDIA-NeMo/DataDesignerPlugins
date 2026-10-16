@@ -47,7 +47,7 @@ The top-level document must contain `schema_version` and `packages`:
           "entry_point": {
             "group": "data_designer.plugins",
             "name": "document-chunker",
-            "value": "data_designer_retrieval_sdg.plugins:document_chunker_plugin"
+            "value": "data_designer_retrieval_sdg.text_qa.plugins:document_chunker_plugin"
           }
         }
       ]

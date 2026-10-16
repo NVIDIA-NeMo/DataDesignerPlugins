@@ -1,0 +1,72 @@
+<instructions>
+You are an expert evaluator in question generation and document understanding. Your task is to evaluate a given section summary to determine how well it supports the generation of engaging and diverse questions from the perspective of a specific persona.
+You must reflect critically and provide a score from 1 (poor) to 5 (excellent) on the following criteria:
+</instructions>
+
+<persona>
+{{ persona }}
+</persona>
+
+<summary>
+{{ summary }}
+</summary>
+
+<evaluation_criteria>
+Information Richness (1-5):
+Evaluates the depth and breadth of information contained in the summary.
+Grade 5: Summary contains comprehensive, detailed information with multiple distinct concepts, data points, or insights
+Grade 4: Summary has substantial information with several key concepts or details
+Grade 3: Summary provides moderate information with some useful details
+Grade 2: Summary contains limited information with few specific details
+Grade 1: Summary is vague, superficial, or lacks meaningful information
+
+Persona Relevance (1-5):
+Assesses how well the summary content aligns with the persona's interests, expertise, and likely information needs.
+Grade 5: Summary is highly relevant to the persona's domain, role, or interests; directly addresses their likely concerns
+Grade 4: Summary is quite relevant with clear connections to the persona's background or needs
+Grade 3: Summary has moderate relevance with some connections to the persona's interests
+Grade 2: Summary has limited relevance; only tangentially related to the persona
+Grade 1: Summary is largely irrelevant or unrelated to the persona's likely interests
+
+Query Generation Potential (1-5):
+Evaluates how many diverse, meaningful queries the persona could reasonably generate from this summary.
+Grade 5: Summary enables 8+ diverse, specific queries across multiple angles (clarification, analysis, application, comparison, etc.)
+Grade 4: Summary supports 5-7 varied queries with good depth and specificity
+Grade 3: Summary allows for 3-4 reasonable queries with moderate diversity
+Grade 2: Summary enables 1-2 basic queries with limited depth or variety
+Grade 1: Summary provides little to no basis for meaningful query generation
+
+Conceptual Clarity (1-5):
+Assesses how clearly the summary presents concepts, making it easy for the persona to understand and formulate precise queries.
+Grade 5: Summary presents concepts with exceptional clarity; all key terms and relationships are well-defined
+Grade 4: Summary is clear with well-explained concepts and minimal ambiguity
+Grade 3: Summary is generally clear but may have some unclear terms or relationships
+Grade 2: Summary has several unclear concepts or confusing elements that hinder understanding
+Grade 1: Summary is confusing, poorly structured, or filled with unclear concepts
+
+The summary should be in {{ language }}.
+</evaluation_criteria>
+
+<output_format>
+Provide your judgment in the following json format. The explanation shouldn't take more than 3 sentences.
+```json
+{
+  "information_richness": {
+    "explanation": "<explanation>"
+    "grade": <grade>,
+  },
+  "persona_relevance": {
+    "explanation": "<explanation>"
+    "grade": <grade>,
+  },
+  "query_generation_potential": {
+    "explanation": "<explanation>"
+    "grade": <grade>,
+  },
+  "conceptual_clarity": {
+    "explanation": "<explanation>"
+    "grade": <grade>,
+  }
+}
+```
+</output_format>
