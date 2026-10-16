@@ -196,6 +196,7 @@ class GymColumnConfig(GymRequestConfig, SingleColumnConfig):
     queue_timeout: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     max_parallel_requests: int = Field(default=4, ge=1)
     session: GymSessionConfig | None = None
+    response_fields: dict[str, str] | None = None
 
     @model_validator(mode="after")
     def validate_column(self) -> GymColumnConfig:
@@ -207,6 +208,11 @@ class GymColumnConfig(GymRequestConfig, SingleColumnConfig):
             raise ValueError("column paths must contain non-empty dot-separated names")
         if self.response_headers:
             raise ValueError("response_headers are supported only for session initialization")
+        if self.response_fields is not None:
+            if any(not key.strip() or key.strip() != key for key in self.response_fields):
+                raise ValueError("response field names must not be empty or contain surrounding whitespace")
+            if any(not GymTaskProcessorConfig._is_source_path(path) for path in self.response_fields.values()):
+                raise ValueError("response field paths must contain non-empty dot-separated names")
         if set(self.required_columns) & {self.name, *self.side_effect_columns}:
             raise ValueError("Gym outputs must not overwrite required columns")
         return self
@@ -228,6 +234,7 @@ class GymResourceColumnConfig(GymColumnConfig):
     """Call a resource endpoint and expose its structured execution evidence."""
 
     column_type: Literal["gym-resource"] = "gym-resource"
+    response_protocol: Literal["json", "gym-episode"] = "json"
 
 
 class GymHarnessColumnConfig(GymColumnConfig):

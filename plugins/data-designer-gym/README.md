@@ -56,6 +56,26 @@ Failures are retained as data, with distinctions for request validation, admissi
 
 Servers must implement their own execution restrictions, database allowlists, deadlines, and cleanup semantics. Run stateful Gym services with one worker unless the deployed revision explicitly supports more. The plugin uses direct HTTP connections (`trust_env=False`), so it does not inherit proxy environment variables.
 
+### Gym episodes and response projections
+
+Use `response_protocol="gym-episode"` on a resource column to interpret Gym's `result` / `failure` envelope. The existing `status` and `failure_kind` continue to describe the call and cleanup. The additional `episode_status`, `episode_failure_kind`, `episode_failure_reason`, `episode_failure_stage`, `episode_terminal`, `reward` and `mask_sample` describe the episode. A returned result is `completed` even when its reward is zero or its sample is masked; filtering and acceptance stay in the workflow. Malformed outcome fields produce a `response` failure, with the original response retained in the artifact.
+
+```python
+builder.add_column(GymResourceColumnConfig(
+    name="episode",
+    endpoint="http://gym-environment:8000",
+    route="/run",
+    row_id_column="row_id",
+    request_column="episode_request",  # A prepared Gym episode request, including identity.
+    response_protocol="gym-episode",
+    response_fields={"trajectory_id": "result.usersim_result.trajectory_id"},
+))
+```
+
+`response_fields` maps output names to dot-separated JSON object paths. On a resource column it replaces the inline `response_json` with the projection. Missing optional paths become null; `{}` keeps an empty inline object. Omitting the option preserves the existing full resource response. The full response remains in the attempt artifact in every case. Harness columns can also set `response_fields` to add projected `response_json` to their existing evidence column without changing the answer text.
+
+This calls a whole Gym-hosted episode. It does not move UserSim's conversation loop into DD or add a sandbox client. Prepare the native episode request separately; the task exporter still uses its existing Responses-based task format. Align the column timeout with the deployed server's episode deadline and cleanup budget.
+
 ### Live SQL example
 
 [execution_grounded_sql.py](examples/execution_grounded_sql.py) replays saved public SQL candidates against original/variant toy databases, runs a tool-assisted harness, applies ordinary DD judges, and exports accepted rows. This isolates integration parity from independently sampled generations. Replace the saved question/SQL/reasoning seed fields with normal DD generators for SDG.
@@ -202,6 +222,8 @@ data-designer-gym ingest \
 ```
 
 Normalized records retain the complete Gym task and rollout with stable identity restored. They can seed another Data Designer or downstream workflow.
+
+Ingest also exposes `rollout_id`, `attempt`, `task_id` and `environment_server`, and maps native `_ng_failure_message` / `_ng_failure_stage` into `failure_reason` / `failure_stage`. Explicit legacy failure fields take precedence. Missing attempt IDs and failure kinds remain null rather than being inferred. Joining still requires the exported task index; native materialized-task export is separate work.
 
 ## Current scope
 

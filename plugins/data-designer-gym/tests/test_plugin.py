@@ -229,6 +229,77 @@ def test_normalize_rollouts_includes_failure_sidecar(tmp_path: Path, generic_row
     assert normalized["failure_reason"] == "deadline exceeded"
 
 
+@pytest.mark.parametrize("failed", [False, True])
+def test_ingest_preserves_native_attempt_identity(tmp_path: Path, generic_row: dict, failed: bool) -> None:
+    scenario = scenario_from_row(generic_row, GymTaskProcessorConfig(name="gym_tasks", task_column="gym_task"))
+    task = scenario_to_gym_task(scenario)
+    record = {
+        "_ng_task_index": task["_ng_task_index"],
+        "_ng_rollout_index": 0,
+        "_ng_rollout_id": "run-row-1",
+        "_ng_attempt_index": 2,
+        "_ng_task_id": {"taskset": "usersim:batch", "task_id": "scenario-1"},
+        "_ng_environment_server": "usersim",
+        "_ng_failure_message": "episode timed out" if failed else None,
+        "_ng_failure_stage": "actor" if failed else None,
+    }
+    tasks = write_jsonl(tmp_path / "tasks.jsonl", [task])
+    rollouts = write_jsonl(tmp_path / "rollouts.jsonl", [] if failed else [record])
+    failures = write_jsonl(tmp_path / "failures.jsonl", [record] if failed else [])
+    output = tmp_path / "normalized.jsonl"
+    assert (
+        run_cli(
+            [
+                "ingest",
+                "--tasks",
+                str(tasks),
+                "--rollouts",
+                str(rollouts),
+                "--failures",
+                str(failures),
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    normalized = read_jsonl(output)[0]
+    assert normalized["status"] == ("failed" if failed else "completed")
+    assert normalized["rollout_id"] == "run-row-1"
+    assert normalized["attempt"] == 2
+    assert normalized["task_id"] == record["_ng_task_id"]
+    assert normalized["environment_server"] == "usersim"
+    assert normalized["failure_reason"] == record["_ng_failure_message"]
+    assert normalized["failure_stage"] == record["_ng_failure_stage"]
+    assert normalized["failure_kind"] is None
+    assert normalized["rollout"] == record
+
+
+@pytest.mark.parametrize(("reason", "stage"), [("original reason", "verify"), ("", ""), (None, None)])
+def test_ingest_keeps_explicit_legacy_failure_metadata(tmp_path: Path, generic_row: dict, reason, stage) -> None:
+    scenario = scenario_from_row(generic_row, GymTaskProcessorConfig(name="gym_tasks", task_column="gym_task"))
+    task = scenario_to_gym_task(scenario)
+    tasks = write_jsonl(tmp_path / "tasks.jsonl", [task])
+    rollouts = write_jsonl(tmp_path / "rollouts.jsonl", [])
+    failures = write_jsonl(
+        tmp_path / "failures.jsonl",
+        [
+            {
+                "_ng_task_index": task["_ng_task_index"],
+                "failure_reason": reason,
+                "failure_stage": stage,
+                "_ng_failure_message": "native reason",
+                "_ng_failure_stage": "actor",
+            }
+        ],
+    )
+    output = normalize_rollouts(tasks, rollouts, tmp_path / "normalized.jsonl", failures_path=failures)
+    normalized = read_jsonl(output)[0]
+    assert normalized["failure_reason"] == reason
+    assert normalized["failure_stage"] == stage
+    assert normalized["attempt"] is None
+
+
 @pytest.mark.parametrize(
     "managed_field",
     ["_dd_provenance", "_dd_scenario_id", "_ng_rollout_index", "_ng_task_index"],

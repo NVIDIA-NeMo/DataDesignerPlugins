@@ -139,7 +139,14 @@ def test_valid_column_plugin(plugin) -> None:
 
 
 def test_config_round_trip_and_dependencies(config, session) -> None:
-    config = GymResourceColumnConfig.model_validate(config.model_dump() | {"session": session})
+    config = GymResourceColumnConfig.model_validate(
+        config.model_dump()
+        | {
+            "session": session,
+            "response_protocol": "gym-episode",
+            "response_fields": {"score": "result.reward"},
+        }
+    )
     config = GymResourceColumnConfig.model_validate_json(config.model_dump_json())
     assert config.required_columns == ["candidate", "database", "id", "variant"]
     assert config.side_effect_columns == []
@@ -162,6 +169,11 @@ def test_config_round_trip_and_dependencies(config, session) -> None:
         {"name": "candidate"},
         {"bearer_token_env": "bad key"},
         {"session": {"initialize": [{"route": "/seed_session"}]}},
+        {"response_fields": {"": "result.reward"}},
+        {"response_fields": {" score": "result.reward"}},
+        {"response_fields": {"score": "result..reward"}},
+        {"response_fields": {"score": ""}},
+        {"response_protocol": "unknown"},
     ],
 )
 def test_invalid_config(config, updates) -> None:
@@ -181,6 +193,155 @@ def test_resource_preserves_evidence_and_row(service, resources, config, row) ->
     assert artifact["request"] == {"sql": "select 3", "database_path": "toy.db"}
     assert artifact["response"] == service.response
     assert len(service.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{"score": "result.reward", "optional": "result.missing", "list_attribute": "result.transcript.count"}, {}],
+)
+def test_resource_response_projection_keeps_full_artifact(service, resources, config, row, fields) -> None:
+    service.response = {"result": {"reward": 0, "transcript": ["large payload"]}}
+    config = GymResourceColumnConfig.model_validate(config.model_dump() | {"response_fields": fields})
+    output = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
+    expected = {"score": 0, "optional": None, "list_attribute": None} if fields else {}
+    assert json.loads(output["response_json"]) == expected
+    artifact = json.loads((resources.artifact_storage.base_dataset_path / output["artifact"]).read_text())
+    assert artifact["response"] == service.response
+    assert service.response["result"]["transcript"] == ["large payload"]
+
+
+@pytest.mark.parametrize(
+    ("payload", "status", "reward", "mask", "kind", "terminal"),
+    [
+        ({"result": {"reward": 0, "mask_sample": False}}, "completed", 0, False, None, None),
+        (
+            {"result": {"reward": 0, "mask_sample": True, "failure_kind": "usersim:scorer_inconclusive"}},
+            "completed",
+            0,
+            True,
+            "usersim:scorer_inconclusive",
+            None,
+        ),
+        ({"result": {}}, "completed", None, None, None, None),
+        (
+            {
+                "failure": {
+                    "failure_reason": "session expired",
+                    "terminal": False,
+                    "failure_kind": "session_expired",
+                    "stage": "actor",
+                }
+            },
+            "failed",
+            None,
+            None,
+            "session_expired",
+            False,
+        ),
+        ({"failure": {"failure_reason": "invalid task", "terminal": True}}, "failed", None, None, None, True),
+    ],
+)
+def test_episode_outcome_is_separate_from_call_status(
+    service, resources, config, row, payload, status, reward, mask, kind, terminal
+) -> None:
+    service.response = {
+        "episode_id": {"rollout_id": "run-row-1", "attempt": 0},
+        "task_id": {"taskset": "usersim:example", "task_id": "scenario-1"},
+        **payload,
+    }
+    config = GymResourceColumnConfig.model_validate(config.model_dump() | {"response_protocol": "gym-episode"})
+    output = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
+    assert output["status"] == "completed"
+    assert output["failure_kind"] is None
+    assert output["episode_status"] == status
+    assert output["reward"] == reward
+    assert output["mask_sample"] is mask
+    assert output["episode_failure_kind"] == kind
+    assert output["episode_terminal"] is terminal
+    outcome = payload.get("failure", payload.get("result"))
+    assert output["episode_failure_reason"] == outcome.get("failure_reason")
+    assert output["episode_failure_stage"] == outcome.get("stage")
+    artifact = json.loads((resources.artifact_storage.base_dataset_path / output["artifact"]).read_text())
+    assert artifact["episode_status"] == status
+    assert artifact["response"] == service.response
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"result": {}, "failure": {}},
+        {"result": []},
+        {"failure": []},
+        {"failure": {"terminal": False}},
+        {"failure": {"failure_reason": "bad", "terminal": "false"}},
+        {"result": {"reward": True}},
+        {"result": {"reward": "0"}},
+        {"result": {"mask_sample": "false"}},
+        {"failure": {"failure_reason": "bad", "terminal": False, "failure_kind": 3}},
+    ],
+)
+def test_malformed_episode_retains_response_and_cleans_up(service, resources, config, row, session, payload) -> None:
+    service.response = payload
+    config = GymResourceColumnConfig.model_validate(
+        config.model_dump() | {"response_protocol": "gym-episode", "session": session}
+    )
+    output = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
+    assert output["status"] == "failed"
+    assert output["failure_kind"] == "response"
+    assert output["episode_status"] is None
+    assert [call[0] for call in service.calls] == ["/seed_session", "/execute", "/cleanup"]
+    artifact = json.loads((resources.artifact_storage.base_dataset_path / output["artifact"]).read_text())
+    assert artifact["response"] == payload
+
+
+def test_generic_json_does_not_interpret_episode_fields(service, resources, config, row) -> None:
+    service.response = {"failure": {"description": "domain-specific JSON"}}
+    output = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
+    assert output["status"] == "completed"
+    assert "episode_status" not in output
+    assert json.loads(output["response_json"]) == service.response
+
+
+def test_episode_cleanup_failure_preserves_outcome(service, resources, config, row, session) -> None:
+    service.response = {"result": {"reward": 0, "mask_sample": False}}
+    service.cleanup_status = 500
+    config = GymResourceColumnConfig.model_validate(
+        config.model_dump() | {"response_protocol": "gym-episode", "session": session}
+    )
+    output = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
+    assert output["status"] == "failed"
+    assert output["failure_kind"] == "cleanup"
+    assert output["episode_status"] == "completed"
+    assert output["reward"] == 0
+
+
+def test_episode_projection_in_dd_workflow(service, tmp_path) -> None:
+    service.responses_by_sql = {
+        "zero": (200, {"result": {"reward": 0, "mask_sample": False, "transcript": ["large"]}}),
+        "lost": (200, {"failure": {"failure_reason": "session lost", "terminal": False}}),
+    }
+    builder = DataDesignerConfigBuilder().with_seed_dataset(
+        DataFrameSeedSource(df=pd.DataFrame([{"id": 1, "sql": "zero"}, {"id": 2, "sql": "lost"}]))
+    )
+    builder.add_column(
+        GymResourceColumnConfig(
+            name="episode",
+            endpoint="http://host",
+            route="/run",
+            row_id_column="id",
+            request_columns={"sql": "sql"},
+            response_protocol="gym-episode",
+            response_fields={"score": "result.reward"},
+        )
+    )
+    builder.add_column(
+        ExpressionColumnConfig(name="returned_result", expr="{{ episode.episode_status == 'completed' }}")
+    )
+    dataset = DataDesigner(artifact_path=tmp_path / "artifacts").create(builder, num_records=2).load_dataset()
+    assert dataset["returned_result"].tolist() == ["True", "False"]
+    assert [row["status"] for row in dataset["episode"]] == ["completed", "completed"]
+    assert [json.loads(row["response_json"]) for row in dataset["episode"]] == [{"score": 0}, {"score": None}]
 
 
 @pytest.mark.parametrize(
@@ -360,12 +521,30 @@ def test_harness_final_answer_trace_and_cleanup(service, resources, session) -> 
     output = GymHarnessColumnGenerator(config, resources).generate({"id": "seed-2", "question": "count"})
     assert output["answer"] == "3"
     assert output["trace"]["status"] == "completed"
+    assert "response_json" not in output["trace"]
     assert [call[0] for call in service.calls] == ["/seed_session", "/v1/responses", "/cleanup"]
     assert "episode=seed-2" in service.calls[1][2]["cookie"]
     assert service.calls[1][2]["x-session"] == "row-token"
     artifact = json.loads((resources.artifact_storage.base_dataset_path / output["trace"]["artifact"]).read_text())
     assert artifact["response"] == service.response
     assert "row-token" not in json.dumps(artifact)
+
+
+def test_harness_projects_response_into_existing_evidence(service, resources) -> None:
+    service.response = {"output": [assistant_message("answer")], "usage": {"total_tokens": 12}}
+    config = GymHarnessColumnConfig(
+        name="answer",
+        evidence_column="trace",
+        endpoint="http://agent",
+        row_id_column="id",
+        request_columns={"input": "question"},
+        response_fields={"tokens": "usage.total_tokens"},
+    )
+    output = GymHarnessColumnGenerator(config, resources).generate({"id": "row-1", "question": "test"})
+    assert output["answer"] == "answer"
+    assert json.loads(output["trace"]["response_json"]) == {"tokens": 12}
+    artifact = json.loads((resources.artifact_storage.base_dataset_path / output["trace"]["artifact"]).read_text())
+    assert artifact["response"] == service.response
 
 
 async def concurrent_rows(generator, row) -> list:

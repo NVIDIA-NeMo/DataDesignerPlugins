@@ -92,6 +92,49 @@ def final_assistant_answer(response: dict) -> str:
     return text
 
 
+def project_response(response: Any, fields: dict[str, str] | None) -> Any:
+    """Select named JSON object paths, retaining null for missing optional fields."""
+    if response is None or fields is None:
+        return response
+    projected = {}
+    for name, path in fields.items():
+        value = response
+        for part in path.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        projected[name] = value
+    return projected
+
+
+def gym_episode_outcome(response: dict) -> dict:
+    """Validate Gym outcome fields separately from transport and task quality."""
+    result, failure = response.get("result"), response.get("failure")
+    if (result is None) == (failure is None) or not isinstance(result if failure is None else failure, dict):
+        raise GymCallError("response", "Gym episode must contain exactly one result or failure object")
+    outcome = result if failure is None else failure
+    if failure is not None and (
+        not isinstance(failure.get("failure_reason"), str) or not isinstance(failure.get("terminal"), bool)
+    ):
+        raise GymCallError("response", "Gym episode failure requires failure_reason and boolean terminal")
+    metadata_fields = ("failure_kind", "stage") if failure is not None else ("failure_kind",)
+    if any(outcome.get(field) is not None and not isinstance(outcome[field], str) for field in metadata_fields):
+        raise GymCallError("response", "Gym episode failure metadata must be strings or null")
+    reward = result.get("reward") if result is not None else None
+    mask_sample = result.get("mask_sample") if result is not None else None
+    if reward is not None and (isinstance(reward, bool) or not isinstance(reward, (int, float))):
+        raise GymCallError("response", "Gym episode reward must be a number or null")
+    if mask_sample is not None and not isinstance(mask_sample, bool):
+        raise GymCallError("response", "Gym episode mask_sample must be a boolean or null")
+    return {
+        "episode_status": "failed" if failure is not None else "completed",
+        "episode_failure_kind": outcome.get("failure_kind"),
+        "episode_failure_reason": failure["failure_reason"] if failure is not None else None,
+        "episode_failure_stage": failure.get("stage") if failure is not None else None,
+        "episode_terminal": failure["terminal"] if failure is not None else None,
+        "mask_sample": mask_sample,
+        "reward": reward,
+    }
+
+
 class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
     """Execute one bounded, isolated Gym request per row without replaying it."""
 
@@ -175,6 +218,11 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
                     )
                     if isinstance(self.config, GymHarnessColumnConfig):
                         answer = final_assistant_answer(response)
+                    elif (
+                        isinstance(self.config, GymResourceColumnConfig)
+                        and self.config.response_protocol == "gym-episode"
+                    ):
+                        evidence.update(gym_episode_outcome(response))
                     evidence["status"] = "completed"
                 finally:
                     if cleanup_requests:
@@ -235,9 +283,26 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
         }
         cell["provenance_json"] = json.dumps(evidence["provenance"])
         cell["cleanup_errors_json"] = json.dumps(evidence.get("cleanup_errors", []))
+        if isinstance(self.config, GymResourceColumnConfig) and self.config.response_protocol == "gym-episode":
+            cell.update(
+                {
+                    key: evidence.get(key)
+                    for key in (
+                        "episode_status",
+                        "episode_failure_kind",
+                        "episode_failure_reason",
+                        "episode_failure_stage",
+                        "episode_terminal",
+                        "mask_sample",
+                        "reward",
+                    )
+                }
+            )
+        if isinstance(self.config, GymResourceColumnConfig) or self.config.response_fields is not None:
+            cell["response_json"] = json.dumps(project_response(response, self.config.response_fields))
         if isinstance(self.config, GymHarnessColumnConfig):
             return {**data, self.config.name: answer, self.config.evidence_column: cell}
-        return {**data, self.config.name: {**cell, "response_json": json.dumps(response)}}
+        return {**data, self.config.name: cell}
 
     async def _acquire(self) -> None:
         """Wait for a worker-local lifecycle slot with cancellable backoff."""
