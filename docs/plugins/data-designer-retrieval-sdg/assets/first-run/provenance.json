@@ -1,0 +1,23 @@
+{
+  "title": "NVIDIA DGX B200 User Guide",
+  "author": "NVIDIA Corporation",
+  "document_date": "2026-09-08",
+  "source_url": "https://docs.nvidia.com/dgx/dgxb200-user-guide/dgxb200-user-guide.pdf",
+  "retrieved_on": "2026-10-14",
+  "source_pdf_sha256": "a1f62d73d7fd0393adc8fb49abbf513d1addc437c117d050ab7841aff77230fb",
+  "printed_page": 16,
+  "pdf_page_one_based": 22,
+  "sections": [
+    "1.3. DGX B200 System Topology",
+    "1.4. DGX OS Software"
+  ],
+  "preparation": {
+    "image": "Full PDF page rendered with pdftoppm -f 22 -l 22 -scale-to 1600 -png -singlefile; no image content edits.",
+    "text": "pdftotext -layout page 22; retained sections 1.3 and 1.4 only, excluding the continuation of section 1.2 above them and running header/footer; normalized line wrapping and whitespace. Diagram labels embedded in the figure are not added to extracted text."
+  },
+  "assets": {
+    "dgx-b200-page-16.png": "75bfe51db691410adaf07133470cacb4cc1db866f9fb8e25856b2685dca8acae",
+    "sources.jsonl": "2b61f7412f5abe38235d0cf3a7f3e75d696b1767ab05c0501d6630941fc9ed30"
+  },
+  "notice": "Source material is NVIDIA documentation. Retain its source attribution and consult the original guide for notices and current hardware guidance. This is a retrieval tutorial excerpt, not an operating procedure."
+}

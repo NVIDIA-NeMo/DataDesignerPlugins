@@ -1,59 +1,27 @@
 # data-designer-retrieval-sdg
 
-Data Designer toolkit for **retriever synthetic data generation**. The
-package registers two `data_designer.plugins` entry points, ships a
-ready-made multi-step QA generation pipeline, and exposes a CLI that
-generates QA pairs and converts them into training formats compatible
-with [Automodel](https://github.com/NVIDIA-NeMo/Automodel) retriever
-finetuning.
+Generate synthetic retrieval data with Data Designer through two pipelines:
 
-## Plugins
+- **Text QA:** generate question-answer pairs from text documents, deduplicate
+  questions, score quality, and convert the result for retrieval training.
+- **Multimodal:** generate queries and graded supporting sources from text,
+  images, or mixed collections, then export a portable retrieval bundle.
 
-A single package contributes two plugins to DataDesigner's registries
-via `[project.entry-points."data_designer.plugins"]`:
-
-| Slug | Type | Purpose |
-|------|------|---------|
-| `embedding-dedup` | column generator | Generic cosine-similarity dedup of any list-valued column. Implements native `agenerate()` for the async engine. |
-| `document-chunker` | seed reader | Sentence-chunks a directory of text files and emits structured sections, with optional multi-document bundling. |
-
-Both are registered automatically through Python entry points when the
-package is installed (see [Installation](#installation)).
-
-## Native async and resumable generation
-
-`embedding-dedup` implements `agenerate()` directly on top of
-`model.agenerate_text_embeddings`, so the column participates in
-DataDesigner's async cell-level scheduler.
-
-The `generate` command uses DataDesigner's native resumable generation.
-Use a stable `--artifact-path`, `--dataset-name`, and `--buffer-size`, then
-resume an interrupted run with `--resume always`:
-
-```bash
-data-designer-retrieval-sdg generate \
-    --input-dir ./my_documents \
-    --output-dir ./generated_output \
-    --dataset-name my_retrieval_run \
-    --buffer-size 200 \
-    --resume always
-```
-
-Use `--resume if_possible` to resume when compatible artifacts are available and
-start fresh otherwise. DataDesigner owns checkpoint discovery, configuration
-compatibility, partial-result cleanup, and the behavior of every resume mode. The
-plugin does not maintain a second resume state or inspect corpus bytes.
-
-`--buffer-size` controls DataDesigner's checkpoint/write granularity and remains
-part of the resolved config. DataDesigner still profiles the completed dataset
-before returning, so `--buffer-size` is not a hard cap on final peak memory for
-very large runs.
+Text QA retains its existing functionality, CLI, and package-root Python API.
+Its implementation lives in `text_qa/`; the new pipeline lives in `multimodal/`.
 
 ## Installation
 
-The package is distributed from the NVIDIA-NeMo plugin index (hosted on
-GitHub Pages); it is not on PyPI. Install it by adding the plugin index
-alongside PyPI:
+From a repository checkout containing both pipelines, install into an active
+Python 3.10 or later environment:
+
+```bash
+uv pip install ./plugins/data-designer-retrieval-sdg
+```
+
+Released Text QA functionality is available through the NVIDIA-NeMo plugin index.
+Use the checkout installation above for the multimodal workflow until a release
+includes it:
 
 ```bash
 uv pip install \
@@ -62,247 +30,37 @@ uv pip install \
   data-designer-retrieval-sdg
 ```
 
-For projects managed with `uv`, add it as a dependency:
+For development in this repository, run `make sync` and prefix commands with
+`uv run`.
 
-```bash
-uv add \
-  --default-index https://pypi.org/simple/ \
-  --index https://nvidia-nemo.github.io/DataDesignerPlugins/simple/ \
-  data-designer-retrieval-sdg
-```
+## Choose a Pipeline
 
-`pip` users can pass the equivalent flags:
+Start with the guide for your task:
 
-```bash
-pip install \
-  --index-url https://pypi.org/simple/ \
-  --extra-index-url https://nvidia-nemo.github.io/DataDesignerPlugins/simple/ \
-  data-designer-retrieval-sdg
-```
+| Goal | Documentation |
+| --- | --- |
+| Compare inputs, outputs, and execution models | [Retrieval Synthetic Data Generation](docs/index.md) |
+| Generate question-answer pairs from text files | [Generate Text QA Data](docs/text-qa.md) |
+| Try multimodal generation with a prepared NVIDIA hardware page | [Create Your First Retrieval Bundle](docs/first-run.md) |
+| Generate queries from your own text and images | [Generate Retrieval Data From Text and Images](docs/multimodal.md) |
+| Configure multimodal inputs, model roles, and planning | [Multimodal Configuration Reference](docs/multimodal-reference.md) |
+| Understand evidence, views, and evaluation limits | [Understand Multimodal Retrieval Data](docs/multimodal-concepts.md) |
 
-Standard version constraints work (`>=0.1`, `==0.1.0`, ...). The
-NVIDIA-NeMo index only serves `data-designer-*` plugin packages; the
-default PyPI index supplies transitive dependencies (`data-designer`,
-`nltk`, `pyarrow`, `pyyaml`).
+Text QA uses `data-designer-retrieval-sdg generate` and `convert`. Multimodal uses
+`python -m data_designer_retrieval_sdg.multimodal --config sdg.yaml`.
+Both expose Python APIs. The pipelines have different configuration and output
+contracts; use the guide for the pipeline you choose.
 
-For development inside the monorepo:
+## Registered Plugins
 
-```bash
-make sync                     # install all packages into .venv
-source .venv/bin/activate     # activate the virtual environment
-```
+Installation registers these Data Designer plugins:
 
-Or prefix any command with `uv run`:
+| Name | Type | Purpose |
+| --- | --- | --- |
+| `document-chunker` | Seed reader | Chunk a directory of text files, optionally bundling documents. |
+| `embedding-dedup` | Column generator | Deduplicate questions using embedding cosine similarity. |
+| `retrieval-structured` | Column generator | Accept one complete bare or JSON-fenced object with schema validation and bounded corrections. |
 
-```bash
-uv run data-designer-retrieval-sdg generate --help
-```
-
-## Run configuration
-
-The Pydantic run models contain one complete generation default and one complete
-conversion default. No separate model profile is required. Print either
-declarative resolved configuration without scanning inputs or starting a run:
-
-```bash
-data-designer-retrieval-sdg generate --print-resolved-config
-data-designer-retrieval-sdg convert --print-resolved-config
-```
-
-Layer a YAML or JSON file over the model defaults with `--config`. Explicit
-CLI flags have final precedence. Pydantic Settings generates typed flags for
-every config field, including dotted flags for nested values; familiar flat
-aliases remain available for common settings:
-
-```bash
-data-designer-retrieval-sdg generate \
-    --config ./generation.yaml \
-    --min-complexity 3 \
-    --pipeline.similarity-threshold 0.92
-```
-
-The effective order is Pydantic model defaults, user config file, then explicit CLI
-values. There is no separate untyped `--set` override language. Complex values
-use JSON when passed through their generated flag, for example
-`--pipeline.query-counts '{"multi_hop":3,"structural":2,"contextual":2}'`.
-
-A generation file can be intentionally small because omitted values remain
-visible through `--print-resolved-config`:
-
-```yaml
-schema_version: 1
-seed_source:
-  path: ./my_documents
-output_dir: ./generated_output
-artifact_path: ./artifacts
-dataset_name: my_retrieval_run
-resume: if_possible
-num_records: 1000
-pipeline:
-  num_pairs: 7
-```
-
-Relative paths are interpreted from the process working directory. Unknown
-fields, unsupported schema versions, and invalid values fail validation. For an
-explicit environment-backed provider endpoint or credential, use an exact
-`${VARIABLE_NAME}` reference in the config:
-
-```yaml
-model_providers:
-  - name: nvidia
-    provider_type: openai
-    endpoint: ${NVIDIA_API_BASE_URL}
-    api_key: ${NVIDIA_API_KEY}
-```
-
-The environment variable names are recorded as provenance. All custom provider
-header values are redacted. Custom provider body values are also redacted except
-for the string-valued plugin settings `input_type` and `truncate`.
-
-Provider definitions follow the same layering rule. A provider from the user
-config can be updated by the legacy `--custom-provider-*` shorthand when the
-alias matches; fields not supplied on the CLI are preserved.
-
-`num_records` limits the first N seed records processed by Data Designer; `null`
-processes all available records. This differs from `seed_source.num_files`, which
-limits raw files before optional multi-document bundling. `--print-resolved-config`
-shows the configured value without scanning the corpus. The persisted run snapshot
-replaces `null` with the discovered record count used by that run.
-
-## Quick start
-
-### Generate QA pairs
-
-```bash
-data-designer-retrieval-sdg generate \
-    --input-dir ./my_documents \
-    --output-dir ./generated_output \
-    --dataset-name my_retrieval_run \
-    --buffer-size 200 \
-    --resume if_possible \
-    --num-records 1000 \
-    --num-pairs 7
-```
-
-Generation writes DataDesigner artifacts under `--artifact-path` and exports a
-single JSONL file to `--output-dir`. The model defaults use
-`nvidia/nemotron-3-ultra-550b-a55b` for generation and
-`nvidia/nemotron-3-embed-1b` for embedding deduplication.
-
-`--query-counts` and `--reasoning-counts` are exact orthogonal
-distributions, and each must sum to `--num-pairs`. Pass entries as
-`NAME=COUNT` when changing the default of seven pairs.
-
-After DataDesigner generation and JSONL export both complete, the plugin writes:
-
-- `<artifact-path>/.retrieval_sdg_runs/<dataset-name>/resolved_config.yaml`
-- `<artifact-path>/.retrieval_sdg_runs/<dataset-name>/config_provenance.json`
-
-The directory uses DataDesigner's resolved dataset name, including any suffix it
-adds for a fresh run. The resolved YAML is complete and redacted. Provenance
-includes plugin version, config file names and hashes, explicit override paths,
-environment variable names, exact output paths, and requested and generated
-record counts. Failed attempts do not create plugin metadata; DataDesigner's own
-artifacts remain the authority for resuming them.
-
-### Convert to training format
-
-```bash
-data-designer-retrieval-sdg convert ./generated_output/my_retrieval_run.jsonl \
-    --corpus-id my_corpus
-```
-
-Legacy `generated_batch*.json` directories remain supported by `convert`, but a
-directory containing more than one generated-data format class is rejected as
-ambiguous. Pass the exact JSONL, JSON, or parquet file in that case. `generate`
-no longer writes per-batch JSON files. The old manual restart flags
-`--batch-size`, `--start-batch-index`, and `--end-batch-index` were removed
-because DataDesigner now owns checkpointing through `--buffer-size` and
-`--resume`. For very large corpora, keep input partitions sized for
-DataDesigner's final profiling step until DataDesigner exposes a no-materialize
-create/export path.
-
-After a typed conversion succeeds, it also writes `resolved_config.yaml` and
-`config_provenance.json` under `<output-dir>/.retrieval_sdg_run/`. Provenance
-records the exact generated paths and output counts. Failed conversions do not
-leave plugin metadata that could be mistaken for a completed run.
-
-### Use as a library
-
-```python
-from pathlib import Path
-
-from data_designer_retrieval_sdg import (
-    ConversionRunConfig,
-    load_generation_config,
-    run_conversion_with_config,
-    run_generation,
-)
-
-loaded = load_generation_config(Path("./generation.yaml"))
-generation = run_generation(
-    loaded.config,
-    config_sources=loaded.sources,
-    override_paths=loaded.override_paths,
-    environment_variables=loaded.environment_variables,
-)
-conversion = run_conversion_with_config(
-    ConversionRunConfig(
-        input_path=generation.output_path,
-        corpus_id="my_corpus",
-    )
-)
-assert conversion.train_file is not None
-```
-
-The generation result contains the exact exported JSONL path, resolved Data
-Designer dataset path and name, record count, producer version, run metadata
-paths. Conversion returns the generated train, validation, corpus, evaluation,
-and run metadata paths plus example counts.
-`GenerationRunConfig`, `GenerationPipelineConfig`, and `ConversionRunConfig`
-reject unknown fields so recipe adapters cannot silently pass misspelled
-settings. Their redacted serialization replaces provider credentials, every
-custom header value, and non-allowlisted custom body values.
-
-## Plugin configuration examples
-
-### `embedding-dedup` column
-
-```python
-from data_designer_retrieval_sdg.config import EmbeddingDedupColumnConfig
-
-config_builder.add_column(
-    EmbeddingDedupColumnConfig(
-        name="deduplicated_qa_pairs",
-        source_column="qa_generation",   # upstream column with the items
-        items_key="pairs",               # key under the source column ("None" if the column is already a list)
-        text_field="question",           # field on each item to embed
-        model_alias="embed",             # registered embedding model alias
-        similarity_threshold=0.9,
-    )
-)
-```
-
-### `document-chunker` seed reader
-
-```python
-from data_designer_retrieval_sdg.seed_source import DocumentChunkerSeedSource
-
-seed_source = DocumentChunkerSeedSource(
-    path="./docs",
-    file_pattern="*",
-    recursive=True,
-    file_extensions=[".txt", ".md"],
-    sentences_per_chunk=5,
-    num_sections=1,
-    multi_doc=False,                # set True for bundle-per-row mode
-)
-```
-
-Every emitted row includes a normalized corpus-relative `source_id`. Conversion
-uses it for chunk lookup so same-basename documents in different directories do
-not overwrite one another. Legacy records without `source_id` retain their full
-normalized `file_name` as the lookup key.
-
-Output schema (one record per row): `file_name`, `text`, `chunks`,
-`sections_structured`, `bundle_id`, `bundle_members`, `is_multi_doc`.
+Source extraction, hard-negative mining, and fine-tuning are separate steps.
+Optional sample review against original sources can help improve generation for
+your corpus. Model judgments are not independent ground truth.

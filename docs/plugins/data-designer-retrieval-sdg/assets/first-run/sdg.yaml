@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Run from the repository root after copying this file to ./sdg.yaml.
+sources_file: ./plugins/data-designer-retrieval-sdg/docs/assets/first-run/sources.jsonl
+output_dir: ./runs/first-retrieval-bundle
+dataset_id: dgx-b200-tutorial
+context_strategy: unit
+generator:
+  model: nvidia/nemotron-3.5-super-vl-120b-a12b
+  endpoint: https://integrate.api.nvidia.com/v1
+  credential_env: NVIDIA_API_KEY
+  temperature: 0.6
+  max_tokens: 16384
+  timeout: 600
+  extra_body:
+    top_p: 0.95
+    reasoning_effort: high
+judge:
+  model: nvidia/nemotron-3.5-super-vl-120b-a12b
+  endpoint: https://integrate.api.nvidia.com/v1
+  credential_env: NVIDIA_API_KEY
+  temperature: 0.6
+  max_tokens: 16384
+  timeout: 600
+  extra_body:
+    top_p: 0.95
+    reasoning_effort: high
+concurrency: 1
+batch_size: 1
+missing_response_attempts: 1
+seed: 42
+# Omit instructions and instructions_per_context to use the built-in sampler:
+# one text, one figure, and one table task per selected context.
