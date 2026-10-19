@@ -28,8 +28,8 @@ from data_designer_retrieval_sdg.multimodal.structured import FAILURE_KEY
 class ControlledTransport:
     """Fail one schema/source at the transport boundary without replacing generation."""
 
-    def __init__(self, schema: str, unit: str | None = "unit-0"):
-        self.schema = schema
+    def __init__(self, schema: str | tuple[str, ...], unit: str | None = "unit-0"):
+        self.schemas = {schema} if isinstance(schema, str) else set(schema)
         self.unit = unit
         self.provider_unit: str | None = None
         self.prompt_contains: str | None = None
@@ -58,7 +58,7 @@ class ControlledTransport:
         if name == "QueryBatch" and unit == self.provider_unit:
             raise PermissionError("Controlled provider permission failure")
         if (
-            name == self.schema
+            name in self.schemas
             and (self.unit is None or unit == self.unit)
             and (self.prompt_contains is None or self.prompt_contains in prompt)
         ):
@@ -121,6 +121,9 @@ def test_failed_record_preserves_other_queries_and_completed_resume(tmp_path, mo
     assert config.sources_file.read_bytes() == original_sources
     assert len(ledger["records"]) == 1
     record = ledger["records"][0]
+    generated = accepted + int("query_id" in record)
+    assert report["funnel"]["generated"] == generated
+    assert report["retention_fraction"] == pytest.approx(accepted / generated)
     assert record["stage"] == stage
     assert "unit-0" in record["source_unit_ids"]
     assert record["failure"]["kind"] == "model_validation_exhausted"
@@ -144,6 +147,19 @@ def test_failed_record_preserves_other_queries_and_completed_resume(tmp_path, mo
     assert run_multimodal_sdg(config.model_copy(update={"resume": True})) == handoff
     assert completion.await_count == calls
     assert all(digest(p) == checksum for p, checksum in files.items())
+
+
+def test_multiple_judgment_failures_count_one_generated_query(tmp_path, monkeypatch):
+    config = skip_config(tmp_path)
+    install_transport(monkeypatch, ControlledTransport(("QueryMetadata", "RelevanceJudgment")))
+    handoff = run_multimodal_sdg(config)
+    report = json.loads((handoff.parent / "report.json").read_text())
+    assert report["generation_failures"]["failed_records"] == 2
+    assert report["generation_failures"]["excluded_query_ids"] == 1
+    assert report["candidate_records"] == 2
+    assert report["funnel"]["generated"] == 3
+    assert report["funnel"]["accepted_localized"] == 2
+    assert report["retention_fraction"] == pytest.approx(2 / 3)
 
 
 @pytest.mark.parametrize("schema", ["ContextSummary", "SummaryJudgment"])

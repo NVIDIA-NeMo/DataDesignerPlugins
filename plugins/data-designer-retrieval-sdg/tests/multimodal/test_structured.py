@@ -111,14 +111,25 @@ def model_facade() -> ModelFacade:
     )
 
 
-def structured_generator(facade: ModelFacade, policy: str) -> LLMStructuredCellGenerator:
+def structured_generator(
+    facade: ModelFacade,
+    policy: str,
+    with_trace: dd.TraceType = dd.TraceType.NONE,
+    extract_reasoning_content: bool = False,
+) -> LLMStructuredCellGenerator:
     """Use native model generation with two validation attempts and explicit policy."""
     resources = MagicMock()
     resources.run_config = dd.RunConfig(max_conversation_correction_steps=1, max_conversation_restarts=0)
     resources.model_registry.get_model.return_value = facade
     return RetrievalStructuredCellGenerator(
         RetrievalStructuredColumnConfig(
-            name="decision", model_alias="judge", prompt="Judge", output_format=Decision, failed_record_policy=policy
+            name="decision",
+            model_alias="judge",
+            prompt="Judge",
+            output_format=Decision,
+            failed_record_policy=policy,
+            with_trace=with_trace,
+            extract_reasoning_content=extract_reasoning_content,
         ),
         resources,
     )
@@ -126,14 +137,25 @@ def structured_generator(facade: ModelFacade, policy: str) -> LLMStructuredCellG
 
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("policy", ["error", "skip"])
-def test_structured_column_policy_uses_native_validation_budget(monkeypatch, asynchronous, policy):
+@pytest.mark.parametrize(
+    "with_trace,extract_reasoning_content",
+    [
+        (dd.TraceType.NONE, False),
+        (dd.TraceType.ALL_MESSAGES, True),
+        (dd.TraceType.LAST_MESSAGE, False),
+        (dd.TraceType.NONE, True),
+    ],
+)
+def test_structured_column_policy_uses_native_validation_budget(
+    monkeypatch, asynchronous, policy, with_trace, extract_reasoning_content
+):
     facade = model_facade()
     monkeypatch.setattr(facade, "_get_mcp_facade", lambda _: None)
     completion = (AsyncMock if asynchronous else MagicMock)(
         return_value=make_stub_completion_response(content="not JSON")
     )
     monkeypatch.setattr(facade, "acompletion" if asynchronous else "completion", completion)
-    generator = structured_generator(facade, policy)
+    generator = structured_generator(facade, policy, with_trace, extract_reasoning_content)
     if policy == "error":
         with pytest.raises(ModelGenerationValidationFailureError):
             asyncio.run(generator.agenerate({})) if asynchronous else generator.generate({})
@@ -147,6 +169,14 @@ def test_structured_column_policy_uses_native_validation_budget(monkeypatch, asy
         assert diagnostic["max_model_attempts"] == 2
         assert result["id"] == "same-row"
         assert diagnostic["last_invalid_response"] == "not JSON"
+        for column, enabled in (
+            ("decision__trace", with_trace != dd.TraceType.NONE),
+            ("decision__reasoning_content", extract_reasoning_content),
+        ):
+            if enabled:
+                assert result[column] is None
+            else:
+                assert column not in result
     assert completion.call_count == 2
 
 
@@ -244,6 +274,48 @@ def test_registered_column_runs_through_preview(tmp_path: Path, monkeypatch: pyt
     result = designer.preview(builder, num_records=1).dataset.iloc[0]
     assert result["decision"] == {"accepted": False, "reason": "not grounded"}
     assert completion.await_count == 1
+
+
+def test_failed_batch_preserves_trace_columns_for_downstream_expressions(tmp_path, monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key-not-a-real-credential")
+    completion = AsyncMock(return_value=make_stub_completion_response(content="not JSON"))
+    monkeypatch.setattr(ModelFacade, "acompletion", completion)
+    builder = dd.DataDesignerConfigBuilder(
+        model_configs=[
+            dd.ModelConfig(alias="judge", model="nvidia/test-model", provider="nvidia", skip_health_check=True)
+        ]
+    )
+    builder.with_seed_dataset(dd.DataFrameSeedSource(df=pd.DataFrame([{"source": "First"}, {"source": "Second"}])))
+    builder.add_column(
+        RetrievalStructuredColumnConfig(
+            name="decision",
+            model_alias="judge",
+            prompt="Judge {{ source }}.",
+            output_format=Decision,
+            failed_record_policy="skip",
+            with_trace=dd.TraceType.ALL_MESSAGES,
+            extract_reasoning_content=True,
+        )
+    )
+    builder.add_column(
+        dd.ExpressionColumnConfig(name="trace_missing", expr="{{ decision__trace is none }}", dtype="bool")
+    )
+    builder.add_column(
+        dd.ExpressionColumnConfig(
+            name="reasoning_missing", expr="{{ decision__reasoning_content is none }}", dtype="bool"
+        )
+    )
+    designer = ddi.DataDesigner(artifact_path=tmp_path)
+    designer.set_run_config(
+        dd.RunConfig(max_conversation_correction_steps=1, max_conversation_restarts=0, otel_metrics_port=None)
+    )
+    result = designer.preview(builder, num_records=2).dataset
+    assert len(result) == 2
+    assert result["decision__trace"].tolist() == [None, None]
+    assert result["decision__reasoning_content"].tolist() == [None, None]
+    assert result["trace_missing"].all() and result["reasoning_missing"].all()
+    assert all(FAILURE_KEY in json.loads(value) for value in result["decision"])
+    assert completion.await_count == 4
 
 
 def test_retrieval_structured_plugin_valid() -> None:

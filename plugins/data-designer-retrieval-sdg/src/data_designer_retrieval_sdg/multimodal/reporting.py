@@ -9,13 +9,19 @@ from data_designer_retrieval_sdg.multimodal.models import Candidate
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 
 
-def generation_report(sources: list[RetrievalSource], candidates: list[Candidate], outcomes: list[dict]) -> dict:
+def generation_report(
+    sources: list[RetrievalSource],
+    candidates: list[Candidate],
+    outcomes: list[dict],
+    failed_query_ids: set[str] | None = None,
+) -> dict:
     """Count the source coverage, sequential funnel and independent diagnostic labels.
 
     Args:
         sources: Full canonical corpus, including distractors.
         candidates: Accepted and rejected records.
         outcomes: All selected, filtered and budgeted summaries.
+        failed_query_ids: Generated queries excluded by later model-validation failures.
 
     Returns:
         JSON-compatible diagnostic counts. Requested labels never gate acceptance.
@@ -31,7 +37,8 @@ def generation_report(sources: list[RetrievalSource], candidates: list[Candidate
     accepted = [c for c in candidates if c.accepted]
     positives = {s.unit_id for c in accepted for s in c.localization.supports}
     survivors = candidates
-    funnel = {"generated": len(candidates)}
+    generated_count = len({c.query_id for c in candidates} | (failed_query_ids or set()))
+    funnel = {"generated": generated_count}
     for name in ("insufficient_standalone_query", "query_contains_answer", "insufficient_relevance"):
         survivors = [c for c in survivors if name not in c.rejection_reasons]
         funnel["after_" + name] = len(survivors)
@@ -47,7 +54,7 @@ def generation_report(sources: list[RetrievalSource], candidates: list[Candidate
             for stage, ids in {"planned": planned, "generated": generated, "accepted_positive": positives}.items()
         },
         "funnel": funnel,
-        "retention_fraction": len(accepted) / len(candidates) if candidates else 0.0,
+        "retention_fraction": len(accepted) / generated_count if generated_count else 0.0,
         "image_dependent_fraction": sum(any(s.modality != "text" for s in c.localization.supports) for c in accepted)
         / len(accepted)
         if accepted

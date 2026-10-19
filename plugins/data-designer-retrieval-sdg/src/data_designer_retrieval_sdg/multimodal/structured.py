@@ -127,6 +127,8 @@ class RetrievalStructuredCellGenerator(LLMStructuredCellGenerator):
             last_invalid_response=response,
         )
         data[self.config.name] = {FAILURE_KEY: failure.model_dump()}
+        for column in self.config.side_effect_columns:
+            data[column] = None
         return self.record_result(data)
 
     def generate(self, data: dict) -> dict:

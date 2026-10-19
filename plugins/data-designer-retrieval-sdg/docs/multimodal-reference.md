@@ -76,12 +76,18 @@ checksums. `report.json.generation_failures` counts failures by stage, failed
 requested slots, and excluded query IDs. Failed query-generation slots contribute
 to `requested_slots`, separately from model abstentions and quality rejections.
 Earlier planning failures have no known query-slot count.
+Queries that fail a later judgment or localization still count in
+`funnel.generated` and the `retention_fraction` denominator, once per query.
+For example, three generated queries with one localization failure and two
+accepted queries report three generated and a retention fraction of `2/3`.
 
 The same policy is supported by `RetrievalStructuredColumnConfig`. In skip mode,
 non-null output cells are JSON strings containing either a validated response
 or a `_retrieval_sdg_failure` diagnostic. The multimodal workflow decodes these
 before its typed consumers. Direct column users must handle the diagnostic
-before treating a cell as a model response.
+before treating a cell as a model response. Failed records have `None` in any
+configured trace and reasoning-content columns, including when every record in
+a batch fails, so downstream expressions can still reference those columns.
 
 Resume preserves both cached successes and recorded failures. Changing the
 policy or upgrading the implementation changes the frozen run identity; use a
