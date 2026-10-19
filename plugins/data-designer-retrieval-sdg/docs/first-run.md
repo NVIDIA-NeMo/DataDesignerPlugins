@@ -20,17 +20,29 @@ python -m data_designer_retrieval_sdg.multimodal --help
 cp plugins/data-designer-retrieval-sdg/docs/assets/first-run/sdg.yaml ./sdg.yaml
 ```
 
-Edit `sdg.yaml` before running it:
+The configuration selects
+[`nvidia/nemotron-3.5-super-vl-120b-a12b`](https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b)
+from the NVIDIA API Catalog for both generation and judging. Both roles use the
+public base URL `https://integrate.api.nvidia.com/v1`.
 
-- Replace both model placeholders and endpoint URLs with your deployment values.
-  The generator and judge must both accept images and structured responses.
-- Adjust sampling, output-token limits, timeouts, and provider-specific options
-  for your models. Refer to [Model Settings](multimodal-reference.md#model-settings).
-  For reasoning models, allow enough output tokens for reasoning and the structured response.
-- Set the environment variable named `SDG_API_KEY` through your credential-management
-  process. The YAML contains the variable name, not the credential.
-- Keep `output_dir` pointed at a new directory. An existing completed or interrupted
-  run requires the [resume procedure](multimodal.md#resume-an-interrupted-run).
+Generate an API key from the model's catalog page and set it in your shell:
+
+```bash
+export NVIDIA_API_KEY="<your-nvidia-api-key>"
+```
+
+Replace the placeholder with your API key. The YAML stores the environment
+variable name, not the credential. The model and endpoint are already configured.
+
+The example uses the [model card's vision sampling settings](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b),
+high reasoning effort, and a per-request output budget of 16,384 tokens for
+reasoning and the structured response. Refer to the
+[API reference](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer)
+for the hosted request options. If you change models or deployments, update both
+roles using [Model Settings](multimodal-reference.md#model-settings).
+
+Keep `output_dir` pointed at a new directory. An existing completed or interrupted
+run requires the [resume procedure](multimodal.md#resume-an-interrupted-run).
 
 The [downloadable configuration](assets/first-run/sdg.yaml) uses the default
 query profiles by omitting `instructions` and `instructions_per_context`.

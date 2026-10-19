@@ -6,19 +6,25 @@ output_dir: ./runs/first-retrieval-bundle
 dataset_id: dgx-b200-tutorial
 context_strategy: unit
 generator:
-  model: <generator-model>
-  endpoint: https://api.example.com/v1
-  credential_env: SDG_API_KEY
-  temperature: 0
-  max_tokens: 4096
-  timeout: 90
+  model: nvidia/nemotron-3.5-super-vl-120b-a12b
+  endpoint: https://integrate.api.nvidia.com/v1
+  credential_env: NVIDIA_API_KEY
+  temperature: 0.6
+  max_tokens: 16384
+  timeout: 600
+  extra_body:
+    top_p: 0.95
+    reasoning_effort: high
 judge:
-  model: <judge-model>
-  endpoint: https://api.example.com/v1
-  credential_env: SDG_API_KEY
-  temperature: 0
-  max_tokens: 8192
-  timeout: 90
+  model: nvidia/nemotron-3.5-super-vl-120b-a12b
+  endpoint: https://integrate.api.nvidia.com/v1
+  credential_env: NVIDIA_API_KEY
+  temperature: 0.6
+  max_tokens: 16384
+  timeout: 600
+  extra_body:
+    top_p: 0.95
+    reasoning_effort: high
 concurrency: 1
 batch_size: 1
 missing_response_attempts: 1
