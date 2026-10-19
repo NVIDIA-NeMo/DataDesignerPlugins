@@ -17,6 +17,7 @@ import data_designer.interface as ddi
 import pandas as pd
 import pytest
 from data_designer.engine.column_generators.generators.llm_completion import LLMStructuredCellGenerator
+from data_designer.engine.errors import DataDesignerError
 from data_designer.engine.models.errors import ModelGenerationValidationFailureError
 from data_designer.engine.models.facade import ModelFacade
 from data_designer.engine.models.parsers.errors import ParserException
@@ -28,6 +29,7 @@ from pydantic import BaseModel, ConfigDict
 from data_designer_retrieval_sdg.multimodal.config import RetrievalStructuredColumnConfig
 from data_designer_retrieval_sdg.multimodal.plugins import retrieval_structured_plugin
 from data_designer_retrieval_sdg.multimodal.structured import (
+    FAILURE_KEY,
     RetrievalStructuredCellGenerator,
     RetrievalStructuredResponseRecipe,
 )
@@ -43,9 +45,11 @@ def response_recipe() -> RetrievalStructuredResponseRecipe:
     return RetrievalStructuredResponseRecipe(Decision.model_json_schema(), pruning=False)
 
 
-def test_generation_keeps_native_sync_and_async_implementations() -> None:
-    assert RetrievalStructuredCellGenerator.generate is LLMStructuredCellGenerator.generate
-    assert RetrievalStructuredCellGenerator.agenerate is LLMStructuredCellGenerator.agenerate
+def test_failed_record_policy_defaults_to_error() -> None:
+    config = RetrievalStructuredColumnConfig(
+        name="decision", model_alias="judge", prompt="Judge", output_format=Decision
+    )
+    assert config.failed_record_policy == "error"
 
 
 @pytest.mark.parametrize("fenced", [False, True])
@@ -105,6 +109,58 @@ def model_facade() -> ModelFacade:
         MagicMock(),
         client=MagicMock(),
     )
+
+
+def structured_generator(facade: ModelFacade, policy: str) -> LLMStructuredCellGenerator:
+    """Use native model generation with two validation attempts and explicit policy."""
+    resources = MagicMock()
+    resources.run_config = dd.RunConfig(max_conversation_correction_steps=1, max_conversation_restarts=0)
+    resources.model_registry.get_model.return_value = facade
+    return RetrievalStructuredCellGenerator(
+        RetrievalStructuredColumnConfig(
+            name="decision", model_alias="judge", prompt="Judge", output_format=Decision, failed_record_policy=policy
+        ),
+        resources,
+    )
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("policy", ["error", "skip"])
+def test_structured_column_policy_uses_native_validation_budget(monkeypatch, asynchronous, policy):
+    facade = model_facade()
+    monkeypatch.setattr(facade, "_get_mcp_facade", lambda _: None)
+    completion = (AsyncMock if asynchronous else MagicMock)(
+        return_value=make_stub_completion_response(content="not JSON")
+    )
+    monkeypatch.setattr(facade, "acompletion" if asynchronous else "completion", completion)
+    generator = structured_generator(facade, policy)
+    if policy == "error":
+        with pytest.raises(ModelGenerationValidationFailureError):
+            asyncio.run(generator.agenerate({})) if asynchronous else generator.generate({})
+    else:
+        result = (
+            asyncio.run(generator.agenerate({"id": "same-row"}))
+            if asynchronous
+            else generator.generate({"id": "same-row"})
+        )
+        diagnostic = json.loads(result["decision"])[FAILURE_KEY]
+        assert diagnostic["max_model_attempts"] == 2
+        assert result["id"] == "same-row"
+        assert diagnostic["last_invalid_response"] == "not JSON"
+    assert completion.call_count == 2
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_structured_column_never_converts_provider_errors(monkeypatch, asynchronous):
+    facade = model_facade()
+    monkeypatch.setattr(facade, "_get_mcp_facade", lambda _: None)
+    completion = (AsyncMock if asynchronous else MagicMock)(side_effect=PermissionError("Controlled provider failure"))
+    monkeypatch.setattr(facade, "acompletion" if asynchronous else "completion", completion)
+    generator = structured_generator(facade, "skip")
+    with pytest.raises(DataDesignerError) as raised:
+        asyncio.run(generator.agenerate({})) if asynchronous else generator.generate({})
+    assert not isinstance(raised.value, ModelGenerationValidationFailureError)
+    assert completion.call_count == 1
 
 
 def test_native_corrections_are_bounded_and_keep_a_valid_rejection(monkeypatch: pytest.MonkeyPatch) -> None:

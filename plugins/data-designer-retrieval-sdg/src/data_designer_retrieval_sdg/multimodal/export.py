@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import errno
+import json
 import tempfile
 from collections import Counter
 from pathlib import Path
@@ -309,6 +310,21 @@ def write_multimodal_bundle(
     from data_designer_retrieval_sdg.multimodal.reporting import generation_report
 
     counts.update(generation_report(sources, candidates, outcomes))
+    if config.failed_record_policy == "skip":
+        failures = json.loads((config.output_dir / "generation_failures.json").read_text())
+        write_json(root / "generation_failures.json", failures)
+        failed_slots = sum(
+            len(row["instructions"]) for row in outcomes if row.get("selection_reason") == "generation_failed"
+        )
+        counts["requested_slots"] += failed_slots
+        counts["generation_failures"] = {
+            "policy": "skip",
+            "failed_records": len(failures["records"]),
+            "failed_requested_slots": failed_slots,
+            "excluded_query_ids": len({row["query_id"] for row in failures["records"] if "query_id" in row}),
+            "by_stage": dict(Counter(row["stage"] for row in failures["records"])),
+            "diagnostics": "generation_failures.json",
+        }
     write_json(root / "report.json", counts)
     write_json(
         root / "run_manifest.json",

@@ -21,10 +21,17 @@ from data_designer_retrieval_sdg.multimodal.bounds import (
     split_context,
     validate_deployment,
 )
-from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request, source_request
+from data_designer_retrieval_sdg.multimodal.inference import (
+    DataDesignerInference,
+    Request,
+    generate_records,
+    request_identity,
+    source_request,
+)
 from data_designer_retrieval_sdg.multimodal.models import (
     Candidate,
     ContextSummary,
+    FailedGeneration,
     GenerationContext,
     Localization,
     MultimodalSDGConfig,
@@ -164,9 +171,15 @@ def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
     """
     builder = partial(evidence_summary_requests, sources=sources)
     contexts = fit_contexts(contexts, builder, config)
-    summaries = inference.generate([builder(c)[0] for c in contexts])
+    summaries = generate_records(
+        inference, [builder(c)[0] for c in contexts], "summary", [request_identity(c) for c in contexts]
+    )
+    successful = [(c, s) for c, s in zip(contexts, summaries, strict=True) if not isinstance(s, FailedGeneration)]
+    contexts = [c for c, _ in successful]
+    summaries = [s for _, s in successful]
     judgments = (
-        inference.generate(
+        generate_records(
+            inference,
             [
                 Request(
                     prompts.render("judgment", summary=s.summary, persona=config.persona, language=c.language),
@@ -174,7 +187,9 @@ def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
                     "judge",
                 )
                 for c, s in zip(contexts, summaries, strict=True)
-            ]
+            ],
+            "summary-judgment",
+            [request_identity(c) for c in contexts],
         )
         if config.judge_summaries
         else [None] * len(contexts)
@@ -183,7 +198,8 @@ def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
         {
             "context": c.model_dump(),
             "summary": s.model_dump(),
-            "summary_judgment": j.model_dump() if j else None,
+            "summary_judgment": j.model_dump() if j is not None and not isinstance(j, FailedGeneration) else None,
+            **({"summary_judgment_failed": True} if isinstance(j, FailedGeneration) else {}),
             "slots": {"queries": []},
         }
         for c, s, j in zip(contexts, summaries, judgments, strict=True)
@@ -283,9 +299,18 @@ def bounded_query_batches(selected, outcomes, sources, config, inference):
             row["instructions"] = [
                 item.model_dump() for item in context_instructions(config, row["context"]["context_id"])
             ]
-        responses = inference.generate([builder(GenerationContext.model_validate(row["context"]))[0] for row in rows])
+        contexts = [GenerationContext.model_validate(row["context"]) for row in rows]
+        responses = generate_records(
+            inference,
+            [builder(context)[0] for context in contexts],
+            "query-generation",
+            [request_identity(c, instructions=row["instructions"]) for c, row in zip(contexts, rows, strict=True)],
+        )
         pending = []
         for row, batch in zip(rows, responses, strict=True):
+            if isinstance(batch, FailedGeneration):
+                row["selection_reason"] = "generation_failed"
+                continue
             context = GenerationContext.model_validate(row["context"])
             try:
                 for slot in batch.queries:
@@ -358,8 +383,27 @@ def generate_candidates(
                 raise ValueError("Generated query must be nonempty and declare evidence")
             pending.append((context, slot))
     judgments = [judgment_requests(c, slot, by_id) for c, slot in pending]
-    metadata = inference.generate([requests[0] for requests in judgments])
-    sufficiency = inference.generate([requests[1] for requests in judgments])
+    records = [
+        request_identity(
+            c,
+            query_id="q_" + fingerprint([c.context_id, slot.slot, slot.query])[:32],
+            query=slot.query,
+            slot=slot.slot,
+            instructions=[instructions[c.context_id][slot.slot].model_dump()],
+        )
+        for c, slot in pending
+    ]
+    metadata = generate_records(inference, [requests[0] for requests in judgments], "query-metadata", records)
+    sufficiency = generate_records(inference, [requests[1] for requests in judgments], "self-sufficiency", records)
+    relevance = generate_records(inference, [requests[2] for requests in judgments], "relevance", records)
+    valid = [
+        i
+        for i, values in enumerate(zip(metadata, sufficiency, relevance, strict=True))
+        if not any(isinstance(value, FailedGeneration) for value in values)
+    ]
+    pending, judgments, records, metadata, sufficiency, relevance = (
+        [items[i] for i in valid] for items in (pending, judgments, records, metadata, sufficiency, relevance)
+    )
     query_judgments = [
         QueryJudgment(
             self_sufficiency=s.self_sufficiency,
@@ -370,10 +414,14 @@ def generate_candidates(
         )
         for s, m in zip(sufficiency, metadata, strict=True)
     ]
-    relevance = inference.generate([requests[2] for requests in judgments])
     reasons_by_index = [quality_reasons(q, r, config) for q, r in zip(query_judgments, relevance, strict=True)]
     localized_indexes = [i for i, reasons in enumerate(reasons_by_index) if not reasons]
-    localizations = inference.generate([judgments[i][3] for i in localized_indexes])
+    localizations = generate_records(
+        inference,
+        [judgments[i][3] for i in localized_indexes],
+        "localization",
+        [records[i] for i in localized_indexes],
+    )
     by_index = dict(zip(localized_indexes, localizations, strict=True))
     candidates = []
     for i, ((context, slot), query_judge, relevance_judge) in enumerate(
@@ -381,6 +429,8 @@ def generate_candidates(
     ):
         reasons = reasons_by_index[i]
         localization = by_index.get(i)
+        if isinstance(localization, FailedGeneration):
+            continue
         if localization is not None:
             localization = normalize_localization(localization, context)
             reasons.extend(localization_reasons(localization, context, by_id, config.require_verbatim_quotes))
@@ -507,11 +557,25 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             frozen.append(source.model_copy(update={"images": images}))
         inference = DataDesignerInference(root / "inference", config)
         candidates, outcomes = generate_candidates(config, frozen, contexts, inference)
+        if config.failed_record_policy == "skip":
+            write_json(
+                root / "generation_failures.json",
+                {"policy": "skip", "records": [inference.failures[key] for key in sorted(inference.failures)]},
+            )
         write_json(root / "candidates.json", [c.model_dump(mode="json") for c in candidates])
         write_json(root / "context_outcomes.json", outcomes)
         handoff = export_multimodal_bundle(root / "bundle", frozen, candidates, outcomes, config)
         write_json(
             root / "complete.json",
-            {"artifacts": [artifact(p, root) for p in sorted((root / "bundle").rglob("*")) if p.is_file()]},
+            {
+                "artifacts": [
+                    artifact(p, root)
+                    for p in [
+                        *sorted((root / "bundle").rglob("*")),
+                        *([root / "generation_failures.json"] if config.failed_record_policy == "skip" else []),
+                    ]
+                    if p.is_file()
+                ]
+            },
         )
         return handoff

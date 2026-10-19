@@ -375,8 +375,10 @@ class MissingInference(DataDesignerInference):
         self.calls = getattr(self, "calls", 0) + 1
 
 
-def test_missing_response_has_finite_attempts_without_fabrication(tmp_path):
-    inference = MissingInference(tmp_path / "inference", fixture_config(tmp_path))
+@pytest.mark.parametrize("policy", ["error", "skip"])
+def test_missing_response_has_finite_attempts_without_fabrication(tmp_path, policy):
+    config = fixture_config(tmp_path).model_copy(update={"failed_record_policy": policy})
+    inference = MissingInference(tmp_path / "inference", config)
     with pytest.raises(RuntimeError, match="Missing structured"):
         inference.generate([Request("one", ContextSummary, "judge")])
     assert inference.calls == 3

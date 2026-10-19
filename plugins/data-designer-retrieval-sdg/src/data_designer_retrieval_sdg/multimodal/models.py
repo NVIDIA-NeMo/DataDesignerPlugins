@@ -44,6 +44,15 @@ class ModelSettings(StrictModel):
         return self
 
 
+class FailedGeneration(StrictModel):
+    """An exhausted validation failure, never a generated answer or judgment."""
+
+    kind: Literal["model_validation_exhausted"]
+    detail: str = Field(min_length=1)
+    max_model_attempts: int = Field(ge=1)
+    last_invalid_response: str | None = None
+
+
 class QueryInstruction(StrictModel):
     """A requested information need; matching its style is diagnostic, not a quality gate."""
 
@@ -110,6 +119,7 @@ class MultimodalSDGConfig(StrictModel):
     summary_near_duplicate_threshold: float | None = Field(default=None, gt=0, le=1)
     instructions_per_context: int | None = Field(default=None, gt=0)
     missing_response_attempts: int = Field(default=3, ge=1, le=3)
+    failed_record_policy: Literal["error", "skip"] = "error"
     require_verbatim_quotes: bool = False
     instructions: list[QueryInstruction] = Field(default_factory=lambda: list(DEFAULT_INSTRUCTIONS), min_length=1)
     relevance_threshold: int = Field(default=4, ge=1, le=5)

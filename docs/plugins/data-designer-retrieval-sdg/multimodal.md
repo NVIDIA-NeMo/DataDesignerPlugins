@@ -264,6 +264,11 @@ reviewed relevance labels when comparing retrieval models.
 
 ## Resume an Interrupted Run
 
+For runs that should continue past persistently malformed model responses,
+set `failed_record_policy: skip` when creating a new run. See
+[Continue After Failed Records](multimodal-reference.md#continue-after-failed-records)
+for stage behavior and failure diagnostics. The default remains `error`.
+
 Preserve the run directory and inspect the error and saved artifacts. After
 resolving an external issue, set `resume: true` in the same configuration and run
 the command again. Keep the inputs, remaining configuration, package code, and

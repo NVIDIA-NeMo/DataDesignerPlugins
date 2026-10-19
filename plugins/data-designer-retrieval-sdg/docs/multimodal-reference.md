@@ -20,6 +20,7 @@ image paths inside source records resolve relative to their JSONL file.
 | `concurrency` | `8` | Model-call concurrency, from 1 to 128. |
 | `batch_size` | `30` | Request batch size, from 1 to 128. |
 | `missing_response_attempts` | `3` | Total attempts for missing or invalid rows in normally completed batches, from 1 to 3. |
+| `failed_record_policy` | `error` | Use `skip` to record exhausted model-validation failures and continue with usable records. |
 | `seed` | `42` | Seed for instruction sampling, selection, and query-group splitting. Model output can still vary. |
 | `resume` | `false` | Reuse a compatible run and cached responses. |
 | `ratios` | `{train: 0.8, validation: 0.0, evaluation: 0.2}` | Query-group split fractions, each from 0 to 1 and summing to 1. |
@@ -40,6 +41,52 @@ This limit is separate from Data Designer's structured-response correction and
 provider retry behavior. Batch size and retry settings do not define a total
 API-call, cost, or elapsed-time budget. Refer to
 [Resume an Interrupted Run](multimodal.md#resume-an-interrupted-run) for recovery.
+
+### Continue After Failed Records
+
+For a new run, add this to the existing YAML configuration:
+
+```yaml
+failed_record_policy: skip
+```
+
+The default `error` policy stops when required structured responses remain
+unavailable. With `skip`, the structured column records a diagnostic after Data
+Designer's native validation retries are exhausted. This adds no retry loop and
+does not change the native retry budget. `missing_response_attempts` keeps its
+separate meaning; a recorded failure is terminal and is not retried by that loop
+or by resume. Unexplained missing rows, duplicate identities, provider errors,
+and integrity errors are never converted into skipped records.
+
+| Failed stage | Disposition |
+| --- | --- |
+| TOC confirmation | Preserve the source and omit unverified TOC projections. |
+| Visual or document enrichment | Preserve original text/images and omit the failed enrichment. |
+| Summary or summary combination | Omit the unavailable summary from generation inputs. |
+| Summary judgment | Exclude the summary; a failed judgment cannot become a pass. |
+| Query generation | Exclude the context's requested query slots. |
+| Query metadata, self-sufficiency, relevance, or localization | Exclude the affected query; successful responses remain cached. |
+
+The original corpus and quality thresholds are preserved. If no queries pass,
+export still fails. Inspect `generation_failures.json` in the run directory and
+portable bundle for stage, request ID, source/context/query identity where
+applicable, validation detail, native attempt limit, and the last invalid
+response when available. The portable ledger is included in the manifest's
+checksums. `report.json.generation_failures` counts failures by stage, failed
+requested slots, and excluded query IDs. Failed query-generation slots contribute
+to `requested_slots`, separately from model abstentions and quality rejections.
+Earlier planning failures have no known query-slot count.
+
+The same policy is supported by `RetrievalStructuredColumnConfig`. In skip mode,
+non-null output cells are JSON strings containing either a validated response
+or a `_retrieval_sdg_failure` diagnostic. The multimodal workflow decodes these
+before its typed consumers. Direct column users must handle the diagnostic
+before treating a cell as a model response.
+
+Resume preserves both cached successes and recorded failures. Changing the
+policy or upgrading the implementation changes the frozen run identity; use a
+new output directory. Failure rates and exclusions can affect sample composition,
+so include them when comparing generation yield.
 
 ## Source Records
 
