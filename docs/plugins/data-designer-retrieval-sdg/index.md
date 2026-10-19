@@ -10,7 +10,7 @@ Use the output you need to choose the pipeline:
 
 | Aspect | Text QA | Multimodal |
 | --- | --- | --- |
-| Input | Directory of text files, with optional document bundling. | Prepared JSON Lines (JSONL) source units containing text, one image, or both. |
+| Input | Directory of text files, with optional document bundling. | Prepared JSON Lines (JSONL) units, or a directory of independent text and image files. |
 | Generation | Extract document artifacts, generate question-answer pairs, deduplicate questions, and score quality. | Plan contexts, generate queries, judge relevance, and identify supporting source units. |
 | Result | Generated JSONL; convert it to retrieval training and evaluation files. | Portable retrieval bundle with corpus, queries, graded positives, and export views. |
 | Command | `data-designer-retrieval-sdg generate`, then `convert`. | `python -m data_designer_retrieval_sdg.multimodal --config sdg.yaml`. |

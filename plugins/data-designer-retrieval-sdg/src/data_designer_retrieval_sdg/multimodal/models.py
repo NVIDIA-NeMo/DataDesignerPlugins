@@ -12,7 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
 from data_designer_retrieval_sdg.multimodal.query_groups import QueryProvenance
-from data_designer_retrieval_sdg.multimodal.source_models import SplitRatios
+from data_designer_retrieval_sdg.multimodal.source_models import SourceDirectoryConfig, SplitRatios
 
 
 class StrictModel(BaseModel):
@@ -90,7 +90,8 @@ class GenerationContext(StrictModel):
 class MultimodalSDGConfig(StrictModel):
     """Bounded generation and portable export configuration; no dataset adapters or model defaults."""
 
-    sources_file: Path
+    sources_file: Path | None = None
+    source_directory: SourceDirectoryConfig | None = None
     output_dir: Path
     dataset_id: str = Field(min_length=1)
     generator: ModelSettings
@@ -156,6 +157,20 @@ class MultimodalSDGConfig(StrictModel):
             raise ValueError("summary_embedding_extra_body requires summary_embedding_endpoint")
         if self.combination_iterations and self.related_contexts_per_context:
             raise ValueError("semantic combinations and lexical related contexts are mutually exclusive")
+        return self
+
+    @model_validator(mode="after")
+    def one_source_input(self) -> MultimodalSDGConfig:
+        """Keep canonical JSONL and directory preparation unambiguous.
+
+        Returns:
+            This configuration with exactly one input mode selected.
+
+        Raises:
+            ValueError: Both input modes or neither mode are configured.
+        """
+        if (self.sources_file is None) == (self.source_directory is None):
+            raise ValueError("Specify exactly one of sources_file or source_directory")
         return self
 
 

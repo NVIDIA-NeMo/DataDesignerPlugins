@@ -342,7 +342,16 @@ def write_multimodal_bundle(
                 "instructions": [item.model_dump() for item in config.instructions],
                 "require_verbatim_quotes": config.require_verbatim_quotes,
                 "generation_config": config.model_dump(
-                    mode="json", exclude={"generator", "judge", "sources_file", "contexts_file", "output_dir", "resume"}
+                    mode="json",
+                    exclude={
+                        "generator",
+                        "judge",
+                        "sources_file",
+                        "source_directory",
+                        "contexts_file",
+                        "output_dir",
+                        "resume",
+                    },
                 ),
             },
             "models": {

@@ -12,7 +12,8 @@ image paths inside source records resolve relative to their JSONL file.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `sources_file` | Required | Source JSONL file following the contract below. |
+| `sources_file` | `null` | Source JSONL file. Required unless `source_directory` is configured. |
+| `source_directory` | `null` | Directory preparation settings below. Mutually exclusive with `sources_file`. |
 | `output_dir` | Required | New run directory, or an existing compatible directory when resuming. |
 | `dataset_id` | Required | Nonempty corpus identifier recorded in exports. |
 | `generator`, `judge` | Required | Independent model settings, described below. |
@@ -126,7 +127,120 @@ print(len(sources))
 `RetrievalSource` and `SplitRatios` are defined in
 `data_designer_retrieval_sdg.multimodal.source_models`. Query grouping and split
 assignment belong to the same multimodal subpackage. These source records are
-not the directory-based input contract used by Text QA.
+also the output of multimodal directory preparation. Text QA uses its own seed
+source configuration and generation workflow.
+
+## Directory Input
+
+`source_directory` prepares source records from local UTF-8 text, Markdown,
+and static PNG, JPEG, or WebP images. Use it instead of `sources_file`.
+For Python configuration, import `SourceDirectoryConfig` from
+`data_designer_retrieval_sdg.multimodal`. Configure directory input with these fields:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `path` | Required | Source directory. Keep `output_dir` outside it. |
+| `recursive` | `true` | Search nested directories. |
+| `file_pattern` | `"*"` | Case-sensitive basename glob, independent of recursion. |
+| `file_extensions` | `.txt`, `.md`, `.markdown`, `.png`, `.jpg`, `.jpeg`, `.webp` | Nonempty subset of supported extensions; extension matching ignores case. |
+| `num_files` | `null` | Positive file limit, applied after filtering and sorting. |
+| `text_chunking` | `sentences` | `sentences` uses the shared Text QA splitter; `none` keeps each text file as one unit. |
+| `sentences_per_chunk` | `null` | Optional positive sentence-count cap per text unit in `sentences` mode. Ignored in `none` mode. |
+| `max_tokens_per_chunk` | `1024` | Positive token cap per text unit, including special and reserved tokens. Set `null` to disable. |
+| `tokenizer` | `nvidia/Nemotron-3.5-Embed-1B-BF16` | Hugging Face model ID or saved local tokenizer directory, loaded with `AutoTokenizer.from_pretrained`. Must provide a fast tokenizer. Unused when the token cap is disabled. |
+| `reserved_tokens` | `0` | Nonnegative allowance for downstream prefixes or other tokens absent from the tokenizer's count. Requires a cap and must be smaller than it. |
+| `split_oversized_sentences` | `false` | Explicitly allow splitting a sentence that alone exceeds the token cap. Requires a cap and `text_chunking: sentences`. |
+| `language` | `source` | Language label for prepared units; does not select a sentence tokenizer. |
+
+### Text Preparation
+
+Sentence mode uses NLTK's default English sentence tokenizer on each nonempty
+paragraph, then joins consecutive sentences with spaces and no overlap. Chunks
+can cross paragraph boundaries. These retrieval units are independent of
+[generation context grouping](#context-planning).
+
+Sentence chunking can remove Markdown heading boundaries. For section-aware
+planning, use `sources_file` with units prepared at section or page boundaries.
+Whole-file mode preserves internal formatting and strips surrounding whitespace.
+Both modes accept UTF-8 with or without a byte-order mark.
+
+Sentence mode downloads missing NLTK `punkt` and `punkt_tab` resources on first use.
+To prepare an offline environment, download them beforehand:
+
+```bash
+python -m nltk.downloader punkt punkt_tab
+```
+
+Whole-file mode does not require NLTK resources.
+
+### Token Limits
+
+By default, sentence mode packs complete sentences into chunks of at most 1,024
+tokens with no sentence-count cap. Both limits are upper bounds when
+`sentences_per_chunk` is set: for example, `sentences_per_chunk: 5` and
+`max_tokens_per_chunk: 1024` produce chunks of at most five sentences and 1,024
+tokens, whichever limit is reached first. Set `max_tokens_per_chunk: null` to
+disable the token cap. With both limits set to `null`, sentence mode joins all
+sentences in each file into one unit.
+
+Counts use the assembled text with padding and truncation disabled, including
+configured special tokens plus `reserved_tokens`. Set `reserved_tokens` for
+downstream prefixes or other tokens that the tokenizer does not already count.
+
+The default tokenizer is
+[`nvidia/Nemotron-3.5-Embed-1B-BF16`](https://huggingface.co/nvidia/Nemotron-3.5-Embed-1B-BF16).
+Set `tokenizer` to another Hugging Face model ID or a local directory saved with
+`save_pretrained`. A model ID downloads tokenizer assets on first
+use and uses the Hugging Face cache thereafter. Model weights are not loaded,
+and remote custom code is disabled. For offline preparation, save the tokenizer
+beforehand and use that directory:
+
+```python
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("nvidia/Nemotron-3.5-Embed-1B-BF16")
+tokenizer.save_pretrained("./embedding-tokenizer")
+```
+
+```yaml
+source_directory:
+  path: ./documents
+  tokenizer: ./embedding-tokenizer
+```
+
+Tokenizers with nonzero BPE `dropout` are rejected. Save an inference tokenizer
+with `dropout` set to `null` or `0` so token counts and prepared units are repeatable.
+Generator and judge request limits remain separate. Images and explicit JSONL
+units are unaffected; image-only directories do not load the embedding tokenizer.
+
+An oversized sentence fails unless `split_oversized_sentences: true`. This option
+splits the original text into fragments that fit, without truncation or overlap.
+It strips surrounding whitespace and can split words or separate supporting
+evidence. Preparation fails if no fragment fits. Whole-file mode validates the
+entire file without splitting it.
+
+### File Discovery and Identity
+
+Files are sorted lexicographically by corpus-relative path. Each text file is
+one document; each image is a separate document with one image unit. Document
+IDs are URL-escaped relative paths. Text unit IDs append `#chunk-000001`,
+`#chunk-000002`, and so on, including in whole-file mode. Image unit IDs append
+`#image`. Relocating unchanged inputs preserves IDs; renaming files or changing
+chunking settings can change them. Update explicit context memberships accordingly.
+
+The loader does not infer text/image pairs, page numbers, or groups of files
+belonging to one document. Use `sources_file` for those relationships. Extract
+PDF text, perform OCR, and resolve Markdown image links before loading sources.
+
+Hidden files and directories, directory symlinks, and unsupported extensions are
+ignored. Selected symlink files, unreadable files, invalid UTF-8, empty text,
+and damaged or animated images fail explicitly. An empty selection also fails.
+
+The run saves reusable [prepared inputs](#output-files) before model calls.
+To move them, copy the whole `inputs/` directory and load `inputs/sources.jsonl`
+through `sources_file`. Resume rejects changed selected files, preparation
+settings, or tokenizer identity, and verifies completed artifacts. Start a new
+run after changing chunking settings.
 
 ## Model Settings
 
@@ -324,12 +438,14 @@ A successful run writes the following artifacts under its output directory:
 | Path | Contents |
 | --- | --- |
 | `identity.json` | Configuration, source/context identity, image hashes, implementation hashes, and dependency versions. |
-| `inputs/assets/` | Frozen copies of source images used during generation. |
+| `inputs/sources.jsonl` | Reusable source records for directory input. Image paths resolve relative to this file. |
+| `inputs/source_manifest.json` | Directory input file hashes, byte counts, and unit IDs, with tokenizer identity when a token cap is configured. |
+| `inputs/assets/` | Frozen copies of source images. Created only when sources include images. |
 | `inference/responses/` | Validated responses keyed by request content, with integrity hashes. |
 | `inference/attempts/<attempt-id>/` | Requested IDs, a seed Parquet file with source text and encoded images, Data Designer artifacts, and an outcome or failure record when available. |
 | `planning/` | Planning artifacts when produced by the selected strategy. |
 | `candidates.json`, `context_outcomes.json` | Accepted/rejected candidates, selection decisions, and generation slots. |
-| `complete.json` | Integrity inventory for the completed bundle. |
+| `complete.json` | Integrity inventory for the completed bundle and prepared directory inputs. |
 | `bundle/generation_result.json` | Portable handoff referencing the schema-v2 bundle manifest. |
 | `bundle/run_manifest.json` | Policies, models, counts, relative artifact paths, sizes, and checksums. |
 | `bundle/retrieval_units.jsonl`, `bundle/assets/` | Canonical corpus units and copied images. |
