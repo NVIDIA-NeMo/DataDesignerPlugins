@@ -41,6 +41,9 @@ when you need it.
 
 ## 1. Prepare Source Records
 
+Supply prepared source records, or use [directory input](#load-a-directory-of-files)
+to prepare units from independent text and image files.
+
 Create a UTF-8 `sources.jsonl` file with one JSON object per retrievable unit.
 Each unit needs a unique `unit_id`, a `document_id`, and text, one image, or both.
 The following illustrative records show the three supported input shapes:
@@ -56,7 +59,7 @@ resolve relative to `sources.jsonl`; the referenced files must exist. For a
 text-only corpus, use records with nonempty `text` and an empty `images` list.
 
 Extract PDF text, perform optical character recognition (OCR), and render page
-images before this step. The plugin does not ingest PDFs or infer identities
+images before this step. The plugin does not ingest PDFs or infer page relationships
 from filenames. Keep IDs stable and make each unit small enough to fit a model
 request without splitting its content. Refer to the
 [source-record reference](multimodal-reference.md#source-records) for all fields.
@@ -75,6 +78,47 @@ Choose instructions and models for the content you supply:
 
 An instruction label requests a modality; it does not prove that the resulting
 query uses it. Refer to [requested tasks and observed evidence](multimodal-concepts.md#requested-tasks-and-observed-evidence).
+
+### Load a Directory of Files
+
+To load independent text and image files, replace `sources_file` in the run
+configuration with `source_directory`:
+
+```yaml
+source_directory:
+  path: ./documents
+  max_tokens_per_chunk: 1024
+  sentences_per_chunk: null
+  tokenizer: nvidia/Nemotron-3.5-Embed-1B-BF16
+```
+
+The settings shown are the defaults. Each text file becomes a document whose
+retrieval units contain up to 1,024 tokens, counted with the Nemotron embedding
+tokenizer. Sentence boundaries use the same splitter as [Text QA](text-qa.md).
+There is no sentence-count cap by default. Set `sentences_per_chunk` to a positive
+integer to apply both limits: a chunk closes before the next sentence would
+exceed either one.
+
+`tokenizer` accepts a Hugging Face model ID or a local directory created with
+`save_pretrained`. Tokenizer assets download on first use for a
+model ID; model weights are not loaded. Choose the tokenizer and cap for your
+embedding deployment. Counts include configured special tokens.
+
+To use only a sentence-count limit, set `max_tokens_per_chunk: null`. To keep each
+file as one unit with internal formatting preserved, set `text_chunking: none`;
+the token cap still applies. A sentence or whole file that exceeds the cap fails
+by default. Refer to [token limits](multimodal-reference.md#token-limits) for
+prefix allowances, explicit sentence splitting, and offline tokenizer setup.
+
+Each image becomes a separate document and unit. Use source JSONL for paired text
+and images or page relationships. Select the `mixed` export view to retain both
+text-only and image-only units.
+
+Keep the model and run settings from the next step, and place `output_dir` outside
+the source directory. Omit `contexts_file` unless it references the generated IDs.
+Inspect `inputs/sources.jsonl` after a small run before scaling up. Refer to
+[Directory Input](multimodal-reference.md#directory-input) for file filters,
+offline sentence-tokenizer setup, and resume behavior.
 
 ## 2. Configure the Run
 

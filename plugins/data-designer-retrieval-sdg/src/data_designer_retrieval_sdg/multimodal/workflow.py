@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 from functools import partial
+from hashlib import sha256
 from importlib.metadata import version
 from pathlib import Path
 
@@ -49,9 +50,17 @@ from data_designer_retrieval_sdg.multimodal.planning import (
     related_contexts,
     select_summaries,
 )
+from data_designer_retrieval_sdg.multimodal.source_directory import load_directory_sources
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
-from data_designer_retrieval_sdg.multimodal.storage import artifact, digest, fingerprint, write_bytes, write_json
+from data_designer_retrieval_sdg.multimodal.storage import (
+    artifact,
+    digest,
+    fingerprint,
+    write_bytes,
+    write_json,
+    write_jsonl,
+)
 
 
 def load_contexts(config: MultimodalSDGConfig, sources: list[RetrievalSource]) -> list[GenerationContext]:
@@ -491,9 +500,15 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
         if not os.environ.get(config.summary_embedding_credential_env):
             raise ValueError(f"Set the credential environment variable {config.summary_embedding_credential_env}")
     root = config.output_dir.resolve()
+    if config.source_directory is not None and root.is_relative_to(config.source_directory.path.resolve()):
+        raise ValueError("output_dir must be outside source_directory.path to avoid ingesting generated files")
     root.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(root) + ".lock", timeout=0):
-        sources = load_retrieval_sources(config.sources_file)
+        source_manifest = None
+        if config.source_directory is not None:
+            sources, source_manifest = load_directory_sources(config.source_directory)
+        else:
+            sources = load_retrieval_sources(config.sources_file)
         validate_deployment(config, any(source.images for source in sources))
         contexts = load_contexts(config, sources)
         identity = {
@@ -534,6 +549,15 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
                 )
             },
         }
+        if source_manifest is not None:
+            identity["source_files"] = source_manifest["files"]
+            if "source_preparation" in source_manifest:
+                identity["source_preparation"] = source_manifest["source_preparation"]
+            source_root = config.source_directory.path.resolve()
+            for record in source_manifest["files"]:
+                image = str(source_root / record["path"])
+                if image in identity["images"] and identity["images"][image] != record["sha256"]:
+                    raise ValueError(f"Source image changed during preparation: {image}")
         if root.exists() and not config.resume:
             raise FileExistsError(f"Run exists: {root}; inspect before explicitly resuming")
         if root.exists() and not (root / "identity.json").exists():
@@ -551,10 +575,24 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             images = []
             for image in source.images:
                 path = Path(image)
-                target = root / "inputs/assets" / (digest(path) + path.suffix.lower())
-                write_bytes(target, path.read_bytes())
+                content = path.read_bytes()
+                checksum = sha256(content).hexdigest()
+                if source_manifest is not None and checksum != identity["images"][image]:
+                    raise ValueError(f"Source image changed during preparation: {image}")
+                target = root / "inputs/assets" / (checksum + path.suffix.lower())
+                write_bytes(target, content)
                 images.append(str(target))
             frozen.append(source.model_copy(update={"images": images}))
+        if source_manifest is not None:
+            write_json(root / "inputs/source_manifest.json", source_manifest)
+            write_jsonl(
+                root / "inputs/sources.jsonl",
+                [
+                    source.model_dump(mode="json")
+                    | {"images": [Path(image).relative_to(root / "inputs").as_posix() for image in source.images]}
+                    for source in frozen
+                ],
+            )
         inference = DataDesignerInference(root / "inference", config)
         candidates, outcomes = generate_candidates(config, frozen, contexts, inference)
         if config.failed_record_policy == "skip":
@@ -565,17 +603,13 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
         write_json(root / "candidates.json", [c.model_dump(mode="json") for c in candidates])
         write_json(root / "context_outcomes.json", outcomes)
         handoff = export_multimodal_bundle(root / "bundle", frozen, candidates, outcomes, config)
+        completed_paths = sorted((root / "bundle").rglob("*"))
+        if source_manifest is not None:
+            completed_paths.extend(sorted((root / "inputs").rglob("*")))
+        if config.failed_record_policy == "skip":
+            completed_paths.append(root / "generation_failures.json")
         write_json(
             root / "complete.json",
-            {
-                "artifacts": [
-                    artifact(p, root)
-                    for p in [
-                        *sorted((root / "bundle").rglob("*")),
-                        *([root / "generation_failures.json"] if config.failed_record_policy == "skip" else []),
-                    ]
-                    if p.is_file()
-                ]
-            },
+            {"artifacts": [artifact(p, root) for p in completed_paths if p.is_file()]},
         )
         return handoff

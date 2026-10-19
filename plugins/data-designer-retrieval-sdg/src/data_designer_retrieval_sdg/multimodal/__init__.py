@@ -11,11 +11,19 @@ from data_designer_retrieval_sdg.multimodal.models import (
     MultimodalSDGConfig,
     QueryInstruction,
 )
+from data_designer_retrieval_sdg.multimodal.source_models import SourceDirectoryConfig
 
 if TYPE_CHECKING:
     from data_designer_retrieval_sdg.multimodal.workflow import run_multimodal_sdg
 
-__all__ = ["GenerationContext", "ModelSettings", "MultimodalSDGConfig", "QueryInstruction", "run_multimodal_sdg"]
+__all__ = [
+    "GenerationContext",
+    "ModelSettings",
+    "MultimodalSDGConfig",
+    "QueryInstruction",
+    "SourceDirectoryConfig",
+    "run_multimodal_sdg",
+]
 
 
 def __getattr__(name: str) -> Any:

@@ -692,12 +692,14 @@ dependencies = [
     { name = "lxml" },
     { name = "mcp" },
     { name = "nltk" },
+    { name = "pillow" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "starlette" },
     { name = "tokenizers" },
+    { name = "transformers" },
     { name = "urllib3" },
 ]
 
@@ -721,6 +723,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "mcp", specifier = ">=1.29.0,<2" },
     { name = "nltk", specifier = ">=3.10.3,<3.11" },
+    { name = "pillow", specifier = ">=12.3.0" },
     { name = "pyarrow", specifier = ">=24.0.0,<25" },
     { name = "pydantic", specifier = ">=2.9.2,<2.14" },
     { name = "pydantic-settings", specifier = ">=2.14,<3" },
@@ -729,6 +732,7 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'multimodal'", specifier = ">=5.0,<7" },
     { name = "starlette", specifier = ">=1.4.1,<2" },
     { name = "tokenizers", specifier = ">=0.22,<0.24" },
+    { name = "transformers", specifier = ">=5.17,<6" },
     { name = "umap-learn", marker = "extra == 'multimodal'", specifier = ">=0.5.7,<0.6" },
     { name = "urllib3", specifier = ">=2.8.0,<3" },
 ]
