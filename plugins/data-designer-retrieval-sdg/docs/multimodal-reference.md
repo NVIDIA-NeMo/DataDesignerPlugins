@@ -205,15 +205,27 @@ are requested:
 | `summary_count` | `null` | Positive cap after summary filtering and deduplication. |
 | `summary_fraction` | `null` | Fraction to retain, greater than 0 and at most 1, rounded up. Mutually exclusive with `summary_count`. |
 | `summary_near_duplicate_threshold` | `null` | Optional summary similarity threshold, greater than 0 and at most 1. |
-| `instructions` | Text, figure, and table defaults | Nonempty list of query profiles with unique names. |
-| `instructions_per_context` | `null` | Optional positive count sampled without replacement from the configured profile pool; cannot exceed its size. |
+| `instructions` | Text, figure, and table defaults | Nonempty list of query profiles with unique names. A custom list replaces the default profiles. |
+| `instructions_per_context` | `null` | Optional positive count sampled without replacement from the configured profile list; cannot exceed its size. When unset, all custom profiles are used. |
 | `relevance_threshold` | `4` | Minimum query-source relevance score, from 1 to 5. |
 | `self_sufficiency_threshold` | `4` | Minimum source-aware self-sufficiency score, from 1 to 5. |
 | `require_verbatim_quotes` | `false` | Require source-matching quotations for text and combined support. |
 
-With unchanged defaults and no `instructions_per_context`, the sampler draws
-one weighted profile from each text, figure, and table pool. Custom profiles use
-the following fields:
+With both fields omitted, the sampler draws one weighted profile from each text,
+figure, and table pool for each selected context. The profiles vary query type,
+format, and full or partial answerability using the run seed and context ID.
+This requests three queries; unsupported tasks can abstain and quality checks
+can reject generated queries.
+
+A custom `instructions` list replaces the default profiles rather than extending
+them. Each selected profile requests one query or abstention. Setting
+`instructions_per_context` samples entries from the configured list instead of
+using the built-in weighted sampler. Omit both fields to restore that sampler;
+`instructions: []` is invalid. Refer to
+[Customize Query Instructions](multimodal.md#customize-query-instructions) for
+reasons to tune the profiles and an example.
+
+Custom profiles use the following fields:
 
 | Field | Required | Values |
 | --- | --- | --- |

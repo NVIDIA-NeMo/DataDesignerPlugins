@@ -112,11 +112,45 @@ The initial configuration uses one source unit per context. A context is the
 set of units shown together to generate a query. To combine pages or documents,
 refer to [context planning](multimodal-reference.md#context-planning).
 
-### Request Only Text Questions
+### Customize Query Instructions
 
-The default sampler requests one text, one figure, and one table task per
-context. Unsupported tasks can abstain. To avoid visual tasks on a text-only
-corpus, add explicit instructions to `sdg.yaml`:
+The initial configuration omits `instructions` and `instructions_per_context`.
+This uses the built-in sampler, which requests one text, one figure, and one
+table query per selected context. It samples weighted profiles that vary query
+type, format, and full or partial answerability. The configured seed makes profile
+selection reproducible. Unsupported tasks can abstain.
+
+Start with these defaults and inspect the output. Add custom `instructions` when
+you want to focus the dataset on information needs relevant to your application:
+
+- Target evidence in your corpus, such as software explanations or diagram
+  relationships, or avoid visual tasks for a text-only collection.
+- Request the query forms your users submit, such as keyword searches or
+  questions that compare products.
+- Guide how much of a query the supplied sources should answer. A partially
+  answerable query can require evidence beyond the supplied context.
+
+Each instruction is a query profile with a unique `name` and an `instruction`
+that describes the task. Optional fields specify the requested type, format,
+modality, persona, and answerability. Refer to the
+[query profile reference](multimodal-reference.md#summary-selection-and-query-profiles)
+for all fields.
+
+A custom list replaces the entire default profile set. Each selected profile
+requests one query or an explicit abstention. By default, every custom profile is
+used for each selected context. Set `instructions_per_context` to sample a smaller
+number of profiles without replacement from your list. To restore the built-in
+sampler, omit both fields. An empty `instructions` list is invalid.
+
+When changing profiles, use a new `output_dir`; changed generation settings are
+incompatible with resume. Compare a sample of the new queries and evidence with
+the default run before scaling up. Custom profiles guide generation; they do not
+guarantee the requested style, evidence modality, or answerability.
+
+#### Request Only Text Questions
+
+For example, add the following custom profiles to `sdg.yaml` to replace the
+default sampler with two text questions per selected context:
 
 ```yaml
 instructions:
@@ -126,12 +160,14 @@ instructions:
       text. Include the subject in the question. Return null if no suitable
       question is supported.
     modality: text
+    format: question
     answerability: fully answerable
   - name: text-explanation
     instruction: >-
       Ask a standalone question that explains a process or compares concepts
       using only the source text. Return null if the text cannot support it.
     modality: text
+    format: question
     answerability: fully answerable
 ```
 

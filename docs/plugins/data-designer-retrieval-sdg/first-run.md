@@ -32,10 +32,15 @@ Edit `sdg.yaml` before running it:
 - Keep `output_dir` pointed at a new directory. An existing completed or interrupted
   run requires the [resume procedure](multimodal.md#resume-an-interrupted-run).
 
-The [downloadable configuration](assets/first-run/sdg.yaml) includes explicit text
-and topology-diagram instructions, one source per context, and one concurrent request.
-These choices make the first run easier to inspect. They do not impose an
-aggregate request, token, or spending limit. Monitor usage through your provider.
+The [downloadable configuration](assets/first-run/sdg.yaml) uses the default
+query profiles by omitting `instructions` and `instructions_per_context`.
+For each context that reaches generation, the sampler requests one text, one
+figure, and one table query. It varies query type, format, and answerability using
+the configured seed. Unsupported tasks can abstain.
+
+The configuration uses one source per context and one concurrent request to make
+the first run easier to inspect. These settings do not impose an aggregate
+request, token, or spending limit. Monitor usage through your provider.
 
 ## 2. Inspect the Supplied Page
 
@@ -69,10 +74,10 @@ available through both representations:
 
 ![Page 16 of the NVIDIA DGX B200 User Guide, with CPU 0 and CPU 1 connected to groups of GPUs above descriptions of DGX OS software.](assets/first-run/dgx-b200-page-16.png)
 
-The run requests two tasks for this page: a software-purpose question and a
-question about a visible topology relationship. A task can abstain when it cannot
-find suitable evidence. Summary and query checks can also reject candidates.
-Two requested slots do not imply two accepted queries.
+The default profiles can draw on the software text and the topology diagram.
+A table task can abstain if it cannot find suitable table evidence. Summary and
+query checks can also reject candidates. Three requested slots do not imply
+three accepted queries.
 
 ## 3. Generate and Inspect Results
 
@@ -112,87 +117,72 @@ python review_bundle.py
 
 Open `candidate_diagnostics.jsonl` in the same bundle directory and compare the
 queries and supporting evidence with the supplied sources. Counts, wording, and
-split assignments depend on model responses. The captured example below shows how
-to interpret a result, not an output your model must reproduce.
+split assignments depend on model responses. Use the following steps to inspect
+the records from your run.
 
 ## 4. Follow a Query From Source to View
 
-This historical capture used an earlier exporter with three views. Its source
-assets and recorded results are preserved; current runs also export a `mixed`
-view. Inspect your own report for the current counts rather than expecting this
-capture to reproduce exactly.
+Append the following to `review_bundle.py` to display one accepted query, its
+requested profile, and the recorded supporting evidence:
 
-The captured run generated two questions and accepted both. The following is an
-excerpt of the software question's actual diagnostic record:
-
-```json
-{
-  "query": "What is the purpose of the NVIDIA System Management (NVSM) software in the DGX B200 system?",
-  "evidence_modality": "text",
-  "accepted": true,
-  "localization": {
-    "supports": [
-      {
-        "unit_id": "dgx-b200-page-16",
-        "modality": "text",
-        "quote": "Provides active health monitoring and system alerts for NVIDIA DGX nodes in a data center. It also provides simple commands for checking the health of the DGX B200 system from the command line."
-      }
-    ]
-  },
-  "quote_verification": {
-    "dgx-b200-page-16": true
-  }
-}
+```python
+records = [
+    json.loads(line)
+    for line in (bundle / "candidate_diagnostics.jsonl").read_text().splitlines()
+]
+candidate = next(record for record in records if record["accepted"])
+fields = (
+    "query_id",
+    "query",
+    "requested_instruction",
+    "evidence_modality",
+    "localization",
+    "quote_verification",
+)
+print(json.dumps({field: candidate[field] for field in fields}, indent=2))
 ```
 
-Find the quotation in the supplied text. It directly supports the question, and
-`quote_verification` confirms that the quoted wording occurs in the source.
-That check does not independently verify the judge's interpretation.
+Run `python review_bundle.py` again. Compare the requested profile with the query
+and each entry in `localization.supports`:
 
-The other accepted question was:
+- Find each `unit_id` in `sources.jsonl`. Compare text quotations with the original
+  text and visual explanations with the page image.
+- Check whether the recorded evidence supports the query. `quote_verification`
+  reports text matching; it does not verify relevance or diagram interpretation.
+- Compare the generator's `evidence_modality` with each support's `modality`.
+  These describe different stages. Export eligibility follows the localized
+  support, so a requested image task can be excluded from the image-only view.
 
-> How are the GPUs connected to the CPUs in the DGX B200 system topology?
+To display the query's actual view membership and split, append the following
+and run the script again:
 
-Its generated `evidence_modality` was `image`, but the localization judge recorded
-`text_and_image` support: the topology diagram plus its section heading and introductory sentence.
-These fields describe different stages. Export eligibility follows the localized
-support, so the image-only view excluded this question:
+```python
+splits = json.loads((bundle / "split_manifest.json").read_text())
+for view, assignments in splits["query_assignments"].items():
+    assignment = assignments.get(candidate["query_id"])
+    print(view, assignment["split"] if assignment else "excluded")
+```
 
-| View | Accepted Queries | Training | Evaluation |
-| --- | ---: | ---: | ---: |
-| `text` | 1 | 1 | 0 |
-| `image` | 0 | 0 | 0 |
-| `image_and_text` | 2 | 1 | 1 |
+The output lists the views created for your corpus and whether this query appears
+in each view. Refer to [evidence and export views](multimodal-concepts.md#evidence-and-export-views)
+to explain exclusions from the recorded support. A view can have no training
+records even when it has evaluation queries. With only one source page, the split
+does not establish generalization to unseen documents.
 
-In the captured export, the software question appears in `text` and
-`image_and_text`. Although its prose is also visible in the page image, the recorded support is `text`. The exporter
-does not infer an alternative image support label. Likewise, the topology
-question appears only in the captured `image_and_text` view. With the current
-export rules applied to those recorded supports, `mixed` would preserve both
-questions and their complete positive sets. This is a view-eligibility
-explanation, not a new model run. Review whether both
-modalities are actually necessary; a model's support label is not a human-verified ground-truth label.
-
-A view's accepted count includes all its splits. In this capture, the text view
-contains one training question and no evaluation questions. The combined view
-contains one of each. Inspect the split counts before selecting a view for
-training or evaluation. With only one source page, the split does not establish
-generalization to unseen documents.
-
-Review the visual explanation in `candidate_diagnostics.jsonl` against the
-original diagram. In this capture, it incorrectly places the purple PCIe switches
-between the CPUs and orange network modules. The diagram draws CPU connections
-directly to those modules. Preserve the record for review; do not treat the
-accepted explanation as verified hardware guidance.
-
-Acceptance and quote matching do not verify diagram interpretation. This example
-demonstrates the generation, review, and export workflow; it does not establish
-retrieval quality or readiness of the generated questions for training.
+Preserve the original records when you find an incorrect explanation or support
+label. This tutorial demonstrates generation, inspection, and export; model
+acceptance does not establish retrieval quality or training readiness.
 
 ## Next Steps
 
 Use [Generate Retrieval Data From Text and Images](multimodal.md) to substitute
-your own corpus, choose instructions, and resume interrupted work. Refer to
+your own corpus and resume interrupted work. After inspecting the default output,
+you can [customize query instructions](multimodal.md#customize-query-instructions)
+to target information needs, evidence types, or query formats relevant to your
+application. Custom profiles replace the default profiles. Use a new output
+directory when changing generation settings.
+
+Refer to
 [Evidence and Export Views](multimodal-concepts.md#evidence-and-export-views)
 before selecting a representation, then follow
 [Continue to Mining and Training](multimodal.md#continue-to-mining-and-training)
