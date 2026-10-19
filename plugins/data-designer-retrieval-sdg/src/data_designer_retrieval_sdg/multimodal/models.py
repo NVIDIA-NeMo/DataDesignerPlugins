@@ -44,6 +44,24 @@ class ModelSettings(StrictModel):
         return self
 
 
+JudgeStage = Literal["summary", "query_metadata", "self_sufficiency", "relevance", "localization"]
+ModelRole = Literal["generator", "judge"]
+
+
+class JudgeModels(StrictModel):
+    """Optional complete model settings for each independent judgment stage.
+
+    Unset stages use the run's ``judge`` settings. An override replaces the
+    complete settings object rather than inheriting individual fallback fields.
+    """
+
+    summary: ModelSettings | None = None
+    query_metadata: ModelSettings | None = None
+    self_sufficiency: ModelSettings | None = None
+    relevance: ModelSettings | None = None
+    localization: ModelSettings | None = None
+
+
 class FailedGeneration(StrictModel):
     """An exhausted validation failure, never a generated answer or judgment."""
 
@@ -96,6 +114,7 @@ class MultimodalSDGConfig(StrictModel):
     dataset_id: str = Field(min_length=1)
     generator: ModelSettings
     judge: ModelSettings
+    judges: JudgeModels = Field(default_factory=JudgeModels)
     contexts_file: Path | None = None
     concurrency: int = Field(default=8, ge=1, le=128)
     batch_size: int = Field(default=30, ge=1, le=128)
@@ -129,6 +148,39 @@ class MultimodalSDGConfig(StrictModel):
     seed: int = 42
     group_near_duplicates: bool = False
     resume: bool = False
+
+    def model_for(self, role: ModelRole, judge_stage: JudgeStage | None = None) -> ModelSettings:
+        """Resolve the complete model settings for a request.
+
+        Args:
+            role: Generator or judge request role.
+            judge_stage: Optional specific judge stage; omitted uses ``judge``.
+
+        Returns:
+            Explicit stage override or the original role's model settings.
+
+        Raises:
+            ValueError: The role or stage is unknown, or a generator names a judge stage.
+        """
+        if role not in ("generator", "judge"):
+            raise ValueError(f"Unknown model role: {role}")
+        if judge_stage is None:
+            return getattr(self, role)
+        if role != "judge" or judge_stage not in JudgeModels.model_fields:
+            raise ValueError(f"Invalid judge stage {judge_stage!r} for role {role!r}")
+        return getattr(self.judges, judge_stage) or self.judge
+
+    def resolved_judges(self) -> dict[str, ModelSettings]:
+        """Return effective model settings for the enabled judge stages.
+
+        Returns:
+            Stage-to-model mapping, omitting summary when summary judging is disabled.
+        """
+        return {
+            stage: self.model_for("judge", stage)
+            for stage in JudgeModels.model_fields
+            if stage != "summary" or self.judge_summaries
+        }
 
     @field_validator("summary_embedding_extra_body", mode="before")
     @classmethod

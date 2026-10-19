@@ -194,6 +194,7 @@ def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
                     prompts.render("judgment", summary=s.summary, persona=config.persona, language=c.language),
                     SummaryJudgment,
                     "judge",
+                    judge_stage="summary",
                 )
                 for c, s in zip(contexts, summaries, strict=True)
             ],
@@ -271,11 +272,14 @@ def generation_requests(context, sources, config):
 def judgment_requests(context, slot, sources):
     """Build every downstream prompt using the actual generated query and evidence."""
     return [
-        Request(prompts.render("query_metadata", query=slot.query), QueryMetadata, "judge"),
+        Request(
+            prompts.render("query_metadata", query=slot.query), QueryMetadata, "judge", judge_stage="query_metadata"
+        ),
         Request(
             prompts.render("self_sufficiency", summary=source_text(context, sources), query=slot.query),
             SelfSufficiencyJudgment,
             "judge",
+            judge_stage="self_sufficiency",
         ),
         source_request(
             prompts.render("relevancy", summary=source_text(context, sources), query=slot.query),
@@ -283,9 +287,12 @@ def judgment_requests(context, slot, sources):
             "judge",
             context,
             sources,
+            judge_stage="relevance",
             query=slot.query,
         ),
-        source_request(prompts.LOCALIZE, Localization, "judge", context, sources, query=slot.query),
+        source_request(
+            prompts.LOCALIZE, Localization, "judge", context, sources, judge_stage="localization", query=slot.query
+        ),
     ]
 
 
@@ -517,9 +524,8 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             "contexts": [c.model_dump() for c in contexts],
             "tokenizers": {
                 role: digest(model.tokenizer_file)
-                for role in ("generator", "judge")
-                if (model := getattr(config, role)).context_window_tokens is not None
-                and model.tokenizer_file is not None
+                for role, model in {"generator": config.generator, **config.resolved_judges()}.items()
+                if model.context_window_tokens is not None and model.tokenizer_file is not None
             },
             "images": {image: digest(Path(image)) for s in sources for image in s.images},
             "implementation": {

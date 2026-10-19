@@ -258,6 +258,7 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
                     ),
                     SummaryJudgment,
                     "judge",
+                    judge_stage="summary",
                 )
                 for row in rows
             ],
