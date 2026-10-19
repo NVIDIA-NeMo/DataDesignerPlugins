@@ -12,10 +12,14 @@ from functools import cached_property
 from typing import Any
 
 from data_designer.engine.column_generators.generators.llm_completion import LLMStructuredCellGenerator
+from data_designer.engine.models.errors import ModelGenerationValidationFailureError
 from data_designer.engine.models.parsers.errors import ParserException
 from data_designer.engine.models.recipes.response_recipes import StructuredResponseRecipe
 
+from data_designer_retrieval_sdg.multimodal.models import FailedGeneration
+
 _JSON_FENCE = re.compile(r"```json[ \t]*\r?\n(?P<body>.*?)\r?\n```", re.DOTALL | re.IGNORECASE)
+FAILURE_KEY = "_retrieval_sdg_failure"
 
 
 def _reject_constant(value: str) -> None:
@@ -81,3 +85,82 @@ class RetrievalStructuredCellGenerator(LLMStructuredCellGenerator):
     def response_recipe(self) -> RetrievalStructuredResponseRecipe:
         """Return the plugin parser with native schema validation and no pruning."""
         return RetrievalStructuredResponseRecipe(json_schema=self.config.output_format, pruning=False)
+
+    def record_result(self, data: dict) -> dict:
+        """Persist uniform JSON strings in skip mode to avoid mixed Arrow structs.
+
+        Args:
+            data: Native row containing the validated response or failure diagnostic.
+
+        Returns:
+            The row with a JSON-string cell in skip mode, unchanged in error mode.
+        """
+        if self.config.failed_record_policy == "skip":
+            data[self.config.name] = json.dumps(data[self.config.name], ensure_ascii=False, allow_nan=False)
+        return data
+
+    def record_failure(self, data: dict, error: ModelGenerationValidationFailureError) -> dict:
+        """Retain a validation diagnostic under the original native row identity.
+
+        Args:
+            data: Original row, including successful sibling columns.
+            error: Validation failure after Data Designer's native retry budget.
+
+        Returns:
+            The row with a tagged diagnostic in the failed column.
+
+        Raises:
+            ModelGenerationValidationFailureError: Under the default error policy.
+        """
+        if self.config.failed_record_policy != "skip":
+            raise error
+        cause, response, seen = error, None, set()
+        while cause is not None and id(cause) not in seen:
+            seen.add(id(cause))
+            if isinstance(cause, ParserException) and cause.source is not None:
+                response = cause.source
+            cause = cause.__cause__ or cause.__context__
+        failure = FailedGeneration(
+            kind="model_validation_exhausted",
+            detail=error.detail or str(error),
+            max_model_attempts=(self.max_conversation_correction_steps + 1) * (self.max_conversation_restarts + 1),
+            last_invalid_response=response,
+        )
+        data[self.config.name] = {FAILURE_KEY: failure.model_dump()}
+        for column in self.config.side_effect_columns:
+            data[column] = None
+        return self.record_result(data)
+
+    def generate(self, data: dict) -> dict:
+        """Apply the opt-in policy after native validation retries are exhausted.
+
+        Args:
+            data: Native input row.
+
+        Returns:
+            The row with a validated response or an explicitly enabled diagnostic.
+
+        Raises:
+            ModelGenerationValidationFailureError: Under the default error policy.
+        """
+        try:
+            return self.record_result(super().generate(data))
+        except ModelGenerationValidationFailureError as error:
+            return self.record_failure(data, error)
+
+    async def agenerate(self, data: dict) -> dict:
+        """Apply the same policy while retaining native asynchronous generation.
+
+        Args:
+            data: Native input row.
+
+        Returns:
+            The row with a validated response or an explicitly enabled diagnostic.
+
+        Raises:
+            ModelGenerationValidationFailureError: Under the default error policy.
+        """
+        try:
+            return self.record_result(await super().agenerate(data))
+        except ModelGenerationValidationFailureError as error:
+            return self.record_failure(data, error)

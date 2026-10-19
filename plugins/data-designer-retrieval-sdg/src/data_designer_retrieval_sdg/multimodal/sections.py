@@ -11,8 +11,13 @@ from collections import Counter, defaultdict
 
 from data_designer_retrieval_sdg.multimodal import prompts
 from data_designer_retrieval_sdg.multimodal.bounds import check_request
-from data_designer_retrieval_sdg.multimodal.inference import Request
-from data_designer_retrieval_sdg.multimodal.models import GenerationContext, MultimodalSDGConfig, TOCConfirmation
+from data_designer_retrieval_sdg.multimodal.inference import Request, generate_records
+from data_designer_retrieval_sdg.multimodal.models import (
+    FailedGeneration,
+    GenerationContext,
+    MultimodalSDGConfig,
+    TOCConfirmation,
+)
 from data_designer_retrieval_sdg.multimodal.planning import automatic_contexts, context_chars
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
@@ -93,16 +98,22 @@ def confirm_tocs(sources, config, inference) -> dict[str, dict]:
             config,
         )
     responses = (
-        inference.generate(
+        generate_records(
+            inference,
             [
                 Request(prompts.render("check_toc", page=s.text, language=s.language), TOCConfirmation, "judge")
                 for s in bounded
-            ]
+            ],
+            "toc-confirmation",
+            [{"source_unit_ids": [s.unit_id]} for s in bounded],
         )
         if bounded
         else []
     )
-    result = {s.unit_id: response.model_dump() for s, response in zip(bounded, responses, strict=True)}
+    result = {
+        s.unit_id: {"generation_failed": True} if isinstance(response, FailedGeneration) else response.model_dump()
+        for s, response in zip(bounded, responses, strict=True)
+    }
     for source in candidates:
         if source.unit_id not in result:
             result[source.unit_id] = {
@@ -316,7 +327,7 @@ def section_contexts(
 
     Without inference, only headings contribute structural evidence. Explicit
     caller contexts bypass this automatic planner in the workflow. Confirmation
-    failures propagate through the existing retry policy, never become approvals.
+    failures follow the configured error/skip policy and never become approvals.
     """
     confirmations = confirm_tocs(sources, config, inference) if inference is not None else {}
     contexts, audit = build_sections(sources, config, confirmations)

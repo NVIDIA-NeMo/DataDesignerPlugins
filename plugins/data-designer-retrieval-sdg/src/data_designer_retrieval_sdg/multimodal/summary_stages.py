@@ -12,10 +12,11 @@ from functools import partial
 from data_designer_retrieval_sdg.multimodal import prompts
 from data_designer_retrieval_sdg.multimodal.bounds import fit_contexts
 from data_designer_retrieval_sdg.multimodal.combinations import semantic_combinations
-from data_designer_retrieval_sdg.multimodal.inference import Request, source_request
+from data_designer_retrieval_sdg.multimodal.inference import Request, generate_records, request_identity, source_request
 from data_designer_retrieval_sdg.multimodal.models import (
     ContextSummary,
     Description,
+    FailedGeneration,
     GenerationContext,
     SummaryJudgment,
     VisualDescription,
@@ -84,7 +85,9 @@ def summary_requests(context, sources, visual, descriptions=None):
             section=enriched_text(context, sources, visual),
             language=context.language,
             document_description="\n".join(
-                dict.fromkeys(descriptions[(sources[k].document_id, sources[k].language)] for k in context.unit_ids)
+                dict.fromkeys(
+                    descriptions.get((sources[k].document_id, sources[k].language), "") for k in context.unit_ids
+                )
             ),
         )
         schema = ContextSummary
@@ -105,8 +108,14 @@ def visual_enrichment(sources, inference) -> dict:
         )
         for s in selected
     ]
-    responses = inference.generate(requests)
-    return {s.unit_id: r.model_dump() for s, r in zip(selected, responses, strict=True)}
+    responses = generate_records(
+        inference, requests, "visual-enrichment", [{"source_unit_ids": [s.unit_id]} for s in selected]
+    )
+    return {
+        s.unit_id: r.model_dump()
+        for s, r in zip(selected, responses, strict=True)
+        if not isinstance(r, FailedGeneration)
+    }
 
 
 def describe_documents(sources, visual, config, inference) -> dict:
@@ -116,9 +125,13 @@ def describe_documents(sources, visual, config, inference) -> dict:
     chunks = bounded_enriched_contexts(documents, sources, visual, config)
     builder = partial(summary_requests, sources=by_id, visual=visual)
     chunks = fit_contexts(chunks, builder, config)
-    responses = inference.generate([builder(c)[0] for c in chunks])
+    responses = generate_records(
+        inference, [builder(c)[0] for c in chunks], "document-description", [request_identity(c) for c in chunks]
+    )
     descriptions = defaultdict(list)
     for context, response in zip(chunks, responses, strict=True):
+        if isinstance(response, FailedGeneration):
+            continue
         descriptions[(by_id[context.unit_ids[0]].document_id, context.language)].append(response.description)
     return {key: "\n".join(values) for key, values in descriptions.items()}
 
@@ -181,8 +194,14 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
     contexts = fit_contexts(contexts, builder, config)
     if config.contexts_file is None:
         verify_section_coverage(contexts, sources, 2 * config.section_size)
-    summaries = inference.generate([builder(c)[0] for c in contexts])
-    rows = [summary_row(c, s, by_id, visual) for c, s in zip(contexts, summaries, strict=True)]
+    summaries = generate_records(
+        inference, [builder(c)[0] for c in contexts], "summary", [request_identity(c) for c in contexts]
+    )
+    rows = [
+        summary_row(c, s, by_id, visual)
+        for c, s in zip(contexts, summaries, strict=True)
+        if not isinstance(s, FailedGeneration)
+    ]
     combinations = semantic_combinations(rows, config)
     combination_builder = partial(combination_requests, rows=rows)
     combination_contexts = [
@@ -204,8 +223,21 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
             "members": [[rows[i]["context"]["context_id"] for i in group] for group in combinations],
         },
     )
-    combined = inference.generate([combination_builder(c)[0] for c in combination_contexts])
+    combined = generate_records(
+        inference,
+        [combination_builder(c)[0] for c in combination_contexts],
+        "summary-combinations",
+        [
+            {
+                "summary_context_ids": [rows[i]["context"]["context_id"] for i in group],
+                "source_unit_ids": list(dict.fromkeys(key for i in group for key in rows[i]["context"]["unit_ids"])),
+            }
+            for group in combinations
+        ],
+    )
     for group, summary in zip(combinations, combined, strict=True):
+        if isinstance(summary, FailedGeneration):
+            continue
         ids = list(dict.fromkeys(key for i in group for key in rows[i]["context"]["unit_ids"]))
         context = GenerationContext(
             context_id="combined_" + fingerprint([rows[i]["context"]["context_id"] for i in group])[:32],
@@ -214,7 +246,8 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
         )
         rows.append(summary_row(context, summary, by_id, visual, combined=True))
     if config.judge_summaries:
-        judgments = inference.generate(
+        judgments = generate_records(
+            inference,
             [
                 Request(
                     prompts.render(
@@ -227,9 +260,14 @@ def plan_summaries(sources, contexts, config, inference) -> list[dict]:
                     "judge",
                 )
                 for row in rows
-            ]
+            ],
+            "summary-judgment",
+            [request_identity(GenerationContext.model_validate(row["context"])) for row in rows],
         )
         for row, judgment in zip(rows, judgments, strict=True):
-            row["summary_judgment"] = judgment.model_dump()
+            if isinstance(judgment, FailedGeneration):
+                row["summary_judgment_failed"] = True
+            else:
+                row["summary_judgment"] = judgment.model_dump()
     write_json(root / "summaries.json", rows)
     return rows

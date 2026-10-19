@@ -22,9 +22,10 @@ from pydantic import BaseModel
 
 from data_designer_retrieval_sdg.multimodal.bounds import check_request
 from data_designer_retrieval_sdg.multimodal.config import RetrievalStructuredColumnConfig
-from data_designer_retrieval_sdg.multimodal.models import GenerationContext, MultimodalSDGConfig
+from data_designer_retrieval_sdg.multimodal.models import FailedGeneration, GenerationContext, MultimodalSDGConfig
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import digest, fingerprint, write_json
+from data_designer_retrieval_sdg.multimodal.structured import FAILURE_KEY
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,73 @@ def source_request(
     )
 
 
+def request_identity(context: GenerationContext, **details) -> dict:
+    """Attach source membership and optional query/slot details to a failure record.
+
+    Args:
+        context: Original context owning the request.
+        **details: Additional query, slot, or instruction provenance.
+
+    Returns:
+        JSON-compatible identity retained with any generation failure.
+    """
+    return {"context_id": context.context_id, "source_unit_ids": context.unit_ids, **details}
+
+
+def generate_records(
+    inference: DataDesignerInference, requests: list[Request], stage: str, records: list[dict]
+) -> list[BaseModel]:
+    """Generate aligned responses and retain contextual diagnostics for failed ones.
+
+    Args:
+        inference: Run-owned response cache and native Data Designer transport.
+        requests: Ordered requests, including any identical requests shared by records.
+        stage: Workflow stage responsible for these requests.
+        records: One context/source/query identity per request.
+
+    Returns:
+        Validated responses or explicit failures in the original record order.
+        Consumers decide the stage-specific disposition without shifting alignment.
+
+    Raises:
+        ValueError: Request, identity, or response counts disagree.
+    """
+    if len(requests) != len(records):
+        raise ValueError("Every generation request requires a record identity")
+    responses = inference.generate(requests)
+    for request, record, response in zip(requests, records, responses, strict=True):
+        if isinstance(response, FailedGeneration):
+            key = inference.request_key(request)
+            identity = fingerprint([stage, key, record])
+            inference.failures[identity] = {
+                **record,
+                "stage": stage,
+                "request_id": key,
+                "failure": response.model_dump(mode="json"),
+            }
+    return responses
+
+
+def parse_failure(value: object, policy: str) -> FailedGeneration | None:
+    """Accept only a well-formed diagnostic under the explicit skip policy.
+
+    Args:
+        value: Decoded native response or cached payload.
+        policy: Configured error/skip policy.
+
+    Returns:
+        The typed failure, or None for an ordinary response.
+
+    Raises:
+        ValueError: A failure marker is malformed or the skip policy is disabled.
+    """
+    if not isinstance(value, dict) or FAILURE_KEY not in value:
+        return None
+    if policy != "skip" or set(value) != {FAILURE_KEY}:
+        raise ValueError("Saved failure requires the skip policy and a valid diagnostic")
+    return FailedGeneration.model_validate(value[FAILURE_KEY])
+
+
 class DataDesignerInference:
     """Run schema-homogeneous batches with immutable per-response caches.
 
@@ -71,6 +139,7 @@ class DataDesignerInference:
     def __init__(self, root: Path, config: MultimodalSDGConfig):
         self.root = root
         self.config = config
+        self.failures: dict[str, dict] = {}
 
     def request_key(self, request: Request) -> str:
         """Bind responses to exact prompts, schema, pixels and model settings."""
@@ -97,7 +166,8 @@ class DataDesignerInference:
         value = json.loads(path.read_text())
         if value["request_id"] != key or fingerprint(value["response"]) != value["response_sha256"]:
             raise ValueError(f"Response cache integrity failure: {key}")
-        return request.schema.model_validate(value["response"])
+        failure = parse_failure(value["response"], self.config.failed_record_policy)
+        return failure if failure is not None else request.schema.model_validate(value["response"])
 
     def generate(self, requests: list[Request]) -> list[BaseModel]:
         """Retry only missing rows within the configured finite attempt budget.
@@ -105,7 +175,9 @@ class DataDesignerInference:
         Missing outputs fail the stage after preserving successful responses and
         attempt evidence. Exceptions stop immediately; only normally completed
         batches with missing/invalid rows get another attempt. Native DD's own
-        schema corrections remain bounded inside each attempt.
+        schema corrections remain bounded inside each attempt. In skip mode,
+        explicit exhausted validation failures are cached terminal results;
+        unexplained missing rows still fail the stage.
         """
         groups: dict[str, dict[str, Request]] = {}
         for request in requests:
@@ -169,6 +241,7 @@ class DataDesignerInference:
                 model_alias="retrieval",
                 prompt="{{ request_text }}",
                 output_format=request.schema,
+                failed_record_policy=self.config.failed_record_policy,
                 multi_modal_context=[dd.ImageContext(column_name="request_images")] if request.images else None,
             )
         )
@@ -226,6 +299,7 @@ class DataDesignerInference:
                     raise ValueError("Unexpected or duplicate Data Designer response identity")
                 seen.add(key)
         found: set[str] = set()
+        failed: list[str] = []
         invalid: list[str] = []
         for batch in batches:
             for row in pq.read_table(batch).to_pylist():
@@ -235,15 +309,20 @@ class DataDesignerInference:
                 raw = row["response"]
                 request = expected[key]
                 try:
-                    response = (
-                        request.schema.model_validate_json(raw)
-                        if isinstance(raw, str)
-                        else request.schema.model_validate(raw)
-                    )
+                    value = json.loads(raw) if isinstance(raw, str) else raw
                 except ValueError:
                     invalid.append(key)
                     continue
-                payload = response.model_dump(mode="json")
+                failure = parse_failure(value, self.config.failed_record_policy)
+                if failure is not None:
+                    payload = {FAILURE_KEY: failure.model_dump(mode="json")}
+                    failed.append(key)
+                else:
+                    try:
+                        payload = request.schema.model_validate(value).model_dump(mode="json")
+                    except ValueError:
+                        invalid.append(key)
+                        continue
                 write_json(
                     self.root / "responses" / f"{key}.json",
                     {
@@ -257,8 +336,9 @@ class DataDesignerInference:
             attempt / "outcome.json",
             {
                 "requested": len(items),
-                "returned": len(found),
+                "returned": len(found) - len(failed),
                 "missing": sorted(expected.keys() - found),
                 "invalid": invalid,
+                **({"failed": failed} if self.config.failed_record_policy == "skip" else {}),
             },
         )

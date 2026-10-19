@@ -162,6 +162,8 @@ def related_contexts(
 
 def summary_passes(row: dict, config: MultimodalSDGConfig) -> bool:
     """Apply the configured summary gate without inventing missing judgments."""
+    if row.get("summary_judgment_failed"):
+        return False
     judgment = row["summary_judgment"]
     return judgment is None or min(value["grade"] for value in judgment.values()) >= config.summary_quality_threshold
 
@@ -216,7 +218,9 @@ def select_summaries(rows: list[dict], config: MultimodalSDGConfig) -> list[dict
     for row in sorted(rows, key=summary_rank):
         row["selection_reason"] = "selected"
         if not summary_passes(row, config):
-            row["selection_reason"] = "summary_quality"
+            row["selection_reason"] = (
+                "summary_judgment_failed" if row.get("summary_judgment_failed") else "summary_quality"
+            )
             continue
         duplicate = next((other for other in kept if duplicate_summary(row, other, config)), None)
         if duplicate is not None:

@@ -12,7 +12,9 @@ class RetrievalStructuredColumnConfig(LLMStructuredColumnConfig):
     """Generate schema-validated retrieval JSON, with or without a Markdown fence.
 
     All model, image, prompt, skip, and trace settings retain their native
-    Data Designer meanings. Only response decoding uses the plugin parser.
+    Data Designer meanings. The optional skip policy records exhausted model
+    validation failures as tagged diagnostics instead of dropping the row.
     """
 
     column_type: Literal["retrieval-structured"] = "retrieval-structured"
+    failed_record_policy: Literal["error", "skip"] = "error"
