@@ -49,7 +49,7 @@ from data_designer_retrieval_sdg.multimodal.planning import (
     related_contexts,
     select_summaries,
 )
-from data_designer_retrieval_sdg.multimodal.preflight import validate_credentials
+from data_designer_retrieval_sdg.multimodal.preflight import check_models
 from data_designer_retrieval_sdg.multimodal.source_directory import load_directory_sources
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
@@ -515,8 +515,6 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             sources = load_retrieval_sources(config.sources_file)
         validate_deployment(config, any(source.images for source in sources))
         contexts = load_contexts(config, sources)
-        if not (config.resume and (root / "complete.json").exists()):
-            validate_credentials(config)
         identity = {
             "config": config.model_dump(mode="json", exclude={"resume", "output_dir"}),
             "sources": [s.model_dump() for s in sources],
@@ -567,7 +565,8 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             raise FileExistsError(f"Run exists: {root}; inspect before explicitly resuming")
         if root.exists() and not (root / "identity.json").exists():
             raise ValueError("Existing run has no frozen identity")
-        write_json(root / "identity.json", identity)
+        if root.exists():
+            write_json(root / "identity.json", identity)
         if (root / "complete.json").exists():
             complete = json.loads((root / "complete.json").read_text())
             for record in complete["artifacts"]:
@@ -575,6 +574,8 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
                 if path.stat().st_size != record["bytes"] or digest(path) != record["sha256"]:
                     raise ValueError("Completed run integrity failure")
             return root / "bundle/generation_result.json"
+        check_models(config)
+        write_json(root / "identity.json", identity)
         frozen = []
         for source in sources:
             images = []
