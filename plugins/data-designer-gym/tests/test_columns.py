@@ -50,6 +50,8 @@ class GymHTTP:
     delay: float = 0
     cleanup_status: int = 200
     cleanup_delay: float = 0
+    seed_status: int = 200
+    seed_delay: float = 0
     seed_response: dict = field(default_factory=lambda: {"token": "row-token"})
     responses_by_sql: dict = field(default_factory=dict)
     calls: list = field(default_factory=list)
@@ -60,7 +62,10 @@ class GymHTTP:
         body = json.loads(request.content)
         self.calls.append((request.url.path, body, dict(request.headers)))
         if request.url.path == "/seed_session":
-            return httpx.Response(200, json=self.seed_response, headers={"set-cookie": f"episode={body['id']}; Path=/"})
+            await asyncio.sleep(self.seed_delay)
+            return httpx.Response(
+                self.seed_status, json=self.seed_response, headers={"set-cookie": f"episode={body['id']}; Path=/"}
+            )
         if request.url.path == "/cleanup":
             await asyncio.sleep(self.cleanup_delay)
             return httpx.Response(self.cleanup_status, json={})
@@ -360,6 +365,8 @@ def test_request_failures_are_not_retried(service, resources, config, row, statu
     output = GymResourceColumnGenerator(config, resources).generate(row)
     assert output["execution"]["status"] == "failed"
     assert output["execution"]["failure_kind"] == kind
+    assert output["execution"]["failure_stage"] == "execute"
+    assert output["execution"]["failure_route"] == "/execute"
     assert len(service.calls) == 1
 
 
@@ -390,6 +397,8 @@ def test_create_with_mixed_responses_and_empty_provenance(service, tmp_path, suf
 def test_provenance_nan_is_reported_before_http(service, resources, config, row) -> None:
     output = GymResourceColumnGenerator(config, resources).generate({**row, "variant": float("nan")})
     assert output["execution"]["failure_kind"] == "request"
+    assert output["execution"]["failure_stage"] == "request"
+    assert output["execution"]["failure_route"] is None
     assert not service.calls
 
 
@@ -419,6 +428,8 @@ def test_queue_deadline_is_distinct(service, resources, config, row) -> None:
     outputs = asyncio.run(concurrent_rows(GymResourceColumnGenerator(config, resources), row))
     assert outputs[0]["execution"]["status"] == "completed"
     assert all(output["execution"]["failure_kind"] == "queue_timeout" for output in outputs[1:])
+    assert all(output["execution"]["failure_stage"] == "admission" for output in outputs[1:])
+    assert all(output["execution"]["failure_route"] is None for output in outputs[1:])
     assert len(service.calls) == 1
 
 
@@ -451,7 +462,10 @@ def test_cleanup_timeout_continues_remaining_steps(service, resources, config, r
 def test_cleanup_accepts_no_content(service, resources, config, row, session) -> None:
     service.cleanup_status = 204
     config = GymResourceColumnConfig.model_validate(config.model_dump() | {"session": session})
-    assert GymResourceColumnGenerator(config, resources).generate(row)["execution"]["status"] == "completed"
+    evidence = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
+    assert evidence["status"] == "completed"
+    assert evidence["failure_stage"] is None
+    assert evidence["failure_route"] is None
 
 
 @pytest.mark.parametrize("payload", ["[]", "not JSON", '{"x": NaN}', {"x": float("inf")}])
@@ -569,6 +583,8 @@ def test_timeout_cleanup_and_no_retry(service, resources, config, row, session) 
     config = GymResourceColumnConfig.model_validate(config.model_dump() | {"timeout": 0.02, "session": session})
     output = GymResourceColumnGenerator(config, resources).generate(row)
     assert output["execution"]["failure_kind"] == "timeout"
+    assert output["execution"]["failure_stage"] == "execute"
+    assert output["execution"]["failure_route"] == "/execute"
     assert [call[0] for call in service.calls] == ["/seed_session", "/execute", "/cleanup"]
 
 
@@ -596,6 +612,8 @@ def test_cleanup_failure_is_visible(service, resources, config, row, session) ->
     evidence = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
     assert evidence["status"] == "failed"
     assert evidence["failure_kind"] == "cleanup"
+    assert evidence["failure_stage"] == "cleanup"
+    assert evidence["failure_route"] == "/cleanup"
     assert json.loads(evidence["cleanup_errors_json"]) == [{"route": "/cleanup", "failure_kind": "server"}]
 
 
@@ -615,7 +633,37 @@ def test_missing_session_token_is_response_failure(service, resources, config, r
     config = GymResourceColumnConfig.model_validate(config.model_dump() | {"session": session})
     output = GymResourceColumnGenerator(config, resources).generate(row)
     assert output["execution"]["failure_kind"] == "response"
+    assert output["execution"]["failure_stage"] == "initialize"
+    assert output["execution"]["failure_route"] == "/seed_session"
     assert [call[0] for call in service.calls] == ["/seed_session", "/cleanup"]
+
+
+@pytest.mark.parametrize(("status", "delay", "kind"), [(503, 0, "server"), (200, 0.1, "timeout")])
+def test_initialization_failure_is_identified_without_tokens(
+    service, resources, config, row, session, status, delay, kind
+):
+    service.seed_status, service.seed_delay = status, delay
+    config = GymResourceColumnConfig.model_validate(config.model_dump() | {"session": session, "timeout": 0.02})
+    evidence = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
+    assert evidence["failure_kind"] == kind
+    assert evidence["failure_stage"] == "initialize"
+    assert evidence["failure_route"] == "/seed_session"
+    artifact = json.loads((resources.artifact_storage.base_dataset_path / evidence["artifact"]).read_text())
+    assert artifact["failure_stage"] == "initialize"
+    assert artifact["failure_route"] == "/seed_session"
+    assert artifact["response"] is None
+    assert "row-token" not in json.dumps(artifact)
+    assert [call[0] for call in service.calls] == ["/seed_session", "/cleanup"]
+
+
+def test_execution_failure_keeps_stage_when_cleanup_also_fails(service, resources, config, row, session):
+    service.status, service.cleanup_status = 422, 500
+    config = GymResourceColumnConfig.model_validate(config.model_dump() | {"session": session})
+    evidence = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
+    assert evidence["failure_kind"] == "http"
+    assert evidence["failure_stage"] == "execute"
+    assert evidence["failure_route"] == "/execute"
+    assert json.loads(evidence["cleanup_errors_json"]) == [{"route": "/cleanup", "failure_kind": "server"}]
 
 
 def fail_write(*args, **kwargs):
@@ -627,6 +675,8 @@ def test_artifact_write_failure_is_visible(service, resources, config, row, monk
     output = GymResourceColumnGenerator(config, resources).generate(row)["execution"]
     assert output["status"] == "failed"
     assert output["failure_kind"] == "storage"
+    assert output["failure_stage"] == "storage"
+    assert output["failure_route"] is None
     assert output["artifact"] is None
 
 

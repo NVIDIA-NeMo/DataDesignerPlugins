@@ -39,6 +39,7 @@ def main():
             request_values={"metadata": {"turn": phase}},
             timeout=60,
             max_parallel_requests=2,
+            skip=dd.SkipConfig(when="{{ reply_1_evidence.status != 'completed' }}") if phase == "2" else None,
         )
     )
     if phase == "1":
@@ -46,6 +47,7 @@ def main():
             dd.ExpressionColumnConfig(
                 name="user_reaction",
                 expr="Your reply was: {{ reply_1 }}. For the second turn set VALUE = 2 and preserve TOKEN.",
+                skip=dd.SkipConfig(when="{{ reply_1_evidence.status != 'completed' }}"),
             )
         )
     result = DataDesigner(artifact_path=str(root / f"dd-artifacts-{phase}")).create(builder, num_records=2)

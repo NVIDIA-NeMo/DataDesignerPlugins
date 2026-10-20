@@ -108,12 +108,21 @@ class SessionStore:
             if manifest["status"] not in ("new", "parked") or number != manifest["turn"] + 1:
                 raise HTTPException(409, "No committed checkpoint for this turn; interrupted turns require inspection")
             if manifest["turn"]:
-                session = Path(manifest["session_file"])
+                session = Path(manifest["session_file"]).resolve()
+                if not session.is_relative_to((directory / "sessions").resolve()):
+                    raise HTTPException(409, "Native Pi checkpoint belongs to another conversation directory")
                 if (
                     not session.is_file()
                     or hashlib.sha256(session.read_bytes()).hexdigest() != manifest["session_sha256"]
                 ):
                     raise HTTPException(409, "Committed native Pi history changed")
+                try:
+                    with session.open() as stream:
+                        header = json.loads(stream.readline())
+                    if header["type"] != "session" or Path(header["cwd"]).resolve() != turn.workspace.resolve():
+                        raise ValueError("Native Pi workspace changed")
+                except (KeyError, TypeError, ValueError) as error:
+                    raise HTTPException(409, "Native Pi checkpoint belongs to another workspace") from error
             (directory / "sessions").mkdir(exist_ok=True, mode=0o700)
             turn.workspace.mkdir(exist_ok=True, mode=0o700)
             manifest.update(status="running", requested_turn=number)

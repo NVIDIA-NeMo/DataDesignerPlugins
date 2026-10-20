@@ -177,6 +177,8 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
             "status": "failed",
             "row_id": None,
             "provenance": {},
+            "failure_stage": "request",
+            "failure_route": None,
         }
         request = None
         response = None
@@ -203,6 +205,7 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
             if self.config.session is not None:
                 setup_requests = [(step, gym_request_from_row(data, step)) for step in self.config.session.initialize]
                 cleanup_requests = [(step, gym_request_from_row(data, step)) for step in self.config.session.cleanup]
+            evidence["failure_stage"] = "admission"
             try:
                 await asyncio.wait_for(self._acquire(), timeout=self.config.queue_timeout)
             except asyncio.TimeoutError as exc:
@@ -214,7 +217,8 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
                 try:
                     # Cleanup must also run after a partially successful initialization.
                     response = await asyncio.wait_for(
-                        self._execute(client, setup_requests, request, cookies, headers), timeout=self.config.timeout
+                        self._execute(client, setup_requests, request, cookies, headers, evidence),
+                        timeout=self.config.timeout,
                     )
                     if isinstance(self.config, GymHarnessColumnConfig):
                         answer = final_assistant_answer(response)
@@ -226,8 +230,12 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
                     evidence["status"] = "completed"
                 finally:
                     if cleanup_requests:
+                        if evidence["status"] == "completed":
+                            evidence.update(failure_stage="cleanup", failure_route=None)
                         errors, cancelled = await self._cleanup_shielded(client, cleanup_requests, cookies, headers)
                         if errors:
+                            if evidence["status"] == "completed":
+                                evidence["failure_route"] = errors[0]["route"]
                             evidence["cleanup_errors"] = errors
                             evidence["status"] = "failed"
                             evidence["failure_kind"] = "cleanup"
@@ -253,6 +261,8 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
                 self._slots.release()
             artifact = self._artifact_dir / f"{attempt_id}.json"
             evidence["artifact"] = str(artifact.relative_to(self.base_dataset_path))
+            if evidence["status"] == "completed":
+                evidence.update(failure_stage=None, failure_route=None)
             try:
                 artifact.write_text(
                     json.dumps({**evidence, "request": request, "response": response}, allow_nan=False),
@@ -263,6 +273,8 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
                     status="failed",
                     failure_kind="storage",
                     failure_reason="Could not persist Gym evidence",
+                    failure_stage="storage",
+                    failure_route=None,
                     artifact=None,
                 )
                 answer = None
@@ -277,6 +289,8 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
                 "row_id",
                 "failure_kind",
                 "failure_reason",
+                "failure_stage",
+                "failure_route",
                 "http_status",
                 "artifact",
             )
@@ -311,9 +325,10 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
             await asyncio.sleep(delay)
             delay = min(delay * 2, 0.25)
 
-    async def _execute(self, client, setup_requests, request, cookies, headers) -> dict:
+    async def _execute(self, client, setup_requests, request, cookies, headers, evidence) -> dict:
         """Initialize row-local services, then execute the main request once."""
         for step, body in setup_requests:
+            evidence.update(failure_stage="initialize", failure_route=step.route)
             try:
                 result = await self._post(client, step, body, cookies, headers)
             except GymCallError as exc:
@@ -329,6 +344,7 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
                 if not isinstance(value, str) or not value or not value.isascii() or "\r" in value or "\n" in value:
                     raise GymCallError("response", "initialization returned an invalid session token")
                 headers[header] = value
+        evidence.update(failure_stage="execute", failure_route=self.config.route)
         return await self._post(client, self.config, request, cookies, headers)
 
     async def _post(self, client, step, body, cookies, headers, *, allow_empty=False) -> dict:

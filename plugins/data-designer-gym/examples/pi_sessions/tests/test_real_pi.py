@@ -25,6 +25,7 @@ class ModelFixture(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        time.sleep(getattr(self.server, "delay", 0))
         messages = body["messages"]
         if messages[-1]["role"] == "user":
             text = str(messages[-1]["content"])
@@ -202,6 +203,38 @@ def test_real_pi_and_dd_survive_server_restart(tmp_path):
             finally:
                 stop_adapter(process)
         assert pids[0] != pids[1]
+    finally:
+        backend.shutdown()
+        backend.server_close()
+        thread.join()
+
+
+@pytest.mark.skipif(not (os.getenv("PI_COMMAND") and os.getenv("DD_PYTHON")), reason="Set PI_COMMAND and DD_PYTHON")
+def test_dd_timeout_skips_reaction_and_saved_stage_followup(tmp_path):
+    backend = ThreadingHTTPServer(("127.0.0.1", 0), ModelFixture)
+    backend.delay = 0.3
+    thread = Thread(target=backend.serve_forever, daemon=True)
+    thread.start()
+    try:
+        process, endpoint = start_adapter(tmp_path, backend)
+        try:
+            subprocess.run(
+                [os.environ["DD_PYTHON"], str(Path(__file__).with_name("dd_timeout.py")), endpoint, str(tmp_path)],
+                check=True,
+                timeout=90,
+            )
+            directory = tmp_path / "sessions/run-alpha"
+            for _ in range(300):
+                if (directory / "turn-1.json").is_file():
+                    break
+                time.sleep(0.1)
+            assert (directory / "turn-1.json").is_file()
+            assert not (directory / "turn-2.json").exists()
+            assert not list(directory.glob("turn-2-*.rpc.jsonl"))
+            assert (directory / "workspace/solution.py").read_text() == "TOKEN = 'alpha'\nVALUE = 1\n"
+            assert httpx.get(endpoint + "/stats", trust_env=False).json()["active_pi_processes"] == 0
+        finally:
+            stop_adapter(process)
     finally:
         backend.shutdown()
         backend.server_close()

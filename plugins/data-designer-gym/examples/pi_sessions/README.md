@@ -60,6 +60,8 @@ Alternatively, configure `model_server` using Gym's normal model reference and p
 Keep the existing `gym-harness` request contract. Supply a run-qualified, unique row ID. The adapter accepts only a text user message, optional instructions/system message, `user`, and `metadata.turn`; upstream Pi validation rejects unsupported Responses controls.
 
 ```python
+from data_designer.config import ExpressionColumnConfig, SkipConfig
+
 from data_designer_gym.config import GymHarnessColumnConfig
 
 builder.add_column(GymHarnessColumnConfig(
@@ -74,7 +76,11 @@ builder.add_column(GymHarnessColumnConfig(
     max_parallel_requests=3,
 ))
 
-# Generate user_reaction from the actual reply_1 with an ordinary DD column.
+builder.add_column(ExpressionColumnConfig(
+    name="user_reaction",
+    expr="Your reply was: {{ reply_1 }}. For the second turn set VALUE = 2 and preserve TOKEN.",
+    skip=SkipConfig(when="{{ reply_1_evidence.status != 'completed' }}"),
+))
 
 builder.add_column(GymHarnessColumnConfig(
     name="reply_2",
@@ -86,14 +92,18 @@ builder.add_column(GymHarnessColumnConfig(
     timeout=330,
     queue_timeout=1800,
     max_parallel_requests=3,
+    skip=SkipConfig(when="{{ reply_1_evidence.status != 'completed' }}"),
 ))
 ```
 
-Omit the plugin's per-call `session` initialization/cleanup: this service owns the conversation across columns. To restart the server between turns, finish the first DD stage, save its rows, restart this service with the same configuration and session root, then seed the follow-up DD stage from those rows. `tests/dd_flow.py` demonstrates that staged boundary.
+Gate both the reaction and the follow-up request on successful prior evidence. A null answer after a timeout does not mean the remote turn stopped or rolled back. The follow-up guard also applies when saved rows seed a separate DD stage.
+
+Omit the plugin's per-call `session` initialization/cleanup: this service owns the conversation across columns. To restart the server between turns, finish the first DD stage, save its rows including the reaction, restart this service with the same configuration and session root, then seed the follow-up DD stage from those rows. Persist LLM-generated reactions before sending the next turn so resuming DD cannot regenerate different input for an already committed turn. `tests/dd_flow.py` demonstrates that staged boundary.
 
 ## Persistence and ownership
 
 - Each conversation owns a workspace and Pi native session file. Every turn opens a new Pi process, restores the exact committed history, and closes the process before publishing its receipt.
+- Checkpoints are bound to their conversation directory and native working directory. Copied or moved session roots are rejected before starting a follow-up Pi process. Relocation requires an explicit migration outside this example.
 - A nonblocking filesystem lock excludes concurrent writers, including writers in another server process. `num_workers` must remain one; the lock does not establish distributed deployment support.
 - The manifest publishes a turn only after its native session and response receipt have been flushed. Identical committed requests return the saved Responses object. Changed input, out-of-order turns, changed agent/model configuration, and edited native history are rejected.
 - A crash between writing the receipt and publishing the manifest remains an ambiguous interrupted turn. It is not replayed. Cancellation, timeout, and process failure also leave an interrupted turn for inspection.
@@ -115,7 +125,7 @@ make test
 make smoke
 ```
 
-`test` exercises public HTTP endpoints and the session store with a deterministic Pi protocol fixture. `smoke` runs real Pi against a deterministic local streaming model fixture, writes two independent workspaces, restarts the complete adapter process, restores both native histories, and verifies follow-up file changes. It uses no hosted inference or GPUs.
+`test` exercises public HTTP endpoints and the session store with a deterministic Pi protocol fixture. `smoke` runs real Pi against a deterministic local streaming model fixture, writes two independent workspaces, restarts the complete adapter process, restores both native histories, and verifies follow-up file changes. With DD enabled, it also checks that a timed-out first call skips its reaction and saved-stage follow-up while the remote turn finishes. It uses no hosted inference or GPUs.
 
 To include the installed DD plugin in that smoke test, point `DD_PYTHON` at its separate environment:
 
@@ -123,4 +133,4 @@ To include the installed DD plugin in that smoke test, point `DD_PYTHON` at its 
 DD_PYTHON=/absolute/path/dd/.venv/bin/python make smoke
 ```
 
-The DD smoke uses a deterministic expression for the user reaction, allowing exact assertions. Replace it with an LLM column in a generation recipe. Passing this check establishes integration and persistence, not coding-model quality or Slurm sandbox acceptance.
+The DD smoke uses a deterministic expression for the user reaction, allowing exact assertions. A generation recipe can use an LLM column with the same skip guard; persist its output before the next execution stage. Passing this check establishes integration and persistence, not coding-model quality or Slurm sandbox acceptance.

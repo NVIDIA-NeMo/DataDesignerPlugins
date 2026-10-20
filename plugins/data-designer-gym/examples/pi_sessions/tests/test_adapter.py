@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import shlex
+import shutil
 import sys
 from pathlib import Path
 
@@ -147,6 +148,28 @@ def test_history_tampering_is_rejected(config):
         manifest = json.loads((Path(config.session_root) / "run-row-1/manifest.json").read_text())
         Path(manifest["session_file"]).write_text("[]")
         assert client.post("/v1/responses", json=request(2)).status_code == 409
+
+
+@pytest.mark.parametrize("rebase_session_path", [False, True])
+def test_copied_checkpoint_is_rejected_before_pi_starts(config, tmp_path, rebase_session_path):
+    original = Path(config.session_root)
+    with TestClient(agent(config).setup_webserver()) as client:
+        assert client.post("/v1/responses", json=request()).status_code == 200
+    before = {path.relative_to(original): path.read_bytes() for path in original.rglob("*") if path.is_file()}
+    copied = tmp_path / "copied"
+    shutil.copytree(original, copied)
+    if rebase_session_path:
+        manifest_path = copied / "run-row-1/manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["session_file"] = str(copied / Path(manifest["session_file"]).relative_to(original))
+        save_json(manifest_path, manifest)
+    changed = config.model_copy(update={"session_root": str(copied)})
+    with TestClient(agent(changed).setup_webserver()) as client:
+        assert client.post("/v1/responses", json=request(2, "VALUE = 2")).status_code == 409
+        assert client.get("/stats").json()["active_pi_processes"] == 0
+    assert {path.relative_to(original): path.read_bytes() for path in original.rglob("*") if path.is_file()} == before
+    assert not list(copied.glob("*/turn-2-*.rpc.jsonl"))
+    assert json.loads((copied / "run-row-1/manifest.json").read_text())["status"] == "parked"
 
 
 async def cancel_request(config):

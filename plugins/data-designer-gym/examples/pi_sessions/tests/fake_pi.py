@@ -25,7 +25,7 @@ def main():
         if "--session" in sys.argv
         else Path(option("--session-dir")) / (option("--session-id") + ".jsonl")
     )
-    messages = json.loads(session.read_text()) if session.exists() else []
+    messages = json.loads(session.read_text().splitlines()[1]) if session.exists() else []
     for line in sys.stdin:
         command = json.loads(line)
         kind = command["type"]
@@ -63,7 +63,8 @@ def main():
             "usage": {"input": 10, "output": 5},
         }
         messages += [user, call, tool, assistant]
-        session.write_text(json.dumps(messages))
+        header = {"type": "session", "id": session.stem, "cwd": str(Path.cwd())}
+        session.write_text(json.dumps(header) + "\n" + json.dumps(messages) + "\n")
         emit({"type": "tool_execution_start", "toolCallId": call_id, "toolName": "write"})
         for message in (call, tool, assistant):
             emit({"type": "message_end", "message": message})
