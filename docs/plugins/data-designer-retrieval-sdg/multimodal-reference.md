@@ -342,11 +342,18 @@ For Python configuration, import `JudgeModels` from
 `data_designer_retrieval_sdg.multimodal`. `config.model_for("judge", "relevance")`
 returns the effective settings for that stage.
 
+Automatic section planning (`context_strategy: sections` without `contexts_file`)
+uses the fallback `judge` for text-only table-of-contents confirmation. This judge
+remains active even when all five named stages are overridden or
+`judge_summaries: false`. Its local token budget is validated before creating the
+run, and its tokenizer content hash is included in the frozen run identity.
+Explicit contexts bypass this confirmation step.
+
 `judge_summaries: false` disables the summary judgment stage, including its
 model-budget validation. The run manifest records the fallback under
 `models.judge` and the effective models for enabled stages under `models.judges`.
-`shared_generator_judge` is true only when every enabled judge uses the
-generator's model identifier and endpoint.
+`shared_generator_judge` is true only when every active judge, including the
+fallback used for TOC confirmation, uses the generator's model identifier and endpoint.
 
 Cached responses include the resolved model settings and tokenizer content hash.
 Changing one override cannot reuse that stage's incompatible response. Changing

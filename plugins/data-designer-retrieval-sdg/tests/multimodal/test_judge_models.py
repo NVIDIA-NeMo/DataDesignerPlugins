@@ -14,12 +14,13 @@ import yaml
 from data_designer.engine.models.facade import ModelFacade
 from data_designer.engine.testing import make_stub_completion_response
 from pydantic import ValidationError
+from test_failed_records import ControlledTransport, skip_config
 from test_multimodal_sdg import ScriptedInference, fixture_config
 
 from data_designer_retrieval_sdg.multimodal import JudgeModels, MultimodalSDGConfig, run_multimodal_sdg
 from data_designer_retrieval_sdg.multimodal.bounds import RequestTooLarge, check_request, validate_deployment
 from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request
-from data_designer_retrieval_sdg.multimodal.models import ContextSummary, GenerationContext
+from data_designer_retrieval_sdg.multimodal.models import ContextSummary, GenerationContext, TOCConfirmation
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.storage import digest
 from data_designer_retrieval_sdg.multimodal.summary_stages import plan_summaries
@@ -42,6 +43,104 @@ class RecordingCompletion:
             }
         )
         return make_stub_completion_response(content=json.dumps({"summary": facade.model_name, "visual_evidence": ""}))
+
+
+class TOCRecordingCompletion:
+    """Return native workflow responses and record the model confirming TOCs."""
+
+    def __init__(self) -> None:
+        self.transport = ControlledTransport(())
+        self.toc_models: list[str] = []
+
+    async def complete(self, facade: ModelFacade, messages, **kwargs):
+        """Handle TOC confirmation and delegate other schemas to the test transport."""
+        content = messages[0].to_dict()["content"]
+        text = (
+            "\n".join(item["text"] for item in content if item["type"] == "text")
+            if isinstance(content, list)
+            else content
+        )
+        schema = json.loads(text.split("<response_schema>\n")[1].split("\n</response_schema>")[0])
+        if schema["title"] == "TOCConfirmation":
+            self.toc_models.append(facade.model_name)
+            response = TOCConfirmation(has_table_of_contents=True, explanation="Three contents entries")
+            return make_stub_completion_response(content=response.model_dump_json())
+        return await self.transport.complete(messages, **kwargs)
+
+
+def toc_judge_config(tmp_path: Path) -> MultimodalSDGConfig:
+    """Use all five overrides with a separate text-only fallback and a real TOC candidate."""
+    config = skip_config(tmp_path).model_copy(update={"contexts_file": None, "section_size": 1})
+    sources = [json.loads(line) for line in config.sources_file.read_text().splitlines()]
+    sources[0]["text"] = "Table of contents\nAlpha ... 1\nBeta ... 2\nGamma ... 3"
+    config.sources_file.write_text("".join(json.dumps(source) + "\n" for source in sources))
+    tokenizer = tmp_path / "toc-tokenizer.json"
+    tokenizer.write_bytes(config.generator.tokenizer_file.read_bytes())
+    config.judge = config.judge.model_copy(
+        update={"model": "operator/toc-judge", "tokenizer_file": tokenizer, "image_tokens_per_image": None}
+    )
+    config.judges = JudgeModels(**dict.fromkeys(JudgeModels.model_fields, config.generator))
+    return config
+
+
+@pytest.mark.parametrize("judge_summaries", [True, False])
+def test_automatic_toc_judge_is_validated_before_creating_run(tmp_path: Path, judge_summaries: bool) -> None:
+    config = toc_judge_config(tmp_path)
+    config.judge_summaries = judge_summaries
+    config.judge.tokenizer_file = None
+    with pytest.raises(ValueError, match="Configure"):
+        run_multimodal_sdg(config)
+    assert not config.output_dir.exists()
+
+
+def test_automatic_toc_judge_tokenizer_is_frozen_for_resume(tmp_path: Path, monkeypatch) -> None:
+    config = toc_judge_config(tmp_path)
+    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
+    recorder = TOCRecordingCompletion()
+    with patch.object(ModelFacade, "acompletion", autospec=True, side_effect=recorder.complete) as completion:
+        handoff = run_multimodal_sdg(config)
+        assert recorder.toc_models == [config.judge.model]
+        identity = json.loads((config.output_dir / "identity.json").read_text())
+        assert identity["tokenizers"]["judge"] == digest(config.judge.tokenizer_file)
+        calls = completion.await_count
+        assert run_multimodal_sdg(config.model_copy(update={"resume": True})) == handoff
+        assert completion.await_count == calls
+        config.judge.tokenizer_file.write_text(config.judge.tokenizer_file.read_text() + "\n")
+        with pytest.raises(ValueError, match="Artifact changed"):
+            run_multimodal_sdg(config.model_copy(update={"resume": True}))
+        assert completion.await_count == calls
+
+
+def test_automatic_toc_judge_prevents_false_shared_model_flag(tmp_path: Path, monkeypatch) -> None:
+    config = toc_judge_config(tmp_path)
+    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
+    recorder = TOCRecordingCompletion()
+    with patch.object(ModelFacade, "acompletion", autospec=True, side_effect=recorder.complete):
+        handoff = run_multimodal_sdg(config)
+    assert recorder.toc_models == [config.judge.model]
+    manifest = json.loads((handoff.parent / "run_manifest.json").read_text())
+    assert not manifest["shared_generator_judge"]
+    assert manifest["models"]["judge"]["model"] == config.judge.model
+    assert all(model["model"] == config.generator.model for model in manifest["models"]["judges"].values())
+
+
+@pytest.mark.parametrize("strategy,explicit", [("unit", False), ("document", False), ("sections", True)])
+def test_unused_fallback_does_not_affect_preflight_or_provenance(
+    tmp_path: Path, monkeypatch, strategy: str, explicit: bool
+) -> None:
+    config = toc_judge_config(tmp_path)
+    config.context_strategy = strategy
+    config.contexts_file = tmp_path / "contexts.jsonl" if explicit else None
+    config.judge.tokenizer_file = None
+    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
+    recorder = TOCRecordingCompletion()
+    with patch.object(ModelFacade, "acompletion", autospec=True, side_effect=recorder.complete):
+        handoff = run_multimodal_sdg(config)
+    assert not recorder.toc_models
+    identity = json.loads((config.output_dir / "identity.json").read_text())
+    assert "judge" not in identity["tokenizers"]
+    manifest = json.loads((handoff.parent / "run_manifest.json").read_text())
+    assert manifest["shared_generator_judge"]
 
 
 def test_complete_stage_settings_replace_fallback_and_reject_invalid_keys(tmp_path: Path) -> None:

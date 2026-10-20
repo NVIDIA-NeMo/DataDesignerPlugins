@@ -362,7 +362,7 @@ def write_multimodal_bundle(
             },
             "shared_generator_judge": all(
                 config.generator.model == model.model and config.generator.endpoint == model.endpoint
-                for model in config.resolved_judges().values()
+                for model in config.active_judges().values()
             ),
             "dataset_id": config.dataset_id,
             "split_protocol": "grouped_query_disjoint",

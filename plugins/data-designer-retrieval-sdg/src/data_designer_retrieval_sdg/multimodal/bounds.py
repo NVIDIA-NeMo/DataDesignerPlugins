@@ -40,7 +40,7 @@ def validate_model_budget(model) -> None:
 
 def validate_deployment(config, has_images: bool) -> None:
     """Validate model budgets/assets before creating an immutable run directory."""
-    for role, model in {"generator": config.generator, **config.resolved_judges()}.items():
+    for role, model in {"generator": config.generator, **config.active_judges()}.items():
         if model.context_window_tokens is None:
             continue
         validate_model_budget(model)

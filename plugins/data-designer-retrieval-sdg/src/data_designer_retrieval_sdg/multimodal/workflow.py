@@ -524,7 +524,7 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             "contexts": [c.model_dump() for c in contexts],
             "tokenizers": {
                 role: digest(model.tokenizer_file)
-                for role, model in {"generator": config.generator, **config.resolved_judges()}.items()
+                for role, model in {"generator": config.generator, **config.active_judges()}.items()
                 if model.context_window_tokens is not None and model.tokenizer_file is not None
             },
             "images": {image: digest(Path(image)) for s in sources for image in s.images},

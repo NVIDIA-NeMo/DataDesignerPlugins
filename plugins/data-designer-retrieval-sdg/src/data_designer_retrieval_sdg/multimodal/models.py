@@ -171,7 +171,7 @@ class MultimodalSDGConfig(StrictModel):
         return getattr(self.judges, judge_stage) or self.judge
 
     def resolved_judges(self) -> dict[str, ModelSettings]:
-        """Return effective model settings for the enabled judge stages.
+        """Return effective model settings for the enabled named judge stages.
 
         Returns:
             Stage-to-model mapping, omitting summary when summary judging is disabled.
@@ -181,6 +181,21 @@ class MultimodalSDGConfig(StrictModel):
             for stage in JudgeModels.model_fields
             if stage != "summary" or self.judge_summaries
         }
+
+    def active_judges(self) -> dict[str, ModelSettings]:
+        """Include every judge that the configured workflow can call.
+
+        Automatic section planning confirms tables of contents with the fallback
+        judge, independently of named overrides and summary judging.
+
+        Returns:
+            Enabled named stages plus ``judge`` when automatic TOC confirmation
+            is enabled. Explicit contexts bypass that confirmation step.
+        """
+        judges = self.resolved_judges()
+        if self.context_strategy == "sections" and self.contexts_file is None:
+            judges["judge"] = self.judge
+        return judges
 
     @field_validator("summary_embedding_extra_body", mode="before")
     @classmethod
