@@ -88,7 +88,17 @@ class PersistentPiAgent(PiAgent):
 
     def fingerprint(self) -> str:
         configuration = self.config.model_dump(
-            mode="json", exclude={"name", "host", "port", "entrypoint", "num_workers", "workspace_root", "session_root"}
+            mode="json",
+            exclude={
+                "name",
+                "host",
+                "port",
+                "entrypoint",
+                "num_workers",
+                "workspace_root",
+                "session_root",
+                "concurrency",
+            },
         )
         return digest({"agent": configuration, "models": self._build_models_config()})
 

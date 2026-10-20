@@ -33,8 +33,8 @@ def _json_value(value: Any, field_name: str) -> Any:
 
 def _json_compatible(value: Any, field_name: str) -> Any:
     try:
-        return json.loads(json.dumps(value, default=_json_default))
-    except TypeError as exc:
+        return json.loads(json.dumps(value, default=_json_default, allow_nan=False))
+    except (TypeError, ValueError) as exc:
         raise ValueError(f"{field_name} must contain JSON-compatible data") from exc
 
 
@@ -109,24 +109,31 @@ def scenario_from_task(
     provenance: Mapping[str, Any] | None = None,
 ) -> GymScenario:
     """Create a canonical scenario from any Gym-native task."""
-    validated_task = task if isinstance(task, GymTask) else GymTask.model_validate(_json_value(task, "task"))
+    validated_task = GymTask.model_validate(_json_value(task, "task"))
     resolved_id = scenario_id.strip() if scenario_id is not None else _stable_scenario_id(namespace, validated_task)
     if not resolved_id:
         raise ValueError("scenario_id must not be empty")
     return GymScenario(
         scenario_id=resolved_id,
         task=validated_task,
-        provenance=dict(provenance or {}),
+        provenance=_json_compatible(dict(provenance or {}), "provenance"),
     )
 
 
 def scenario_from_row(row: Mapping[str, Any], config: GymTaskProcessorConfig) -> GymScenario | None:
     """Validate one Data Designer row and return its canonical scenario."""
-    if config.include is not None and not bool(_source_value(row, config.include)):
-        return None
+    if config.include is not None:
+        include = _source_value(row, config.include)
+        if (pd.api.types.is_scalar(include) and pd.isna(include)) or not bool(include):
+            return None
 
     task = gym_task_from_row(row, config)
-    scenario_id = str(_source_value(row, config.scenario_id_column)) if config.scenario_id_column else None
+    scenario_id = None
+    if config.scenario_id_column is not None:
+        value = _json_compatible(_source_value(row, config.scenario_id_column), config.scenario_id_column)
+        if value is None:
+            raise ValueError(f"{config.scenario_id_column} must not be missing")
+        scenario_id = str(value)
     provenance = {
         column: _json_compatible(value, column)
         for column in config.provenance_columns
@@ -178,7 +185,7 @@ def gym_task_artifacts_from_dataframe(data: pd.DataFrame, config: GymTaskProcess
                 "scenario_id": scenario.scenario_id,
                 TASK_INDEX_KEY: task[TASK_INDEX_KEY],
                 "scenario_json": scenario.model_dump_json(),
-                "task_json": json.dumps(task),
+                "task_json": json.dumps(task, allow_nan=False),
             }
         )
     return pd.DataFrame(
@@ -227,7 +234,7 @@ def write_jsonl(path: Path | str, records: Iterable[Mapping[str, Any]]) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as stream:
         for record in records:
-            stream.write(json.dumps(dict(record), default=str) + "\n")
+            stream.write(json.dumps(dict(record), default=str, allow_nan=False) + "\n")
     return output_path
 
 
@@ -246,12 +253,20 @@ def normalize_rollouts(
 ) -> Path:
     """Join Gym rollouts and failures back to stable scenario IDs."""
     tasks = read_jsonl(tasks_path)
-    tasks_by_index = {task.get(TASK_INDEX_KEY, task.get("id")): task for task in tasks}
-    if None in tasks_by_index:
-        raise ValueError("every task must contain _ng_task_index or id")
+    tasks_by_index = {}
+    for task in tasks:
+        task_index = task.get(TASK_INDEX_KEY, task.get("id"))
+        if task_index is None:
+            raise ValueError("every task must contain _ng_task_index or id")
+        if task_index in tasks_by_index and (
+            json.dumps(tasks_by_index[task_index], sort_keys=True, allow_nan=False)
+            != json.dumps(task, sort_keys=True, allow_nan=False)
+        ):
+            raise ValueError(f"conflicting tasks share task index: {task_index!r}")
+        tasks_by_index[task_index] = task
 
     runtime_records = [("completed", record) for record in read_jsonl(rollouts_path)]
-    if failures_path is not None and Path(failures_path).exists():
+    if failures_path is not None:
         runtime_records.extend(("failed", record) for record in read_jsonl(failures_path))
 
     normalized = []

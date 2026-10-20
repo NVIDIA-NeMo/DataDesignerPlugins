@@ -19,6 +19,7 @@ from data_designer_gym.cli import run_cli
 from data_designer_gym.config import GymTaskProcessorConfig
 from data_designer_gym.conversion import (
     SCENARIO_ID_KEY,
+    gym_task_artifacts_from_dataframe,
     gym_tasks_from_dataframe,
     normalize_rollouts,
     read_jsonl,
@@ -81,6 +82,12 @@ def generic_row(seed_row: dict) -> dict:
     return row
 
 
+@pytest.fixture()
+def exported_task(generic_row: dict) -> dict:
+    scenario = scenario_from_row(generic_row, GymTaskProcessorConfig(name="gym_tasks", task_column="gym_task"))
+    return scenario_to_gym_task(scenario)
+
+
 def test_valid_plugin() -> None:
     assert_valid_plugin(plugin)
     assert plugin.plugin_type == PluginType.PROCESSOR
@@ -124,6 +131,53 @@ def test_processor_converts_only_included_rows(generic_row: dict) -> None:
     assert task["responses_create_params"]["input"][1]["content"] == "Send an email to Pat."
     assert task["environment_name"] == "example_environment"
     assert task["_dd_provenance"] == {"seed_id": 7}
+
+
+@pytest.mark.parametrize("value", [None, float("nan"), pd.NA, pd.NaT])
+def test_processor_skips_missing_include_values(generic_row: dict, value) -> None:
+    config = GymTaskProcessorConfig(name="gym_tasks", task_column="gym_task", include="include")
+    assert scenario_from_row(generic_row | {"include": value}, config) is None
+
+
+@pytest.mark.parametrize("value", [None, float("nan"), pd.NA, pd.NaT])
+def test_processor_rejects_missing_scenario_ids(generic_row: dict, value) -> None:
+    config = GymTaskProcessorConfig(name="gym_tasks", task_column="gym_task", scenario_id_column="seed_id")
+    with pytest.raises(ValueError, match="seed_id"):
+        scenario_from_row(generic_row | {"seed_id": value}, config)
+
+
+@pytest.mark.parametrize("column", ["category", "source"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), pd.NA])
+def test_processor_rejects_non_json_source_values(generic_row: dict, column: str, value) -> None:
+    config = GymTaskProcessorConfig(
+        name="gym_tasks",
+        messages=[{"role": "user", "content_column": "user_query"}],
+        task_columns={"category": "category"},
+        provenance_columns=["source"],
+    )
+    row = generic_row | {"category": "test", "source": "synthetic", column: value}
+    with pytest.raises(ValueError, match=column):
+        scenario_from_row(row, config)
+
+
+def test_processor_rejects_nan_provenance_from_dataframe(generic_row: dict) -> None:
+    config = GymTaskProcessorConfig(name="gym_tasks", task_column="gym_task", provenance_columns=["seed_id"])
+    data = pd.DataFrame([generic_row | {"seed_id": float("nan")}])
+    with pytest.raises(ValueError, match="seed_id"):
+        gym_task_artifacts_from_dataframe(data, config)
+
+
+@pytest.mark.parametrize("field", ["task", "provenance"])
+def test_scenario_rejects_non_finite_values(field: str) -> None:
+    task = GymTask(responses_create_params={}, category=float("nan") if field == "task" else "test")
+    provenance = {"source": {"score": float("nan")}} if field == "provenance" else {}
+    with pytest.raises(ValueError, match=field):
+        scenario_from_task(task, provenance=provenance)
+
+
+def test_jsonl_writer_rejects_non_finite_values(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Out of range"):
+        write_jsonl(tmp_path / "tasks.jsonl", [{"source": float("nan")}])
 
 
 def test_processor_runs_in_workflow_built_from_scratch(tmp_path: Path, seed_row: dict) -> None:
@@ -227,6 +281,56 @@ def test_normalize_rollouts_includes_failure_sidecar(tmp_path: Path, generic_row
     assert normalized["mask_sample"] is True
     assert normalized["failure_kind"] == "timeout"
     assert normalized["failure_reason"] == "deadline exceeded"
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"_dd_provenance": {"seed_id": "another-seed"}},
+        {"responses_create_params": {"input": []}},
+        {SCENARIO_ID_KEY: "another-scenario"},
+        {"metadata": {"accepted": 1}},
+    ],
+)
+def test_ingest_rejects_conflicting_task_indices(tmp_path: Path, exported_task: dict, updates: dict) -> None:
+    exported_task["metadata"] = {"accepted": True}
+    tasks = write_jsonl(tmp_path / "tasks.jsonl", [exported_task, exported_task | updates])
+    rollouts = write_jsonl(tmp_path / "rollouts.jsonl", [{"_ng_task_index": exported_task["_ng_task_index"]}])
+    output = tmp_path / "normalized.jsonl"
+    with pytest.raises(ValueError, match="conflicting tasks"):
+        normalize_rollouts(tasks, rollouts, output)
+    assert not output.exists()
+
+
+def test_ingest_accepts_identical_duplicate_tasks(tmp_path: Path, exported_task: dict) -> None:
+    tasks = write_jsonl(tmp_path / "tasks.jsonl", [exported_task, exported_task])
+    rollouts = write_jsonl(tmp_path / "rollouts.jsonl", [{"_ng_task_index": exported_task["_ng_task_index"]}])
+    output = normalize_rollouts(tasks, rollouts, tmp_path / "normalized.jsonl")
+    assert read_jsonl(output)[0]["task"] == exported_task
+
+
+def test_cli_rejects_missing_explicit_failure_sidecar(tmp_path: Path, exported_task: dict, capsys) -> None:
+    tasks = write_jsonl(tmp_path / "tasks.jsonl", [exported_task])
+    rollouts = write_jsonl(tmp_path / "rollouts.jsonl", [{"_ng_task_index": exported_task["_ng_task_index"]}])
+    failures, output = tmp_path / "missing-failures.jsonl", tmp_path / "normalized.jsonl"
+    assert (
+        run_cli(
+            [
+                "ingest",
+                "--tasks",
+                str(tasks),
+                "--rollouts",
+                str(rollouts),
+                "--failures",
+                str(failures),
+                "--output",
+                str(output),
+            ]
+        )
+        == 2
+    )
+    assert str(failures) in capsys.readouterr().err
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("failed", [False, True])

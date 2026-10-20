@@ -116,6 +116,20 @@ def test_order_identity_and_configuration(config):
     assert (directory / "run-row-2/workspace/solution.py").read_text() == "isolated"
 
 
+def test_concurrency_change_preserves_replay_and_followup(config):
+    with TestClient(agent(config).setup_webserver()) as client:
+        first = client.post("/v1/responses", json=request())
+        assert first.status_code == 200
+    changed = config.model_copy(update={"concurrency": config.concurrency + 1})
+    with TestClient(agent(changed).setup_webserver()) as client:
+        assert client.post("/v1/responses", json=request()).json() == first.json()
+        second = client.post("/v1/responses", json=request(2, "VALUE = 2"))
+        assert second.status_code == 200
+        assert second.json()["metadata"]["pi_session_id"] == first.json()["metadata"]["pi_session_id"]
+        assert client.get("/stats").json()["active_pi_processes"] == 0
+    assert (Path(config.session_root) / "run-row-1/workspace/solution.py").read_text() == "VALUE = 2"
+
+
 @pytest.mark.parametrize("text", ["crash", "incomplete", "empty", "hang"])
 def test_failed_turn_is_not_replayed(config, text):
     with TestClient(agent(config).setup_webserver(), raise_server_exceptions=False) as client:

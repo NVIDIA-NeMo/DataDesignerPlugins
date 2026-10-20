@@ -127,6 +127,8 @@ builder.add_processor(
 
 Nested paths map generated values into arbitrary task fields. A preassembled `task_column` remains available when an environment needs custom Python transformations. The processor owns only common-boundary validation, stable identity, and artifact serialization.
 
+Missing `include` values skip the row. A configured `scenario_id_column` must contain a non-missing ID. Task payloads and provenance reject non-finite or non-JSON values; use `None` for intentional JSON nulls.
+
 ## From-scratch notebook
 
 The [Workplace Assistant notebook](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/plugins/data-designer-gym/examples/workplace-assistant.ipynb) rebuilds Gym's existing example from Data Designer primitives. Its seeds, prompts, schemas, and qualification stay in the notebook. `GymTaskProcessorConfig` declaratively assembles the task without a custom column.
@@ -160,6 +162,8 @@ data-designer-gym ingest \
 ```
 
 The normalized result retains the complete task and rollout and can seed Data Designer or another downstream workflow.
+
+Default scenario IDs hash the task content. Set `scenario_id_column` to a unique stable row ID when identical tasks have different provenance. Ingestion rejects conflicting tasks with the same index; identical duplicate task records are allowed. Omit `--failures` when no sidecar was produced; an explicitly supplied path must exist.
 
 Ingest also exposes `rollout_id`, `attempt`, `task_id` and `environment_server`, and maps native `_ng_failure_message` / `_ng_failure_stage` into `failure_reason` / `failure_stage`. Explicit legacy failure fields take precedence. Missing attempt IDs and failure kinds remain null rather than being inferred. Joining still requires the exported task index; native materialized-task export is separate work.
 

@@ -264,6 +264,8 @@ The processor also supports:
 
 It writes the canonical scenario and Gym-native task as lossless JSON inside normal Data Designer processor artifacts.
 
+Missing `include` values skip the row. A configured `scenario_id_column` must contain a non-missing ID. Task payloads and provenance reject non-finite or non-JSON values; use `None` for intentional JSON nulls.
+
 ## From-scratch notebook
 
 The [Workplace Assistant notebook](examples/workplace-assistant.ipynb) rebuilds Gym's [existing synthetic-data example](https://github.com/NVIDIA-NeMo/Gym/tree/main/resources_servers/workplace_assistant/notebooks/synthetic-data-generation) as a normal Data Designer workflow. It defines the environment-specific seeds, prompts, schemas, and qualification in the notebook.
@@ -288,6 +290,8 @@ Each processor record contains a canonical scenario and its Gym-native task:
 
 When exporting, the plugin adds `_ng_task_index`, `_dd_scenario_id`, and `_dd_provenance`. It supplies `id` from the stable task index only when the task does not already have one.
 
+Default scenario IDs hash the task content. Set `scenario_id_column` to a unique stable row ID when identical tasks have different provenance. Ingestion rejects conflicting tasks with the same index; identical duplicate task records are allowed.
+
 ## CLI utilities
 
 Translate saved scenario bundles to Gym JSONL:
@@ -307,6 +311,8 @@ data-designer-gym ingest \
 ```
 
 Normalized records retain the complete Gym task and rollout with stable identity restored. They can seed another Data Designer or downstream workflow.
+
+Omit `--failures` when no sidecar was produced. An explicitly supplied sidecar path must exist.
 
 Ingest also exposes `rollout_id`, `attempt`, `task_id` and `environment_server`, and maps native `_ng_failure_message` / `_ng_failure_stage` into `failure_reason` / `failure_stage`. Explicit legacy failure fields take precedence. Missing attempt IDs and failure kinds remain null rather than being inferred. Joining still requires the exported task index; native materialized-task export is separate work.
 
