@@ -252,7 +252,7 @@ come from your serving deployment; the plugin does not choose a replacement mode
 | --- | --- | --- |
 | `model` | Required | Nonempty model identifier. |
 | `endpoint` | Required | HTTP or HTTPS OpenAI-compatible base URL. |
-| `credential_env` | Required | Environment variable containing the credential. |
+| `credential_env` | Required | Environment variable containing a nonblank credential. |
 | `temperature` | `0.6` | Sampling temperature, from 0 to 2. |
 | `max_tokens` | `8192` | Positive per-request output-token limit. Account for reasoning tokens where applicable. |
 | `timeout` | `600` | Positive per-request timeout in seconds. |
@@ -286,6 +286,26 @@ source input, image allowances, and output reserve.
 Without local token preflight, Data Designer's rendered-prompt limit still
 applies, but it is not a model context-window guarantee. Provider context and
 image limits remain applicable.
+
+Before freezing a new run, the workflow checks credential variables for the
+generator, enabled judges, the fallback judge when automatic TOC confirmation
+is enabled, and hosted summary embeddings when configured for combinations.
+Missing or blank variables produce an error naming the stage, model, and
+variable to set. Incomplete resumes repeat these checks. Completed resumes
+verify the saved artifacts without requiring credentials.
+
+The workflow also checks each enabled judge's fixed prompt and response schema,
+including the configured output and request-overhead allowances when a local
+token budget is enabled. Dynamic query, summary, source, and language content
+and images are omitted from this early check. Actual requests still undergo
+size checks after their content is known. Budget and tokenizer errors name the
+affected stage, model, and settings.
+
+These checks run automatically with the existing configuration. They make no
+model requests, do not authenticate credentials, and do not verify endpoint
+capabilities. For example, an unset `TEXT_JUDGE_KEY` stops the run before any
+generation rather than failing when that judge is first used. Set the variable
+and rerun the same configuration.
 
 ### Judge Model Overrides
 

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import os
 from functools import partial
 from hashlib import sha256
 from importlib.metadata import version
@@ -50,6 +49,7 @@ from data_designer_retrieval_sdg.multimodal.planning import (
     related_contexts,
     select_summaries,
 )
+from data_designer_retrieval_sdg.multimodal.preflight import validate_credentials, validate_judge_prompts
 from data_designer_retrieval_sdg.multimodal.source_directory import load_directory_sources
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
@@ -503,9 +503,6 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
     """
     from data_designer_retrieval_sdg.multimodal.export import export_multimodal_bundle
 
-    if config.combination_iterations and config.summary_embedding_endpoint:
-        if not os.environ.get(config.summary_embedding_credential_env):
-            raise ValueError(f"Set the credential environment variable {config.summary_embedding_credential_env}")
     root = config.output_dir.resolve()
     if config.source_directory is not None and root.is_relative_to(config.source_directory.path.resolve()):
         raise ValueError("output_dir must be outside source_directory.path to avoid ingesting generated files")
@@ -518,6 +515,9 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             sources = load_retrieval_sources(config.sources_file)
         validate_deployment(config, any(source.images for source in sources))
         contexts = load_contexts(config, sources)
+        validate_judge_prompts(config)
+        if not (config.resume and (root / "complete.json").exists()):
+            validate_credentials(config)
         identity = {
             "config": config.model_dump(mode="json", exclude={"resume", "output_dir"}),
             "sources": [s.model_dump() for s in sources],
