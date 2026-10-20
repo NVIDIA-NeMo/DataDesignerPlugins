@@ -6,9 +6,13 @@
 import json
 import sys
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from data_designer.engine.errors import SecretResolutionError
+from data_designer.engine.models.facade import ModelFacade
+from data_designer.engine.testing import make_stub_completion_response
 from test_multimodal_sdg import fixture_config
 
 from data_designer_retrieval_sdg.multimodal.combinations import hosted_summary_embeddings, semantic_combinations
@@ -103,7 +107,14 @@ def test_provider_failure_is_not_cached_or_swallowed(tmp_path, monkeypatch):
 def test_missing_embedding_credential_fails_before_generation(tmp_path, monkeypatch):
     config = api_config(tmp_path)
     monkeypatch.delenv("SUMMARY_API_KEY", raising=False)
-    with pytest.raises(ValueError, match="SUMMARY_API_KEY"):
+    monkeypatch.delenv("DATA_DESIGNER_SKIP_MODEL_HEALTH_CHECKS", raising=False)
+    with (
+        patch("data_designer_retrieval_sdg.multimodal.workflow.version", return_value="test"),
+        patch.object(
+            ModelFacade, "acompletion", AsyncMock(return_value=make_stub_completion_response(content="Hello!"))
+        ),
+        pytest.raises(SecretResolutionError, match="SUMMARY_API_KEY"),
+    ):
         run_multimodal_sdg(config)
     assert not config.output_dir.exists()
 

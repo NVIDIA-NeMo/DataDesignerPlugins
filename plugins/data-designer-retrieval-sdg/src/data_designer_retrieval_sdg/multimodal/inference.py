@@ -26,11 +26,48 @@ from data_designer_retrieval_sdg.multimodal.models import (
     GenerationContext,
     JudgeStage,
     ModelRole,
+    ModelSettings,
     MultimodalSDGConfig,
 )
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import digest, fingerprint, write_json
 from data_designer_retrieval_sdg.multimodal.structured import FAILURE_KEY
+
+
+def model_configuration(
+    model: ModelSettings, concurrency: int, *, skip_health_check: bool
+) -> tuple[dd.ModelConfig, dd.ModelProvider]:
+    """Build the same native deployment settings for readiness and generation.
+
+    Args:
+        model: Serving deployment and inference options.
+        concurrency: Maximum parallel requests to this deployment.
+        skip_health_check: Whether this configuration has already been checked.
+
+    Returns:
+        Native model and provider configurations sharing a provider name.
+    """
+    return (
+        dd.ModelConfig(
+            alias="retrieval",
+            model=model.model,
+            provider="retrieval-provider",
+            skip_health_check=skip_health_check,
+            inference_parameters=dd.ChatCompletionInferenceParams(
+                temperature=model.temperature,
+                max_tokens=model.max_tokens,
+                timeout=model.timeout,
+                max_parallel_requests=concurrency,
+                extra_body=model.extra_body,
+            ),
+        ),
+        dd.ModelProvider(
+            name="retrieval-provider",
+            endpoint=model.endpoint,
+            provider_type="openai",
+            api_key=model.credential_env,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -253,23 +290,8 @@ class DataDesignerInference:
         ]
         seed = attempt / "seed.parquet"
         pq.write_table(pa.Table.from_pylist(rows), seed)
-        builder = dd.DataDesignerConfigBuilder(
-            model_configs=[
-                dd.ModelConfig(
-                    alias="retrieval",
-                    model=model.model,
-                    provider="retrieval-provider",
-                    skip_health_check=True,
-                    inference_parameters=dd.ChatCompletionInferenceParams(
-                        temperature=model.temperature,
-                        max_tokens=model.max_tokens,
-                        timeout=model.timeout,
-                        max_parallel_requests=self.config.concurrency,
-                        extra_body=model.extra_body,
-                    ),
-                )
-            ]
-        )
+        model_config, provider = model_configuration(model, self.config.concurrency, skip_health_check=True)
+        builder = dd.DataDesignerConfigBuilder(model_configs=[model_config])
         builder.with_seed_dataset(dd.LocalFileSeedSource(path=str(seed)))
         builder.add_column(
             RetrievalStructuredColumnConfig(
@@ -285,14 +307,7 @@ class DataDesignerInference:
             artifact_path=attempt / "dd",
             secret_resolver=EnvironmentResolver(),
             auto_configure_logging=False,
-            model_providers=[
-                dd.ModelProvider(
-                    name="retrieval-provider",
-                    endpoint=model.endpoint,
-                    provider_type="openai",
-                    api_key=model.credential_env,
-                )
-            ],
+            model_providers=[provider],
         )
         designer.set_run_config(
             dd.RunConfig(
