@@ -49,7 +49,7 @@ from data_designer_retrieval_sdg.multimodal.planning import (
     related_contexts,
     select_summaries,
 )
-from data_designer_retrieval_sdg.multimodal.preflight import validate_credentials, validate_judge_prompts
+from data_designer_retrieval_sdg.multimodal.preflight import validate_credentials
 from data_designer_retrieval_sdg.multimodal.source_directory import load_directory_sources
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
@@ -515,7 +515,6 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             sources = load_retrieval_sources(config.sources_file)
         validate_deployment(config, any(source.images for source in sources))
         contexts = load_contexts(config, sources)
-        validate_judge_prompts(config)
         if not (config.resume and (root / "complete.json").exists()):
             validate_credentials(config)
         identity = {

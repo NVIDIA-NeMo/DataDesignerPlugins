@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Deployment failures occur before model calls or immutable run creation."""
+"""Missing credentials fail before model calls or immutable run creation."""
 
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -11,7 +11,6 @@ from data_designer.engine.models.facade import ModelFacade
 from test_failed_records import ControlledTransport, skip_config
 
 from data_designer_retrieval_sdg.multimodal import JudgeModels, MultimodalSDGConfig, run_multimodal_sdg
-from data_designer_retrieval_sdg.multimodal.bounds import RequestTooLarge
 
 
 def stage_config(tmp_path: Path, stage: str, **settings) -> MultimodalSDGConfig:
@@ -58,50 +57,8 @@ def test_empty_credentials_are_reported_without_secret_values(
     assert not config.output_dir.exists()
 
 
-@pytest.mark.parametrize("stage", [*JudgeModels.model_fields, "toc_confirmation"])
-def test_fixed_judge_prompt_must_fit_before_generation(tmp_path: Path, stage: str) -> None:
-    config = stage_config(tmp_path, stage, max_tokens=128, context_window_tokens=256)
-    transport = ControlledTransport(())
-    with patch.object(ModelFacade, "acompletion", AsyncMock(side_effect=transport.complete)) as completion:
-        with pytest.raises(RequestTooLarge) as error:
-            run_multimodal_sdg(config)
-    message = str(error.value)
-    assert stage in message and f"operator/{stage}" in message
-    assert "context_window_tokens" in message
-    completion.assert_not_called()
-    assert not config.output_dir.exists()
-
-
-@pytest.mark.parametrize(
-    "setting,value",
-    [("tokenizer_file", None), ("request_overhead_tokens", None), ("max_tokens", 2_000_000)],
-)
-def test_invalid_budget_names_the_stage_model_and_setting(tmp_path: Path, setting: str, value) -> None:
-    config = stage_config(tmp_path, "relevance", **{setting: value})
-    with pytest.raises(ValueError) as error:
-        run_multimodal_sdg(config)
-    message = str(error.value)
-    assert "relevance" in message and "operator/relevance" in message and setting in message
-    assert not config.output_dir.exists()
-
-
-@pytest.mark.parametrize("contents", [None, "not a tokenizer"])
-def test_unreadable_tokenizer_names_the_stage_and_setting(tmp_path: Path, contents: str | None) -> None:
-    tokenizer = tmp_path / "broken-tokenizer.json"
-    config = stage_config(tmp_path, "summary", tokenizer_file=tokenizer)
-    if contents is not None:
-        tokenizer.write_text(contents)
-    with pytest.raises(ValueError) as error:
-        run_multimodal_sdg(config)
-    message = str(error.value)
-    assert "summary" in message and "operator/summary" in message and "tokenizer_file" in message
-    assert not config.output_dir.exists()
-
-
-def test_unused_judges_need_neither_credentials_nor_prompt_budget(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = stage_config(tmp_path, "summary", max_tokens=128, context_window_tokens=256)
+def test_unused_judges_need_no_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = stage_config(tmp_path, "summary")
     config.judge_summaries = False
     config.judges.summary.credential_env = "UNUSED_PREFLIGHT_KEY"
     config.judge = config.judges.summary

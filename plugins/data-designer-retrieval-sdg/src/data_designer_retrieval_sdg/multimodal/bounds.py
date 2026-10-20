@@ -35,9 +35,7 @@ def validate_model_budget(model) -> None:
             "DD's rendering limit is not a model context window"
         )
     if model.max_tokens + model.request_overhead_tokens >= model.context_window_tokens:
-        raise ValueError(
-            "Model max_tokens and request_overhead_tokens leave no input context space within context_window_tokens"
-        )
+        raise ValueError("Model output and request overhead leave no input context space")
 
 
 def validate_deployment(config, has_images: bool) -> None:
@@ -45,22 +43,10 @@ def validate_deployment(config, has_images: bool) -> None:
     for role, model in {"generator": config.generator, **config.active_judges()}.items():
         if model.context_window_tokens is None:
             continue
-        name = "toc_confirmation" if role == "judge" else role
-        label = f"{name} model {model.model!r}"
-        try:
-            validate_model_budget(model)
-        except ValueError as exc:
-            raise ValueError(f"{label}: {exc}") from exc
+        validate_model_budget(model)
         if has_images and role in ("generator", "relevance", "localization") and model.image_tokens_per_image is None:
-            raise ValueError(f"{label}: Configure image_tokens_per_image for {role} before running image SDG")
-        try:
-            tokenizer(str(model.tokenizer_file), digest(model.tokenizer_file))
-        except Exception as exc:
-            # The tokenizers extension raises plain Exception for malformed JSON.
-            raise ValueError(
-                f"{label}: cannot load tokenizer_file {str(model.tokenizer_file)!r}; "
-                "provide a readable tokenizer JSON matching the deployment"
-            ) from exc
+            raise ValueError(f"Configure image_tokens_per_image for {role} before running image SDG")
+        tokenizer(str(model.tokenizer_file), digest(model.tokenizer_file))
 
 
 def check_request(request, config) -> None:

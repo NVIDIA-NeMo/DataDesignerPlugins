@@ -294,16 +294,9 @@ Missing or blank variables produce an error naming the stage, model, and
 variable to set. Incomplete resumes repeat these checks. Completed resumes
 verify the saved artifacts without requiring credentials.
 
-The workflow also checks each enabled judge's fixed prompt and response schema,
-including the configured output and request-overhead allowances when a local
-token budget is enabled. Dynamic query, summary, source, and language content
-and images are omitted from this early check. Actual requests still undergo
-size checks after their content is known. Budget and tokenizer errors name the
-affected stage, model, and settings.
-
-These checks run automatically with the existing configuration. They make no
-model requests, do not authenticate credentials, and do not verify endpoint
-capabilities. For example, an unset `TEXT_JUDGE_KEY` stops the run before any
+The credential check runs automatically with the existing configuration and
+makes no model requests. It checks that variables are set, without authenticating
+to the provider. For example, an unset `TEXT_JUDGE_KEY` stops the run before any
 generation rather than failing when that judge is first used. Set the variable
 and rerun the same configuration.
 
