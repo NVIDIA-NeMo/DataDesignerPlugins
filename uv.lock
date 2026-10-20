@@ -14,6 +14,7 @@ resolution-markers = [
 members = [
     "data-designer-docx",
     "data-designer-github",
+    "data-designer-gym",
     "data-designer-nemotron-indic-translation",
     "data-designer-plugins-workspace",
     "data-designer-retrieval-sdg",
@@ -654,6 +655,21 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.1.1,<7" },
     { name = "tokenizers", specifier = ">=0.22,<0.24" },
     { name = "urllib3", specifier = ">=2.8.0,<3" },
+]
+
+[[package]]
+name = "data-designer-gym"
+version = "0.1.0"
+source = { editable = "plugins/data-designer-gym" }
+dependencies = [
+    { name = "data-designer" },
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "data-designer", specifier = ">=0.9.1" },
+    { name = "httpx", specifier = ">=0.27,<1" },
 ]
 
 [[package]]

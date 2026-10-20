@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+name = "dd-gym-pi-sessions-example"
+version = "0.1.0"
+requires-python = ">=3.13.14"
+dependencies = [
+    "nemo-gym @ https://github.com/NVIDIA-NeMo/Gym/archive/58b3240e04f1fa2061328a5d9a8ec7581262f8eb.tar.gz",
+    "requests>=2.32,<3",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "httpx"]
+
+[project.scripts]
+dd-gym-pi-sessions = "dd_gym_pi_sessions.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dd_gym_pi_sessions"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
