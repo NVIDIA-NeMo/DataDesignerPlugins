@@ -346,6 +346,7 @@ def write_multimodal_bundle(
                     exclude={
                         "generator",
                         "judge",
+                        "judges",
                         "sources_file",
                         "source_directory",
                         "contexts_file",
@@ -357,9 +358,12 @@ def write_multimodal_bundle(
             "models": {
                 "generator": config.generator.model_dump(mode="json"),
                 "judge": config.judge.model_dump(mode="json"),
+                "judges": {stage: model.model_dump(mode="json") for stage, model in config.resolved_judges().items()},
             },
-            "shared_generator_judge": config.generator.model == config.judge.model
-            and config.generator.endpoint == config.judge.endpoint,
+            "shared_generator_judge": all(
+                config.generator.model == model.model and config.generator.endpoint == model.endpoint
+                for model in config.active_judges().values()
+            ),
             "dataset_id": config.dataset_id,
             "split_protocol": "grouped_query_disjoint",
             "corpus_scope": "full_collection",

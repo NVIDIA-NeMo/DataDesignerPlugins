@@ -9,7 +9,6 @@ import base64
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 from uuid import uuid4
 
 import data_designer.config as dd
@@ -22,7 +21,13 @@ from pydantic import BaseModel
 
 from data_designer_retrieval_sdg.multimodal.bounds import check_request
 from data_designer_retrieval_sdg.multimodal.config import RetrievalStructuredColumnConfig
-from data_designer_retrieval_sdg.multimodal.models import FailedGeneration, GenerationContext, MultimodalSDGConfig
+from data_designer_retrieval_sdg.multimodal.models import (
+    FailedGeneration,
+    GenerationContext,
+    JudgeStage,
+    ModelRole,
+    MultimodalSDGConfig,
+)
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import digest, fingerprint, write_json
 from data_designer_retrieval_sdg.multimodal.structured import FAILURE_KEY
@@ -30,23 +35,47 @@ from data_designer_retrieval_sdg.multimodal.structured import FAILURE_KEY
 
 @dataclass(frozen=True)
 class Request:
-    """A single typed request; images are real ordered attachments, never path-only prompts."""
+    """A typed request with ordered image attachments and explicit model routing.
+
+    Args:
+        text: Fully rendered prompt text.
+        schema: Required structured response schema.
+        role: Generator or default judge model role.
+        images: Ordered paths to actual image attachments.
+        judge_stage: Optional judgment stage selecting a configured override.
+    """
 
     text: str
     schema: type[BaseModel]
-    role: Literal["generator", "judge"]
+    role: ModelRole
     images: tuple[Path, ...] = ()
+    judge_stage: JudgeStage | None = None
 
 
 def source_request(
     instruction: str,
-    schema: type,
-    role: str,
+    schema: type[BaseModel],
+    role: ModelRole,
     context: GenerationContext,
     sources: dict[str, RetrievalSource],
+    *,
+    judge_stage: JudgeStage | None = None,
     **payload,
 ) -> Request:
-    """Attach exact source text and aligned image pixels without truncation or templating source content."""
+    """Attach exact source text and aligned image pixels without truncation.
+
+    Args:
+        instruction: Rendered task instructions preceding the source payload.
+        schema: Required structured response schema.
+        role: Generator or default judge model role.
+        context: Source-unit membership for the request.
+        sources: Canonical sources indexed by unit ID.
+        judge_stage: Optional judgment stage selecting a configured override.
+        **payload: Additional task fields serialized with the original sources.
+
+    Returns:
+        A request with original source text and ordered image attachments.
+    """
     selected = [sources[key] for key in context.unit_ids]
     data = {
         "sources": [{"unit_id": s.unit_id, "text": s.text} for s in selected],
@@ -58,6 +87,7 @@ def source_request(
         schema,
         role,
         tuple(Path(image) for s in selected for image in s.images),
+        judge_stage=judge_stage,
     )
 
 
@@ -143,16 +173,16 @@ class DataDesignerInference:
 
     def request_key(self, request: Request) -> str:
         """Bind responses to exact prompts, schema, pixels and model settings."""
+        model = self.config.model_for(request.role, request.judge_stage)
         return fingerprint(
             {
                 "transport": "retrieval-structured-v1",
                 "prompt": request.text,
                 "schema": request.schema.model_json_schema(),
-                "model": getattr(self.config, request.role).model_dump(mode="json"),
+                "model": model.model_dump(mode="json"),
                 "images": [digest(path) for path in request.images],
-                "tokenizer_sha256": digest(getattr(self.config, request.role).tokenizer_file)
-                if getattr(self.config, request.role).context_window_tokens is not None
-                and getattr(self.config, request.role).tokenizer_file
+                "tokenizer_sha256": digest(model.tokenizer_file)
+                if model.context_window_tokens is not None and model.tokenizer_file
                 else None,
             }
         )
@@ -183,7 +213,13 @@ class DataDesignerInference:
         for request in requests:
             check_request(request, self.config)
             if self.cached(request) is None:
-                group = fingerprint([request.role, request.schema.model_json_schema(), bool(request.images)])
+                group = fingerprint(
+                    [
+                        self.config.model_for(request.role, request.judge_stage).model_dump(mode="json"),
+                        request.schema.model_json_schema(),
+                        bool(request.images),
+                    ]
+                )
                 groups.setdefault(group, {})[self.request_key(request)] = request
         for group in groups.values():
             items = list(group.items())
@@ -204,7 +240,7 @@ class DataDesignerInference:
         for _, item in items:
             check_request(item, self.config)
         request = items[0][1]
-        model = getattr(self.config, request.role)
+        model = self.config.model_for(request.role, request.judge_stage)
         attempt = self.root / "attempts" / uuid4().hex
         attempt.mkdir(parents=True)
         rows = [

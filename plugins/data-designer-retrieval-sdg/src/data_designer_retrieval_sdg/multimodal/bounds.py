@@ -40,12 +40,11 @@ def validate_model_budget(model) -> None:
 
 def validate_deployment(config, has_images: bool) -> None:
     """Validate model budgets/assets before creating an immutable run directory."""
-    for role in ("generator", "judge"):
-        model = getattr(config, role)
+    for role, model in {"generator": config.generator, **config.active_judges()}.items():
         if model.context_window_tokens is None:
             continue
         validate_model_budget(model)
-        if has_images and model.image_tokens_per_image is None:
+        if has_images and role in ("generator", "relevance", "localization") and model.image_tokens_per_image is None:
             raise ValueError(f"Configure image_tokens_per_image for {role} before running image SDG")
         tokenizer(str(model.tokenizer_file), digest(model.tokenizer_file))
 
@@ -63,7 +62,7 @@ def check_request(request, config) -> None:
     """
     if len(request.text) > environment.MAX_RENDERED_LEN:
         raise RequestTooLarge(f"Rendered prompt exceeds DD limit ({environment.MAX_RENDERED_LEN} characters)")
-    model = getattr(config, request.role)
+    model = config.model_for(request.role, request.judge_stage)
     if model.context_window_tokens is not None:
         validate_model_budget(model)
         if request.images and model.image_tokens_per_image is None:
@@ -80,7 +79,7 @@ def check_request(request, config) -> None:
         )
         if required > model.context_window_tokens:
             raise RequestTooLarge(
-                f"{request.role} request needs {required} tokens including images, overhead and output; "
+                f"{request.judge_stage or request.role} request needs {required} tokens including images, overhead and output; "
                 f"configured context window is {model.context_window_tokens}"
             )
 

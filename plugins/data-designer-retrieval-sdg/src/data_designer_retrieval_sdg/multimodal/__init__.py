@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from data_designer_retrieval_sdg.multimodal.models import (
     GenerationContext,
+    JudgeModels,
     ModelSettings,
     MultimodalSDGConfig,
     QueryInstruction,
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "GenerationContext",
+    "JudgeModels",
     "ModelSettings",
     "MultimodalSDGConfig",
     "QueryInstruction",

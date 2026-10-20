@@ -16,7 +16,8 @@ image paths inside source records resolve relative to their JSONL file.
 | `source_directory` | `null` | Directory preparation settings below. Mutually exclusive with `sources_file`. |
 | `output_dir` | Required | New run directory, or an existing compatible directory when resuming. |
 | `dataset_id` | Required | Nonempty corpus identifier recorded in exports. |
-| `generator`, `judge` | Required | Independent model settings, described below. |
+| `generator`, `judge` | Required | Generator settings and default judge settings, described below. |
+| `judges` | `{}` | Optional complete model settings for individual judgment stages. |
 | `contexts_file` | `null` | Explicit context JSONL; replaces automatic context grouping. |
 | `concurrency` | `8` | Model-call concurrency, from 1 to 128. |
 | `batch_size` | `30` | Request batch size, from 1 to 128. |
@@ -27,7 +28,7 @@ image paths inside source records resolve relative to their JSONL file.
 | `ratios` | `{train: 0.8, validation: 0.0, evaluation: 0.2}` | Query-group split fractions, each from 0 to 1 and summing to 1. |
 | `group_near_duplicates` | `false` | Add conservative lexical query grouping before splitting. |
 
-The plugin groups requests by model role, response schema, and presence of images.
+The plugin groups requests by resolved model settings, response schema, and presence of images.
 Each batch runs a Data Designer structured-response column. Matching requests
 reuse cached responses keyed by their prompt, schema, model settings, and image
 content.
@@ -276,13 +277,90 @@ reasoning models, `max_tokens` can include both reasoning and the final response
 
 To enable local token preflight for a role, set `context_window_tokens`,
 `tokenizer_file`, and `request_overhead_tokens`. Also set
-`image_tokens_per_image` when the corpus contains images. Use values appropriate
+`image_tokens_per_image` for the generator, relevance judge, and localization
+judge when the corpus contains images. Text-only judgment stages do not require
+an image allowance. Use values appropriate
 to the deployment. The check includes the structured-response instructions,
 source input, image allowances, and output reserve.
 
 Without local token preflight, Data Designer's rendered-prompt limit still
 applies, but it is not a model context-window guarantee. Provider context and
 image limits remain applicable.
+
+### Judge Model Overrides
+
+Use `judge` for the default judgment model. Override individual stages under
+`judges` when a different deployment or sampling configuration suits the task:
+
+| Stage | Input | Configuration key |
+| --- | --- | --- |
+| Summary quality | Generated summary and persona | `judges.summary` |
+| Query classification and answer leakage | Query only | `judges.query_metadata` |
+| Self-sufficiency | Query and source text | `judges.self_sufficiency` |
+| Relevance | Query, source text, and available images | `judges.relevance` |
+| Support localization | Query, source text, and available images | `judges.localization` |
+
+An omitted or `null` stage uses `judge`. Each override is a complete
+[Model Settings](#model-settings) object. Required fields must be supplied;
+optional fields use their own defaults rather than inheriting values from
+`judge`. This includes sampling parameters, output limits, credentials, and
+local token budgets. Configure vision-capable deployments for image-bearing
+requests; the plugin does not infer model capabilities or switch models on errors.
+
+This configuration uses one text judge for summary and query checks, and the
+default vision judge for relevance and support localization. Replace the model
+identifiers and endpoints with your serving deployments, and set both credential
+environment variables before running:
+
+```yaml
+sources_file: sources.jsonl
+output_dir: runs/stage-judges
+dataset_id: service-manuals
+generator:
+  model: your-generation-model
+  endpoint: https://generation.example.com/v1
+  credential_env: GENERATION_API_KEY
+judge:
+  model: your-vision-judge-model
+  endpoint: https://vision.example.com/v1
+  credential_env: JUDGE_API_KEY
+  temperature: 0
+  max_tokens: 4096
+judges:
+  summary: &text_judge
+    model: your-text-judge-model
+    endpoint: https://text.example.com/v1
+    credential_env: JUDGE_API_KEY
+    temperature: 0
+    max_tokens: 1024
+  query_metadata: *text_judge
+  self_sufficiency: *text_judge
+```
+
+You can also configure `judges.relevance` and `judges.localization` independently.
+For Python configuration, import `JudgeModels` from
+`data_designer_retrieval_sdg.multimodal`. `config.model_for("judge", "relevance")`
+returns the effective settings for that stage.
+
+Automatic section planning (`context_strategy: sections` without `contexts_file`)
+uses the fallback `judge` for text-only table-of-contents confirmation. This judge
+remains active even when all five named stages are overridden or
+`judge_summaries: false`. Its local token budget is validated before creating the
+run, and its tokenizer content hash is included in the frozen run identity.
+Explicit contexts bypass this confirmation step.
+
+`judge_summaries: false` disables the summary judgment stage, including its
+model-budget validation. The run manifest records the fallback under
+`models.judge` and the effective models for enabled stages under `models.judges`.
+`shared_generator_judge` is true only when every active judge, including the
+fallback used for TOC confirmation, uses the generator's model identifier and endpoint.
+
+Cached responses include the resolved model settings and tokenizer content hash.
+Changing one override cannot reuse that stage's incompatible response. Changing
+settings in an existing run still violates its frozen identity; use a new output
+directory. Omitting overrides preserves the original judge request cache keys.
+Stage configuration does not establish better judgment quality; compare reviewed
+examples when choosing models.
 
 ## Context Planning
 
