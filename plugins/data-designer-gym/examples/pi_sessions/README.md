@@ -1,6 +1,6 @@
 # Persistent Pi sessions
 
-This optional service extends Gym's upstream `PiAgent` with completed-turn persistence. It reuses upstream model configuration, Responses conversion, usage accounting, and agent observations. The extension owns native Pi history, per-conversation workspaces, process cleanup, and committed-response replay. No upstream Gym changes or DD column changes are required.
+This optional experimental service extends Gym's upstream `PiAgent` with completed-turn persistence. It reuses upstream model configuration, Responses conversion, Gym-side usage accounting, and agent observations. The extension owns native Pi history, per-conversation workspaces, process cleanup, and committed-response replay. It runs separately from the DD plugin; no upstream Gym changes or DD column changes are required.
 
 The pinned runtime is Gym `58b3240e04f1fa2061328a5d9a8ec7581262f8eb` and Pi `1.2.0`. Keep it in its own Python environment (Python >=3.13.14; Python 3.14 works). The main DD plugin retains its Python 3.10 baseline. Install from this directory:
 
@@ -33,7 +33,7 @@ Create `agent.json` with absolute paths appropriate to the deployment:
         "apiKey": "MODEL_API_KEY",
         "models": [{
           "id": "my-model",
-          "name": "Shared vLLM deployment",
+          "name": "Configured model endpoint",
           "reasoning": false,
           "input": ["text"],
           "contextWindow": 16384,
@@ -45,11 +45,13 @@ Create `agent.json` with absolute paths appropriate to the deployment:
 }
 ```
 
-Pi resolves `MODEL_API_KEY` from the service environment. For an unauthenticated allocation-local endpoint, use a literal dummy key instead. Use the actual endpoint and served model published by the DD runner. This service does not provision or stop model serving.
+Pi resolves `MODEL_API_KEY` from the service environment. For an unauthenticated local endpoint, use a literal dummy key instead. Use an operator-provided endpoint and served model. This service does not provision or stop model serving. Pointing DD and Pi at the same endpoint does not share model clients, throttling, retries, or accounting.
 
 ```bash
 .venv/bin/dd-gym-pi-sessions --config agent.json
 ```
+
+Before generation, check `curl --fail http://127.0.0.1:39336/stats`. With one server worker, `concurrency` bounds active Pi turns in this service. The plugin's `max_parallel_requests` separately bounds each generator in each DD worker; size their aggregate load against this service and the model endpoint.
 
 Alternatively, configure `model_server` using Gym's normal model reference and pass the deployment's merged configuration as `--gym-config gym.yaml`. Upstream Pi then builds the rollout-prefixed Gym model URL. These Gym-to-model connections require the same network reachability as an ordinary Gym deployment.
 
@@ -99,9 +101,11 @@ Omit the plugin's per-call `session` initialization/cleanup: this service owns t
 - The configuration fingerprint includes the model endpoint. Moving a checkpoint to a different endpoint requires an explicit migration outside this example; an accidental endpoint/model change is rejected.
 - The response and turn receipt preserve upstream agent observations, including evidence gaps. Local execution reports the upstream `no_sandbox_runtime` gap. DD's own model-usage summary excludes Pi's calls.
 
-This extension currently uses local Pi with read/write/edit tools, matching the persistence prototype. It does not enable upstream native sandbox sessions, `/run` verification, mid-tool checkpoint restoration, or distributed routing. Native agent-session initialization is rejected so a stale session cookie cannot silently select the upstream single-activation path. Sandbox adoption requires separate validation and is not implied by inheritance from `PiAgent`.
+This extension currently uses local Pi with read/write/edit tools. Separate workspaces are not a sandbox isolation boundary. It does not enable upstream native sandbox sessions, `/run` verification, mid-tool checkpoint restoration, or distributed routing. Native agent-session initialization is rejected so a stale session cookie cannot silently select the upstream single-activation path. Sandbox adoption requires separate validation and is not implied by inheritance from `PiAgent`.
 
-On Slurm, launch this service as a CPU step through the runner, retain episodes on shared storage, and reuse the runner's managed vLLM endpoint. Keep its concurrency within the deployment's aggregate capacity. The existing Slurm persistence experiment and its tested adapter remain separate; this example does not replace them automatically.
+After the workflow drains, verify `/stats` reports zero active Pi processes and stop the service with Ctrl+C. Keep the configured session root for retries or later turns; the operator removes it when the run's retention period ends. Shutdown cancels active requests and closes their Pi processes. Client timeouts alone do not guarantee that the remote turn has stopped.
+
+Slurm service placement, readiness, resource budgeting, and teardown require a separate runner integration. This example does not supply managed startup, sandbox provisioning, or Slurm acceptance evidence.
 
 ## Validation
 

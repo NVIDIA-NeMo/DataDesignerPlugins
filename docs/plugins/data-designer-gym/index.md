@@ -1,6 +1,8 @@
 # Data Designer Gym
 
-`data-designer-gym` executes Gym resources and harnesses inside the Data Designer DAG, and supports task export and rollout ingestion.
+Experimental initial integration: `data-designer-gym` columns call operator-managed Gym services, preserve outputs and attempt evidence, and feed downstream processing. Task export and rollout ingestion remain available. The operator owns service/model installation, startup, readiness, placement, and shutdown.
+
+For installation, tested runtime combinations, and a local resource-to-downstream-column run with cleanup and no model calls, follow the [package README](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/plugins/data-designer-gym/README.md#installation).
 
 ## Resource and harness columns
 
@@ -50,9 +52,11 @@ Session routes differ between environments. Configure the initialization and cle
 
 Each row owns its HTTP client, cookies, and session headers. Connections are reused across that row's setup, execution, and cleanup. Cookies are explicitly forwarded between the trusted configured services. An initialization step can map a JSON token into a header with `response_headers={"X-Session-Token": "token"}`. Tokens and cookies are excluded from lifecycle artifacts. `bearer_token_env` reads a credential at generator startup and sends it only to that endpoint; another service may declare its own `bearer_token_env`.
 
-`max_parallel_requests` bounds active row lifecycles per generator, including cleanup. DD also receives service scheduling metadata. Limits are per worker/generator; aggregate concurrency across columns and Slurm workers belongs in the runner. `timeout` bounds setup plus execution, and `session.cleanup_timeout` bounds each cleanup step. Admission waits are cancellable without an execution deadline; set `queue_timeout` for a separate queue deadline. Python callers with a running event loop should use `await generator.agenerate(row)` for long calls.
+`max_parallel_requests` bounds active row lifecycles per generator, including cleanup. DD also receives service scheduling metadata. Limits are per worker/generator; aggregate concurrency across columns and workers belongs in the runner. Sharing a model endpoint does not share DD/Gym clients, model admission, retries, or usage accounting. `timeout` bounds setup plus execution, and `session.cleanup_timeout` bounds each cleanup step. Admission waits are cancellable without an execution deadline; set `queue_timeout` for a separate queue deadline. Python callers with a running event loop should use `await generator.agenerate(row)` for long calls.
 
 Failures are retained as data, with distinctions for request validation, admission timeout, execution timeout, HTTP rejection, server failure, transport failure, malformed response, unfinished harness output, cleanup, and artifact storage. HTTP success means the resource call completed. SQL errors, verification reward/mask/failure fields, and semantic rejection remain in the native response for downstream policies. The plugin does not retry state-changing requests. Cleanup runs after partial initialization, timeout, and cancellation, but a remote operation may continue after a client timeout; the service must enforce its own execution deadline. Configure a TTL or administrative cleanup for operations whose initialization fails before returning a session identifier.
+
+Cleanup failure marks the call failed and clears a harness answer; artifact-write failure also clears it. Cancellation writes attempt evidence and propagates to DD instead of returning an ordinary failed row. The workflow must decide which returned rows to keep or reject.
 
 Servers must implement their own execution restrictions, database allowlists, deadlines, and cleanup semantics. Run stateful Gym services with one worker unless the deployed revision explicitly supports more. The plugin uses direct HTTP connections (`trust_env=False`), so it does not inherit proxy environment variables.
 
@@ -80,24 +84,23 @@ This calls a whole Gym-hosted episode. It does not move UserSim's conversation l
 
 [execution_grounded_sql.py](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/plugins/data-designer-gym/examples/execution_grounded_sql.py) replays saved public SQL candidates against original/variant toy databases, runs a tool-assisted harness, applies ordinary DD judges, and exports accepted rows. This isolates integration parity from independently sampled generations. Replace the saved question/SQL/reasoning seed fields with normal DD generators for SDG.
 
-[toy_gym.py](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/plugins/data-designer-gym/examples/toy_gym.py) supplies the demo-only SQLite `/execute` extension and uses upstream Gym `SimpleAgent`, `SimpleModelServer`, and `ExampleMultiStepResourcesServer`. Standard BIRD/text-to-SQL verification requires reference SQL and does not replace execution-only SDG. The prototype's custom execution server is not shipped here.
+[toy_gym.py](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/plugins/data-designer-gym/examples/toy_gym.py) supplies the demo-only SQLite `/execute` extension and uses upstream Gym `SimpleAgent`, `SimpleModelServer`, and `ExampleMultiStepResourcesServer`. Standard BIRD/text-to-SQL verification requires reference SQL and does not replace execution-only SDG.
 
-Install Gym separately in its own environment. The plugin itself only needs DD and HTTPX. Run the services with the Gym environment and the workflow with the installed plugin environment:
+Use the separate environments from the package README. Set `MODEL_ENDPOINT`, `MODEL_NAME`, and `MODEL_API_KEY` for an existing compatible model service in both terminals. Run from `plugins/data-designer-gym` in the source checkout:
 
 ```bash
-# Terminal 1, with Gym installed and its source checkout on PYTHONPATH:
-export MODEL_API_KEY="your endpoint credential"
-/path/to/gym/.venv/bin/python examples/toy_gym.py \
+# Terminal 1:
+.venv-gym/bin/python examples/toy_gym.py \
     --database-dir /tmp/dd-gym-databases \
     --model-endpoint "$MODEL_ENDPOINT" --model "$MODEL_NAME"
 
-# Terminal 2, with data-designer-gym installed:
+# Terminal 2, after /stats responds on port 8765:
 .venv/bin/python examples/execution_grounded_sql.py \
     --model-endpoint "$MODEL_ENDPOINT" --model "$MODEL_NAME" \
     --output /tmp/dd-gym-smoke
 ```
 
-The model endpoint must support Responses (harness) and Chat Completions with structured output (DD judges). For a Chat Completions endpoint, pass `--model-adapter chat` to the demo service to use Gym's `VLLMModel` conversion adapter without deploying inference locally. Run smoke tests on allocated compute nodes on Slurm. Service launch, placement, readiness, endpoint publication, and teardown stay in the runner.
+The model endpoint must support Responses (harness) and Chat Completions with structured output (DD judges). For a Chat Completions endpoint, pass `--model-adapter chat` to the demo service to use Gym's `VLLMModel` conversion adapter without deploying inference locally. Stop terminal 1 with Ctrl+C after inspecting the results and zero active sessions at `/stats`. On Slurm, service launch, placement, readiness, endpoint publication, and teardown stay in the runner; this example does not implement that orchestration.
 
 ## Generic processor
 
@@ -159,3 +162,9 @@ data-designer-gym ingest \
 The normalized result retains the complete task and rollout and can seed Data Designer or another downstream workflow.
 
 Ingest also exposes `rollout_id`, `attempt`, `task_id` and `environment_server`, and maps native `_ng_failure_message` / `_ng_failure_stage` into `failure_reason` / `failure_stage`. Explicit legacy failure fields take precedence. Missing attempt IDs and failure kinds remain null rather than being inferred. Joining still requires the exported task index; native materialized-task export is separate work.
+
+## Limits and proposed follow-up
+
+The optional Pi service has its own runtime and lifecycle. A UserSim session client/probe, DD wrapper, recorder, and environment-specific cleanup shim are not shipped plugin APIs. Whole-episode HTTP calls do not establish support for a UserSim loop inside DD, sandbox sessions, or arbitrary Gym environments. Generated attempt IDs are retained in artifacts but are not automatically injected into requests.
+
+Proposed stages, with completion criteria, are documented in the [package roadmap](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/plugins/data-designer-gym/README.md#proposed-follow-up-stages): a supported UserSim session/probe and cleanup contract; shared model admission/accounting; managed worker startup/readiness/cleanup and Slurm resource planning; then one pinned sandbox/persistence workflow. These are discussion milestones, not approved commitments.
