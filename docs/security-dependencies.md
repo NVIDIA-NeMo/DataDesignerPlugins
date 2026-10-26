@@ -1,12 +1,18 @@
 # Dependency security follow-up (October 2026)
 
 The October 25 scan supplied in `dt_nspect_vuln_details_dd_1.csv` reports
-44 findings across seven Python dependencies. Workspace constraints and each
-plugin's published requirements enforce the compatible fixes below. Run
-`make sync` to install the updated lockfile; standalone plugin installations
-use the same requirements without relying on workspace constraints.
+44 findings across seven Python dependencies. The workspace lockfile and root
+constraints enforce the compatible fixes below.
+Run `make sync` to install the updated lockfile.
 
-| Dependency | Required version | Report findings |
+Following [DataDesigner's transitive dependency guidance](https://github.com/NVIDIA-NeMo/DataDesigner/blob/main/DEVELOPMENT.md#transitive-dependencies),
+transitive security floors stay out of published plugin requirements. Downstream
+applications should apply the recommended versions below in their own lockfiles.
+Only retrieval-sdg directly uses filelock, NLTK, and Pillow, so it retains those
+requirements. All plugins require DataDesigner 0.9.7 or later, which enforces the
+exceptional `certifi>=2026.10.19` CA trust floor through data-designer-config.
+
+| Dependency | Recommended version | Report findings |
 | --- | --- | --- |
 | MCP | `>=1.30.0,<2` | CVE-2026-59951 |
 | NLTK | `>=3.10.4,<3.11` | CVE-2026-81726 |
@@ -15,6 +21,20 @@ use the same requirements without relying on workspace constraints.
 | filelock, Python 3.11+ | `>=4.2.1,<5` | CVE-2026-112940 |
 | filelock, Python 3.10 | `>=3.20,<3.20.4` | Excludes the affected ReadWriteLock implementation introduced in 3.20.4 |
 | Pillow, Python 3.11+ | `>=13.0.0` | All 38 Pillow findings in the supplied report |
+
+## Applying the recommendations in an application
+
+Update the application's lockfile with targeted upgrades:
+
+```bash
+uv lock --upgrade-package certifi --upgrade-package filelock --upgrade-package fsspec \
+    --upgrade-package mcp --upgrade-package nltk --upgrade-package pillow
+```
+
+If a minimum does not survive re-resolution, add it to the application's root
+`[tool.uv].constraint-dependencies`. Preserve the Python markers from this
+repository for filelock and Pillow when supporting Python 3.10. Workspace
+constraints are not included in published plugin metadata.
 
 ## Unresolved findings
 
