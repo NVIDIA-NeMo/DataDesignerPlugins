@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import os
 from functools import partial
 from hashlib import sha256
 from importlib.metadata import version
@@ -50,6 +49,7 @@ from data_designer_retrieval_sdg.multimodal.planning import (
     related_contexts,
     select_summaries,
 )
+from data_designer_retrieval_sdg.multimodal.preflight import check_models
 from data_designer_retrieval_sdg.multimodal.source_directory import load_directory_sources
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
@@ -503,9 +503,6 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
     """
     from data_designer_retrieval_sdg.multimodal.export import export_multimodal_bundle
 
-    if config.combination_iterations and config.summary_embedding_endpoint:
-        if not os.environ.get(config.summary_embedding_credential_env):
-            raise ValueError(f"Set the credential environment variable {config.summary_embedding_credential_env}")
     root = config.output_dir.resolve()
     if config.source_directory is not None and root.is_relative_to(config.source_directory.path.resolve()):
         raise ValueError("output_dir must be outside source_directory.path to avoid ingesting generated files")
@@ -568,7 +565,8 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             raise FileExistsError(f"Run exists: {root}; inspect before explicitly resuming")
         if root.exists() and not (root / "identity.json").exists():
             raise ValueError("Existing run has no frozen identity")
-        write_json(root / "identity.json", identity)
+        if root.exists():
+            write_json(root / "identity.json", identity)
         if (root / "complete.json").exists():
             complete = json.loads((root / "complete.json").read_text())
             for record in complete["artifacts"]:
@@ -576,6 +574,8 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
                 if path.stat().st_size != record["bytes"] or digest(path) != record["sha256"]:
                     raise ValueError("Completed run integrity failure")
             return root / "bundle/generation_result.json"
+        check_models(config)
+        write_json(root / "identity.json", identity)
         frozen = []
         for source in sources:
             images = []

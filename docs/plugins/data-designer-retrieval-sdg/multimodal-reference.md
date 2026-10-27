@@ -252,7 +252,7 @@ come from your serving deployment; the plugin does not choose a replacement mode
 | --- | --- | --- |
 | `model` | Required | Nonempty model identifier. |
 | `endpoint` | Required | HTTP or HTTPS OpenAI-compatible base URL. |
-| `credential_env` | Required | Environment variable containing the credential. |
+| `credential_env` | Required | Environment variable containing the provider credential. |
 | `temperature` | `0.6` | Sampling temperature, from 0 to 2. |
 | `max_tokens` | `8192` | Positive per-request output-token limit. Account for reasoning tokens where applicable. |
 | `timeout` | `600` | Positive per-request timeout in seconds. |
@@ -286,6 +286,27 @@ source input, image allowances, and output reserve.
 Without local token preflight, Data Designer's rendered-prompt limit still
 applies, but it is not a model context-window guarantee. Provider context and
 image limits remain applicable.
+
+Before freezing a new run, the workflow calls Data Designer's `check_models()`
+for the generator, enabled judges, the fallback judge when automatic TOC
+confirmation is enabled, and hosted summary embeddings configured for
+combinations. Identical serving configurations share one check. Each check
+makes a real request using the configured credentials and inference options,
+so provider latency and usage charges apply.
+
+For example, an invalid credential or unavailable model for a later judge stops
+the run before summary and query generation. Data Designer's native errors
+propagate to the caller. Fix the deployment or configuration and rerun; a failed
+check does not create the run directory.
+
+Incomplete resumes repeat the checks after validating the saved run identity.
+Completed resumes verify the saved artifacts without credentials or model
+calls. Generation batches do not repeat the checks.
+
+These are basic text-response and embedding probes; they do not verify image
+support or judge output schemas. Providers must accept Data Designer's built-in
+`Hello!` probe with the configured inference options. To disable probes, set
+`DATA_DESIGNER_SKIP_MODEL_HEALTH_CHECKS=1`, Data Designer's native opt-out.
 
 ### Judge Model Overrides
 
