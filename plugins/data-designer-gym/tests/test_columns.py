@@ -7,6 +7,7 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 from functools import partial
+from http.cookies import SimpleCookie
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -53,6 +54,7 @@ class GymHTTP:
     seed_status: int = 200
     seed_delay: float = 0
     seed_response: dict = field(default_factory=lambda: {"token": "row-token"})
+    response_headers: dict = field(default_factory=dict)
     responses_by_sql: dict = field(default_factory=dict)
     calls: list = field(default_factory=list)
     active: int = 0
@@ -61,10 +63,13 @@ class GymHTTP:
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         self.calls.append((request.url.path, body, dict(request.headers)))
+        headers = self.response_headers.get(request.url.path, {})
         if request.url.path == "/seed_session":
             await asyncio.sleep(self.seed_delay)
             return httpx.Response(
-                self.seed_status, json=self.seed_response, headers={"set-cookie": f"episode={body['id']}; Path=/"}
+                self.seed_status,
+                json=self.seed_response,
+                headers={"set-cookie": f"episode={body['id']}; Path=/"} | headers,
             )
         if request.url.path == "/cleanup":
             await asyncio.sleep(self.cleanup_delay)
@@ -82,7 +87,7 @@ class GymHTTP:
             if body.get("sql") in self.responses_by_sql:
                 status, response = self.responses_by_sql[body["sql"]]
                 return httpx.Response(status, json=response)
-            return httpx.Response(self.status, json=self.response)
+            return httpx.Response(self.status, json=self.response, headers=headers)
         finally:
             self.active -= 1
 
@@ -411,6 +416,55 @@ def test_bearer_tokens_are_scoped_to_step_endpoint(service, resources, config, r
     assert "authorization" not in service.calls[0][2]
     assert service.calls[1][2]["authorization"] == "Bearer main-token"
     assert "authorization" not in service.calls[-1][2]
+
+
+@pytest.mark.parametrize("route", ["/execute", "/session_transition"])
+@pytest.mark.parametrize(
+    ("cookie", "expected"),
+    [
+        ("episode=; Max-Age=0; Path=/", None),
+        ("episode=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/", None),
+        ("episode=; Max-Age=0; Domain=gym.example; Path=/", None),
+        ("episode=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Domain=.GYM.EXAMPLE; Path=/", None),
+        ("episode=; Max-Age=0; Priority=High; Domain=gym.example; Path=/", None),
+        ("episode=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Priority=High; Domain=gym.example; Path=/", None),
+        ('episode="é"; Max-Age=0; Domain=gym.example; Path=/', None),
+        ("episode=replaced; Path=/", "replaced"),
+        ("episode=replaced; Domain=.GYM.EXAMPLE; Path=/", "replaced"),
+        ("other=extra; Path=/", "unchanged"),
+        ("episode=replaced; Domain=unrelated.example; Path=/", "unchanged"),
+        ("episode=; Max-Age=0; Domain=unrelated.example; Path=/", "unchanged"),
+        ("episode=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Domain=unrelated.example; Path=/", "unchanged"),
+        ("episode=; Max-Age=0; Priority=High; Domain=unrelated.example; Path=/", "unchanged"),
+        (
+            "episode=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Priority=High; Domain=unrelated.example; Path=/",
+            "unchanged",
+        ),
+        ('episode="é"; Max-Age=0; Domain=unrelated.example; Path=/', "unchanged"),
+        ("episode=replaced; Max-Age=invalid; Path=/", "unchanged"),
+        ("episode=replaced; Max-Age=60; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/", "replaced"),
+    ],
+)
+def test_lifecycle_cookie_changes_and_row_isolation(service, resources, config, row, session, route, cookie, expected):
+    service.response_headers[route] = httpx.Headers({"set-cookie": cookie}, encoding="utf-8")
+    if route == "/session_transition":
+        session["initialize"].append({"endpoint": "http://transition.gym.example:9001", "route": route})
+    config = GymResourceColumnConfig.model_validate(
+        config.model_dump() | {"endpoint": "http://resource.gym.example:8000", "session": session}
+    )
+    generator = GymResourceColumnGenerator(config, resources)
+    for row_id in ("first", "second"):
+        service.calls.clear()
+        assert generator.generate({**row, "id": row_id})["execution"]["status"] == "completed"
+        assert "cookie" not in service.calls[0][2]
+        transition = next(index for index, call in enumerate(service.calls) if call[0] == route)
+        assert SimpleCookie(service.calls[transition][2]["cookie"])["episode"].value == row_id
+        for _, _, headers in service.calls[transition + 1 :]:
+            sent = SimpleCookie(headers.get("cookie", ""))
+            if expected is None:
+                assert "episode" not in sent
+            else:
+                assert sent["episode"].value == (row_id if expected == "unchanged" else expected)
 
 
 def test_queue_wait_does_not_use_execution_timeout(service, resources, config, row) -> None:

@@ -6,20 +6,29 @@ The operator starts, checks, and stops Gym services and any model runtime. The p
 
 ## Installation
 
+Once 0.1.0 is published, install from the NVIDIA-NeMo plugin index into an active Python environment:
+
+```bash
+uv pip install \
+    --default-index https://pypi.org/simple/ \
+    --index https://nvidia-nemo.github.io/DataDesignerPlugins/simple/ \
+    data-designer-gym
+```
+
 From a source checkout containing this plugin, start in `plugins/data-designer-gym`:
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python 'data-designer==0.9.5' .
+uv pip install --python .venv/bin/python 'data-designer==0.9.7' .
 ```
 
-The package declares Python >=3.10 and DD >=0.9.1. The checked combinations below are narrower than those dependency ranges; other combinations require validation.
+The package declares Python >=3.10 and DD >=0.9.7. The checked combinations below are narrower than those dependency ranges; other combinations require validation.
 
 | Check | DD runtime | Gym runtime |
 | --- | --- | --- |
-| Plugin suite | DD 0.9.4 and 0.9.5, Python 3.12.12 | Simulated HTTP responses |
-| Installed wheel and local resource example | DD 0.9.5, Python 3.12.12 | Gym `58b3240e04f1fa2061328a5d9a8ec7581262f8eb`, Python 3.14.4 |
-| Optional Pi restart smoke | DD 0.9.5, Python 3.12.12 | Same Gym revision, Python 3.14.4, Pi 1.2.0, Node 25.9.0 |
+| Plugin suite | DD 0.9.7, Python 3.10.21 and 3.12.12 | Simulated HTTP responses |
+| Installed wheel and local resource example | DD 0.9.7, Python 3.10.21 | Gym `58b3240e04f1fa2061328a5d9a8ec7581262f8eb`, Python 3.14.4 |
+| Optional Pi restart smoke | DD 0.9.7, Python 3.10.21 | Same Gym revision, Python 3.14.4, Pi 1.2.0, Node 25.9.0 |
 
 ### First local run
 

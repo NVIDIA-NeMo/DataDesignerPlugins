@@ -20,6 +20,7 @@ def main():
     if "--version" in sys.argv:
         print("1.2.0")
         return
+    Path("pi.pid").write_text(str(os.getpid()))
     session = (
         Path(option("--session"))
         if "--session" in sys.argv
@@ -40,6 +41,9 @@ def main():
         text = command["message"]
         if text == "hang":
             time.sleep(30)
+        if text == "wait":
+            while not Path("release-turn").exists():
+                time.sleep(0.001)
         if text == "crash":
             os._exit(7)
         user = {"role": "user", "content": [{"type": "text", "text": text}]}

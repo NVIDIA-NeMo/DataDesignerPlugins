@@ -34,6 +34,56 @@
       ]
     },
     {
+      "name": "data-designer-gym",
+      "description": "Execute Gym resources and harnesses, export tasks, and ingest rollouts with Data Designer",
+      "install": {
+        "requirement": "data-designer-gym",
+        "index_url": "https://nvidia-nemo.github.io/DataDesignerPlugins/simple/"
+      },
+      "compatibility": {
+        "python": {
+          "specifier": ">=3.10"
+        },
+        "data_designer": {
+          "requirement": "data-designer>=0.9.7",
+          "specifier": ">=0.9.7",
+          "marker": null
+        }
+      },
+      "docs": {
+        "url": "https://nvidia-nemo.github.io/DataDesignerPlugins/plugins/data-designer-gym/"
+      },
+      "plugins": [
+        {
+          "name": "gym",
+          "plugin_type": "processor",
+          "entry_point": {
+            "group": "data_designer.plugins",
+            "name": "gym",
+            "value": "data_designer_gym.plugin:plugin"
+          }
+        },
+        {
+          "name": "gym-harness",
+          "plugin_type": "column-generator",
+          "entry_point": {
+            "group": "data_designer.plugins",
+            "name": "gym-harness",
+            "value": "data_designer_gym.plugin:harness_plugin"
+          }
+        },
+        {
+          "name": "gym-resource",
+          "plugin_type": "column-generator",
+          "entry_point": {
+            "group": "data_designer.plugins",
+            "name": "gym-resource",
+            "value": "data_designer_gym.plugin:resource_plugin"
+          }
+        }
+      ]
+    },
+    {
       "name": "data-designer-retrieval-sdg",
       "description": "Retriever SDG toolkit with Data Designer extensions, a multi-step QA generation pipeline, CLI, and Automodel-compatible data conversion",
       "install": {
