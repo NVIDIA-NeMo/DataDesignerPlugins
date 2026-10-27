@@ -53,6 +53,7 @@ class PersistentPiAgent(PiAgent):
     _store: SessionStore = PrivateAttr()
     _requests: set[asyncio.Task] = PrivateAttr(default_factory=set)
     _processes: dict[str, int] = PrivateAttr(default_factory=dict)
+    _shutting_down: bool = PrivateAttr(default=False)
 
     def model_post_init(self, context) -> None:
         super().model_post_init(context)
@@ -78,13 +79,18 @@ class PersistentPiAgent(PiAgent):
             raise
         if version.returncode != 0 or stdout.decode().strip() != self.config.pi_version:
             raise ValueError(f"Install Pi {self.config.pi_version} before starting this adapter")
+        self._shutting_down = False
         try:
             yield
         finally:
             requests = list(self._requests)
-            for task in requests:
-                task.cancel()
+            self.cancel_requests()
             await asyncio.gather(*requests, return_exceptions=True)
+
+    def cancel_requests(self) -> None:
+        self._shutting_down = True
+        for task in list(self._requests):
+            task.cancel()
 
     def fingerprint(self) -> str:
         configuration = self.config.model_dump(
@@ -106,6 +112,8 @@ class PersistentPiAgent(PiAgent):
         self, request: Request, body: NeMoGymResponseCreateParamsNonStreaming = Body()
     ) -> NeMoGymResponse:
         """Accept the existing DD user/metadata.turn convention, returning committed retries unchanged."""
+        if self._shutting_down:
+            raise HTTPException(503, "Pi service is shutting down")
         if self._agent_session_id_from_request(request) is not None:
             raise HTTPException(409, "Use conversation IDs, not native single-activation agent sessions")
         metadata = body.metadata or {}
@@ -120,6 +128,8 @@ class PersistentPiAgent(PiAgent):
         self._requests.add(task)
         try:
             async with self.sem:
+                if self._shutting_down:
+                    raise HTTPException(503, "Pi service is shutting down")
                 with self._store.turn(body.user, number, validated.model_dump(mode="json"), self.fingerprint()) as turn:
                     if turn.receipt is not None:
                         return NeMoGymResponse.model_validate(turn.receipt["response"])
@@ -230,7 +240,27 @@ class PersistentPiAgent(PiAgent):
         raise HTTPException(422, "This answer-only adapter uses /v1/responses; verification belongs to the workflow")
 
     async def stats(self) -> dict:
-        return {"active_pi_processes": len(self._processes)}
+        return {"active_pi_processes": len(self._processes), "active_requests": len(self._requests)}
+
+
+class PersistentPiServer(uvicorn.Server):
+    """Cancel owned turns before Uvicorn begins draining requests."""
+
+    def __init__(self, agent: PersistentPiAgent):
+        self.agent = agent
+        super().__init__(
+            uvicorn.Config(
+                agent.setup_webserver(),
+                host=agent.config.host,
+                port=agent.config.port,
+                workers=1,
+                timeout_graceful_shutdown=0,
+            )
+        )
+
+    def handle_exit(self, sig, frame) -> None:
+        super().handle_exit(sig, frame)
+        self.agent.cancel_requests()
 
 
 def main() -> None:
@@ -246,7 +276,7 @@ def main() -> None:
             global_config_dict=OmegaConf.load(args.gym_config) if args.gym_config else OmegaConf.create({}),
         ),
     )
-    uvicorn.run(agent.setup_webserver(), host=config.host, port=config.port, workers=1)
+    PersistentPiServer(agent).run()
 
 
 if __name__ == "__main__":

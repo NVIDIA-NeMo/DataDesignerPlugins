@@ -4,9 +4,15 @@
 import asyncio
 import hashlib
 import json
+import os
 import shlex
 import shutil
+import signal
+import socket
+import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -52,6 +58,98 @@ def agent(config):
 
 def request(turn=1, text="VALUE = 1", user="run-row-1"):
     return {"user": user, "metadata": {"turn": str(turn)}, "input": text}
+
+
+@pytest.fixture
+def server(config, tmp_path):
+    with socket.socket() as port:
+        port.bind((config.host, 0))
+        config = config.model_copy(update={"port": port.getsockname()[1], "timeout": 60, "concurrency": 1})
+    path = tmp_path / "server.json"
+    path.write_text(config.model_dump_json())
+    log = tmp_path / "server.log"
+    with log.open("w") as stream:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "dd_gym_pi_sessions.app", "--config", str(path)],
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+        )
+    try:
+        with httpx.Client(base_url=f"http://{config.host}:{config.port}", timeout=30, trust_env=False) as client:
+            for _ in range(300):
+                assert process.poll() is None, log.read_text()
+                try:
+                    if client.get("/stats").status_code == 200:
+                        break
+                except httpx.HTTPError:
+                    pass
+                time.sleep(0.1)
+            else:
+                pytest.fail("Adapter readiness timed out")
+            yield process, client, config
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        for path in Path(config.session_root).glob("*/workspace/pi.pid"):
+            try:
+                os.killpg(int(path.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+@pytest.mark.parametrize("text", ["hang", "wait"])
+def test_sigterm_cancels_active_and_queued_turns(server, text):
+    process, client, config = server
+    root = Path(config.session_root)
+    completed_request = request(user="completed")
+    completed = client.post("/v1/responses", json=completed_request)
+    assert completed.status_code == 200
+    receipt = (root / "completed/turn-1.json").read_bytes()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        active = pool.submit(client.post, "/v1/responses", json=request(text=text, user="active"))
+        pid_file = root / "active/workspace/pi.pid"
+        for _ in range(300):
+            if pid_file.exists() and client.get("/stats").json()["active_pi_processes"] == 1:
+                break
+            time.sleep(0.01)
+        assert pid_file.exists()
+        pid = int(pid_file.read_text())
+        queued = pool.submit(client.post, "/v1/responses", json=request(user="queued"))
+        for _ in range(300):
+            if client.get("/stats").json()["active_requests"] == 2:
+                break
+            time.sleep(0.01)
+        assert client.get("/stats").json()["active_requests"] == 2
+        process.terminate()
+        if text == "wait":
+            log = root.parent / "server.log"
+            for _ in range(1000):
+                if "Shutting down" in log.read_text():
+                    break
+                time.sleep(0.001)
+            assert "Shutting down" in log.read_text()
+            (root / "active/workspace/release-turn").touch()
+        try:
+            process.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            pytest.fail("Adapter did not exit within the shutdown deadline")
+        for pending in (active, queued):
+            try:
+                assert pending.result(timeout=2).status_code >= 500
+            except httpx.HTTPError:
+                pass
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+    assert json.loads((root / "active/manifest.json").read_text())["status"] == "interrupted"
+    assert not (root / "active/turn-1.json").exists()
+    assert not (root / "active/workspace/solution.py").exists()
+    assert not (root / "queued").exists()
+    assert (root / "completed/turn-1.json").read_bytes() == receipt
+    with TestClient(agent(config).setup_webserver()) as replay:
+        assert replay.post("/v1/responses", json=completed_request).json() == completed.json()
 
 
 def test_upstream_mapping_and_restart(config):

@@ -8,7 +8,10 @@ import hashlib
 import json
 import logging
 import os
+from http.cookiejar import http2time
+from http.cookies import CookieError, SimpleCookie
 from threading import BoundedSemaphore
+from time import time
 from typing import Any
 from uuid import uuid4
 
@@ -358,6 +361,24 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
             token_env = self.config.bearer_token_env
         auth = {"Authorization": f"Bearer {self._tokens[token_env]}"} if token_env else {}
         response = await client.request(step.method, endpoint + step.route, json=body, headers=headers | auth)
+        # Deleted cookies are absent from HTTPX's response cookie jar.
+        for header in response.headers.get_list("set-cookie"):
+            changed = SimpleCookie()
+            try:
+                changed.load(header)
+            except CookieError:
+                continue
+            for name, cookie in changed.items():
+                if cookie["max-age"]:
+                    try:
+                        expired = int(cookie["max-age"]) <= 0
+                    except ValueError:
+                        continue
+                else:
+                    expires = http2time(cookie["expires"])
+                    expired = expires is not None and expires <= time()
+                if expired:
+                    cookies.pop(name, None)
         cookies.update({cookie.name: cookie.value for cookie in response.cookies.jar})
         try:
             value = response.json()

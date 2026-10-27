@@ -114,7 +114,7 @@ Omit the plugin's per-call `session` initialization/cleanup: this service owns t
 
 This extension currently uses local Pi with read/write/edit tools. Separate workspaces are not a sandbox isolation boundary. It does not enable upstream native sandbox sessions, `/run` verification, mid-tool checkpoint restoration, or distributed routing. Native agent-session initialization is rejected so a stale session cookie cannot silently select the upstream single-activation path. Sandbox adoption requires separate validation and is not implied by inheritance from `PiAgent`.
 
-After the workflow drains, verify `/stats` reports zero active Pi processes and stop the service with Ctrl+C. Keep the configured session root for retries or later turns; the operator removes it when the run's retention period ends. Shutdown cancels active requests and closes their Pi processes. Client timeouts alone do not guarantee that the remote turn has stopped.
+After the workflow drains, verify `/stats` reports zero active Pi processes and stop the service with Ctrl+C. Its `active_requests` count includes queued turns. Keep the configured session root for retries or later turns; the operator removes it when the run's retention period ends. Shutdown cancels active and queued requests and closes their Pi processes. Client timeouts alone do not guarantee that the remote turn has stopped.
 
 Slurm service placement, readiness, resource budgeting, and teardown require a separate runner integration. This example does not supply managed startup, sandbox provisioning, or Slurm acceptance evidence.
 
