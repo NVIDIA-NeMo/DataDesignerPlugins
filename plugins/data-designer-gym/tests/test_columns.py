@@ -424,18 +424,27 @@ def test_bearer_tokens_are_scoped_to_step_endpoint(service, resources, config, r
     [
         ("episode=; Max-Age=0; Path=/", None),
         ("episode=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/", None),
+        ("episode=; Max-Age=0; Domain=gym.example; Path=/", None),
+        ("episode=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Domain=.GYM.EXAMPLE; Path=/", None),
+        ('episode="é"; Max-Age=0; Domain=gym.example; Path=/', None),
         ("episode=replaced; Path=/", "replaced"),
+        ("episode=replaced; Domain=.GYM.EXAMPLE; Path=/", "replaced"),
         ("other=extra; Path=/", "unchanged"),
         ("episode=replaced; Domain=unrelated.example; Path=/", "unchanged"),
+        ("episode=; Max-Age=0; Domain=unrelated.example; Path=/", "unchanged"),
+        ("episode=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Domain=unrelated.example; Path=/", "unchanged"),
+        ('episode="é"; Max-Age=0; Domain=unrelated.example; Path=/', "unchanged"),
         ("episode=replaced; Max-Age=invalid; Path=/", "unchanged"),
         ("episode=replaced; Max-Age=60; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/", "replaced"),
     ],
 )
 def test_lifecycle_cookie_changes_and_row_isolation(service, resources, config, row, session, route, cookie, expected):
-    service.response_headers[route] = {"set-cookie": cookie}
+    service.response_headers[route] = httpx.Headers({"set-cookie": cookie}, encoding="utf-8")
     if route == "/session_transition":
-        session["initialize"].append({"endpoint": "http://transition:9001", "route": route})
-    config = GymResourceColumnConfig.model_validate(config.model_dump() | {"session": session})
+        session["initialize"].append({"endpoint": "http://transition.gym.example:9001", "route": route})
+    config = GymResourceColumnConfig.model_validate(
+        config.model_dump() | {"endpoint": "http://resource.gym.example:8000", "session": session}
+    )
     generator = GymResourceColumnGenerator(config, resources)
     for row_id in ("first", "second"):
         service.calls.clear()

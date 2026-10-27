@@ -378,7 +378,15 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
                     expires = http2time(cookie["expires"])
                     expired = expires is not None and expires <= time()
                 if expired:
-                    cookies.pop(name, None)
+                    # Let HTTPX validate the deletion's origin as a live cookie.
+                    cookie["max-age"] = "60"
+                    validation = httpx.Response(
+                        response.status_code,
+                        headers=[(b"set-cookie", cookie.OutputString().encode(response.headers.encoding))],
+                        request=response.request,
+                    )
+                    if name in validation.cookies:
+                        cookies.pop(name, None)
         cookies.update({cookie.name: cookie.value for cookie in response.cookies.jar})
         try:
             value = response.json()
