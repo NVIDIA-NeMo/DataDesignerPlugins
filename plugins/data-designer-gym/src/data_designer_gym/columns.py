@@ -8,8 +8,7 @@ import hashlib
 import json
 import logging
 import os
-from http.cookiejar import http2time
-from http.cookies import CookieError, SimpleCookie
+from http.cookiejar import parse_ns_headers
 from threading import BoundedSemaphore
 from time import time
 from typing import Any
@@ -362,31 +361,29 @@ class GymColumnGenerator(ColumnGeneratorCellByCell[GymColumnConfig]):
         auth = {"Authorization": f"Bearer {self._tokens[token_env]}"} if token_env else {}
         response = await client.request(step.method, endpoint + step.route, json=body, headers=headers | auth)
         # Deleted cookies are absent from HTTPX's response cookie jar.
-        for header in response.headers.get_list("set-cookie"):
-            changed = SimpleCookie()
-            try:
-                changed.load(header)
-            except CookieError:
-                continue
-            for name, cookie in changed.items():
-                if cookie["max-age"]:
-                    try:
-                        expired = int(cookie["max-age"]) <= 0
-                    except ValueError:
-                        continue
-                else:
-                    expires = http2time(cookie["expires"])
-                    expired = expires is not None and expires <= time()
-                if expired:
-                    # Let HTTPX validate the deletion's origin as a live cookie.
-                    cookie["max-age"] = "60"
-                    validation = httpx.Response(
-                        response.status_code,
-                        headers=[(b"set-cookie", cookie.OutputString().encode(response.headers.encoding))],
-                        request=response.request,
-                    )
-                    if name in validation.cookies:
-                        cookies.pop(name, None)
+        for parts in parse_ns_headers(response.headers.get_list("set-cookie")):
+            name, _ = parts[0]
+            attributes = dict(parts[1:])
+            if "max-age" in attributes:
+                try:
+                    expired = int(attributes["max-age"]) <= 0
+                except (TypeError, ValueError):
+                    continue
+            else:
+                expires = attributes.get("expires")
+                expired = expires is not None and expires <= time()
+            if expired:
+                # Let HTTPX validate the deletion's origin as a live cookie.
+                live = [parts[0], ("max-age", "60")]
+                live.extend((key, value) for key, value in parts[1:] if key not in {"max-age", "expires"})
+                header = "; ".join(key if value is None else f"{key}={value}" for key, value in live)
+                validation = httpx.Response(
+                    response.status_code,
+                    headers=[(b"set-cookie", header.encode(response.headers.encoding))],
+                    request=response.request,
+                )
+                if name in validation.cookies:
+                    cookies.pop(name, None)
         cookies.update({cookie.name: cookie.value for cookie in response.cookies.jar})
         try:
             value = response.json()
