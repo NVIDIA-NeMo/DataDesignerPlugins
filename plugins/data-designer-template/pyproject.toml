@@ -7,10 +7,7 @@ version = "0.1.0"
 description = "Template Data Designer plugin — text transform column generator"
 requires-python = ">=3.10"
 dependencies = [
-    "data-designer>=0.9.4",
-    "click>=8.3.3,<9",
-    "lxml>=6.1.1,<7",
-    "urllib3>=2.8.0,<3",
+    "data-designer>=0.9.7",
 ]
 license = "Apache-2.0"
 readme = "README.md"

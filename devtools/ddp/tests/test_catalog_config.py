@@ -86,7 +86,7 @@ def test_repository_catalog_config_uses_expected_nvidia_defaults() -> None:
     )
     assert config.package_assets_release_tag == "ddp-package-assets"
     assert config.release_ref_template == "{package}/v{version}"
-    assert config.default_data_designer_requirement == "data-designer>=0.9.4"
+    assert config.default_data_designer_requirement == "data-designer>=0.9.7"
     assert config.author_name == "NVIDIA Corporation"
 
 
