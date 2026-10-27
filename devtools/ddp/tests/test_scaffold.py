@@ -18,6 +18,7 @@ from data_designer.engine.testing.utils import assert_valid_plugin
 from data_designer.plugins.plugin import PluginType
 
 from ddp import catalog, scaffold
+from ddp.catalog_config import load_catalog_config
 
 EXPECTED_FILE_TREE = {
     "CODEOWNERS",
@@ -142,6 +143,21 @@ def test_scaffolded_plugins_import_and_validate(
         assert issubclass(plugin_module.plugin.impl_cls, SeedReader)
     if plugin_type == "processor":
         assert issubclass(plugin_module.plugin.impl_cls, Processor)
+
+
+@pytest.mark.parametrize("plugin_type", ["column-generator", "seed-reader", "processor"])
+def test_scaffold_uses_repository_security_floor(plugin_type: str) -> None:
+    """Keep generated plugins on the DataDesigner release containing the CA fix."""
+    repo_root = Path(__file__).resolve().parents[3]
+    pyproject = scaffold.generate_pyproject(
+        package_name="data-designer-sample-plugin",
+        slug="sample-plugin",
+        import_name="data_designer_sample_plugin",
+        catalog_config=load_catalog_config(repo_root),
+        spec=scaffold.scaffold_spec_for_type(plugin_type),
+    )
+
+    assert '"data-designer>=0.9.7"' in pyproject
 
 
 def test_scaffold_uses_external_catalog_config_in_generated_files(

@@ -2,6 +2,15 @@
 
 Experimental initial integration: `data-designer-gym` columns call operator-managed Gym services, preserve outputs and attempt evidence, and feed downstream processing. Task export and rollout ingestion remain available. The operator owns service/model installation, startup, readiness, placement, and shutdown.
 
+Once 0.1.0 is published, install into an active Python >=3.10 environment:
+
+```bash
+uv pip install \
+    --default-index https://pypi.org/simple/ \
+    --index https://nvidia-nemo.github.io/DataDesignerPlugins/simple/ \
+    data-designer-gym
+```
+
 For installation, tested runtime combinations, and a local resource-to-downstream-column run with cleanup and no model calls, follow the [package README](https://github.com/NVIDIA-NeMo/DataDesignerPlugins/blob/main/plugins/data-designer-gym/README.md#installation).
 
 ## Resource and harness columns

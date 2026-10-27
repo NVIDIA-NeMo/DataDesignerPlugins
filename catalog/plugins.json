@@ -45,8 +45,8 @@
           "specifier": ">=3.10"
         },
         "data_designer": {
-          "requirement": "data-designer>=0.9.1",
-          "specifier": ">=0.9.1",
+          "requirement": "data-designer>=0.9.7",
+          "specifier": ">=0.9.7",
           "marker": null
         }
       },
