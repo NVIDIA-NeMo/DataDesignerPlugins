@@ -106,7 +106,7 @@ class _GymCompletionClient:
         if cell["status"] != "completed":
             status = cell.get("http_status")
             kind = (
-                map_http_status_to_provider_error_kind(status)
+                map_http_status_to_provider_error_kind(status, cell.get("response_json") or "")
                 if status
                 else {
                     "timeout": ProviderErrorKind.TIMEOUT,
@@ -149,8 +149,8 @@ class GymNativeLLMColumnGenerator(
         facade = copy.copy(original)
         facade._client = copy.copy(original._client)
         facade._client._inner = _GymCompletionClient(self, original.model_provider_name)
-        kind = _RoutedJudge if self.config.native_column.column_type == "llm-judge" else _RoutedStructured
-        self.native = kind(self.config.native_column, self.resource_provider)
+        kind = _RoutedJudge if self.config.native.column_type == "llm-judge" else _RoutedStructured
+        self.native = kind(self.config.native, self.resource_provider)
         self.native.gym_model = facade
 
     def get_scheduling_metadata(self):

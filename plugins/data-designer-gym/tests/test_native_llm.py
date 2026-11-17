@@ -26,6 +26,12 @@ class Backend(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.server.calls.append(body)
+        if self.server.http_status != 200:
+            self.send_response(self.server.http_status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":{"message":"Invalid API key"}}')
+            return
         content = self.server.answer
         if self.server.malformed_first and len(self.server.calls) == 1:
             content = "not JSON"
@@ -82,6 +88,7 @@ class GymProxy(BaseHTTPRequestHandler):
 def server(handler):
     instance = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     instance.calls, instance.routes = [], []
+    instance.http_status = 200
     instance.answer = ""
     instance.malformed_first = False
     thread = Thread(target=instance.serve_forever, daemon=True)
@@ -270,3 +277,23 @@ def test_downstream_judge_early_stop_preserves_failure_and_null(tmp_path):
         assert result[0]["assessment"]["correctness"]["score"] == "fail"
         assert result[0]["followup"] is None
         assert len(backend.calls) == 1
+
+
+def test_authentication_failure_keeps_native_no_retry_and_failure(tmp_path):
+    from data_designer.interface.errors import DataDesignerGenerationError
+
+    rows = [{"seed_id": "auth-1", "question": "Original question", "evaluate": True}]
+    with server(Backend) as (backend, url), server(GymProxy) as (gym, gym_url):
+        backend.http_status = 401
+        gym.backend = url
+        with pytest.raises(DataDesignerGenerationError):
+            generate(tmp_path / "auth-direct", url, native_column("judge"), rows)
+        assert len(backend.calls) == 1
+        backend.calls.clear()
+        with pytest.raises(DataDesignerGenerationError):
+            generate(tmp_path / "auth-gym", url, wrapped(native_column("judge"), gym_url), rows)
+        assert len(backend.calls) == 1
+        artifacts = list((tmp_path / "auth-gym/artifacts/fixture/gym").glob("*/*.json"))
+        assert len(artifacts) == 1
+        attempt = json.loads(artifacts[0].read_text())
+        assert attempt["status"] == "failed" and attempt["http_status"] == 401

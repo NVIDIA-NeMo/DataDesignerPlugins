@@ -3,11 +3,10 @@
 
 """Route native DD structured/judge columns through a Gym model service."""
 
-from typing import Annotated, Literal
+from typing import Any, Literal
 
 from data_designer.config.base import SingleColumnConfig
-from data_designer.config.column_configs import LLMJudgeColumnConfig, LLMStructuredColumnConfig
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from data_designer_gym.config import GymResourceColumnConfig
 
@@ -20,15 +19,32 @@ class GymNativeLLMColumnConfig(SingleColumnConfig):
     """
 
     column_type: Literal["gym-native-llm"] = "gym-native-llm"
-    native_column: Annotated[LLMJudgeColumnConfig | LLMStructuredColumnConfig, Field(discriminator="column_type")]
+    native_column: dict[str, Any]
     model_alias: str
     resource: GymResourceColumnConfig
     metadata_extra_body_keys: list[str] = Field(default_factory=list)
 
+    @field_validator("native_column", mode="before")
+    @classmethod
+    def serialize_native_column(cls, value):
+        """Accept native configs without importing DD column enums during discovery."""
+        return value.model_dump(mode="json") if isinstance(value, BaseModel) else value
+
+    @property
+    def native(self):
+        """Validate the original config after DD plugin discovery has completed."""
+        from data_designer.config.column_configs import LLMJudgeColumnConfig, LLMStructuredColumnConfig
+
+        kind = self.native_column.get("column_type")
+        if kind not in ("llm-judge", "llm-structured"):
+            raise ValueError("native column must be llm-judge or llm-structured")
+        config = LLMJudgeColumnConfig if kind == "llm-judge" else LLMStructuredColumnConfig
+        return config.model_validate(self.native_column)
+
     @model_validator(mode="after")
     def validate_native_contract(self):
         """Reject ambiguous or unsupported native/service combinations."""
-        native = self.native_column
+        native = self.native
         if self.name != native.name or self.model_alias != native.model_alias:
             raise ValueError("native name and model alias must match the outer column")
         if self.skip != native.skip or self.propagate_skip != native.propagate_skip or self.drop != native.drop:
@@ -44,9 +60,9 @@ class GymNativeLLMColumnConfig(SingleColumnConfig):
     @property
     def required_columns(self):
         """Keep every native template dependency and the source row identity."""
-        return list(dict.fromkeys([*self.native_column.required_columns, self.resource.row_id_column]))
+        return list(dict.fromkeys([*self.native.required_columns, self.resource.row_id_column]))
 
     @property
     def side_effect_columns(self):
         """Keep native trace/reasoning fields and all model-call evidence."""
-        return [*self.native_column.side_effect_columns, self.name + "__gym_calls"]
+        return [*self.native.side_effect_columns, self.name + "__gym_calls"]
