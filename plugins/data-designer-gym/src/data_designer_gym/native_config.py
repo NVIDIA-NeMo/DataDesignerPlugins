@@ -39,7 +39,11 @@ class GymNativeLLMColumnConfig(SingleColumnConfig):
         if kind not in ("llm-judge", "llm-structured"):
             raise ValueError("native column must be llm-judge or llm-structured")
         config = LLMJudgeColumnConfig if kind == "llm-judge" else LLMStructuredColumnConfig
-        return config.model_validate(self.native_column)
+        values = dict(self.native_column)
+        if "allow_resize" in values:
+            if values.pop("allow_resize") is not False:
+                raise ValueError("native Gym columns cannot preserve legacy resizing behavior")
+        return config.model_validate(values)
 
     @model_validator(mode="after")
     def validate_native_contract(self):

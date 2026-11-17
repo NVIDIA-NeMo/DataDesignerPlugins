@@ -297,3 +297,16 @@ def test_authentication_failure_keeps_native_no_retry_and_failure(tmp_path):
         assert len(artifacts) == 1
         attempt = json.loads(artifacts[0].read_text())
         assert attempt["status"] == "failed" and attempt["http_status"] == 401
+
+
+def test_legacy_false_resize_flag_is_retained_but_true_fails_closed():
+    column = native_column("judge")
+    config = wrapped(column, "http://localhost:1234")
+    original = {**column.model_dump(mode="json"), "allow_resize": False}
+    loaded = GymNativeLLMColumnConfig.model_validate({**config.model_dump(), "native_column": original})
+    assert loaded.native_column == original
+    assert loaded.native.name == column.name
+    with pytest.raises(ValidationError, match="resizing behavior"):
+        GymNativeLLMColumnConfig.model_validate(
+            {**config.model_dump(), "native_column": {**original, "allow_resize": True}}
+        )
