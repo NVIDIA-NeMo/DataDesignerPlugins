@@ -343,3 +343,62 @@ These are technical milestones for discussion, not approved delivery commitments
 2. **Shared model admission/accounting:** prove DD and Gym calls to the same model share an admission budget and usage ledger; test rate limits from either caller, cancellation, and separate caller totals.
 3. **Managed worker lifecycle and Slurm planning:** plan service and peak sandbox resources before submission; start each compatible graph once per worker attempt, gate generation on readiness, and verify cleanup on success, startup failure, service crash, cancellation, and retry.
 4. **Sandbox persistence workflow:** pin one sandbox provider and coding harness; create a file in one DD stage, restart the agent service, resume the same conversation/workspace in a follow-up stage, verify the file change and cross-row isolation, and remove owned resources. Define interrupted-turn recovery separately from completed-turn persistence.
+
+## Native DD judges and structured columns through Gym
+
+`gym-native-llm` wraps an existing `LLMJudgeColumnConfig` or
+`LLMStructuredColumnConfig`. DD still renders the original rubric/JSON schema,
+parses the output, runs configured conversation corrections/restarts, and applies
+its original skip policy. Every generation attempt uses the plugin's existing Gym
+resource transport and retains a separate native attempt artifact. This routes
+model inference through Gym; it does not introduce a Gym verifier/reward policy.
+
+```python
+from data_designer_gym.config import GymResourceColumnConfig
+from data_designer_gym.native_config import GymNativeLLMColumnConfig
+
+# original_judge is the existing, unchanged LLMJudgeColumnConfig.
+builder.add_column(GymNativeLLMColumnConfig(
+    name=original_judge.name,
+    model_alias=original_judge.model_alias,
+    native_column=original_judge,
+    skip=original_judge.skip,
+    propagate_skip=original_judge.propagate_skip,
+    drop=original_judge.drop,
+    resource=GymResourceColumnConfig(
+        name=original_judge.name + "_transport",
+        endpoint="http://127.0.0.1:8767",
+        route="/v1/chat/completions",
+        request_column="_gym_native_request",
+        row_id_column="seed_id",
+        timeout=3600,
+        max_parallel_requests=16,
+    ),
+))
+```
+
+The operator must bind that Gym model service to the original provider/model,
+without sampling or thinking overrides. Source provider credentials stay in the
+Gym service; this wrapper does not send them in request JSON. An opaque stable
+`/ng-rollout/` prefix identifies each dataset/column/source-row conversation.
+`<column>__gym_calls` is a JSON string indexing every native plugin attempt,
+including parse-restart attempts. Source scores, JSON, trace and reasoning fields
+keep their original names and formats. Errors never become successful judgments.
+
+This new feature is qualified on DD **1.0.0rc2** (pandas 2.3.3, PyArrow
+24.0.0) and DD **1.0.0** under Python 3.14. It uses two isolated shallow-copy transport seams in the pinned DD
+facade/executor, failing before inference for an unsupported layout; it does not
+patch DD or mutate the shared registry/client. Existing plugin features retain
+their previous compatibility. Text-only, OpenAI-compatible native judge/structured
+columns are supported; tools, media, resource sessions, response projections and
+per-call upstream header overrides are rejected. DD's optional `X-Title`
+attribution header is observational and is not forwarded upstream.
+
+For Gym versions that accept vLLM extensions through `metadata.extra_body`, set
+`metadata_extra_body_keys` explicitly (for example `top_k`, `min_p`,
+`repetition_penalty`). Values are preserved and metadata conflicts are rejected.
+Provider retry/admission and native parse/restart policies remain DD-owned. To
+avoid compounded transport retries, configure the proxy Gym model's
+`max_http_attempts=1`. Full retry/error equivalence also depends on the Gym service
+preserving the upstream error category; the synthetic proxy tests do not qualify
+all upstream Gym/provider error envelopes.

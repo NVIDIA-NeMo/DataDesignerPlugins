@@ -35,7 +35,7 @@ Browse available Data Designer plugins by what they add to your data generation 
     <span class="plugin-doc-card__description">Execute Gym resources and harnesses, export tasks, and ingest rollouts with Data Designer</span>
     <span class="plugin-doc-card__section">
       <span class="plugin-doc-card__label">Entry points</span>
-      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">gym</span><span class="plugin-doc-chip">gym-harness</span><span class="plugin-doc-chip">gym-resource</span></span>
+      <span class="plugin-doc-card__chips"><span class="plugin-doc-chip">gym</span><span class="plugin-doc-chip">gym-harness</span><span class="plugin-doc-chip">gym-native-llm</span><span class="plugin-doc-chip">gym-resource</span></span>
     </span>
   </a>
   <a class="plugin-doc-card" href="data-designer-nemotron-indic-translation/" aria-label="Open data-designer-nemotron-indic-translation documentation">
