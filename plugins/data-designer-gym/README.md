@@ -15,17 +15,19 @@ uv pip install \
     data-designer-gym
 ```
 
-From a source checkout containing this plugin, start in `plugins/data-designer-gym`:
+For Data Designer 1.0.0, use Python 3.11 or newer. From a source checkout, start in `plugins/data-designer-gym`:
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python 'data-designer==0.9.7' .
+uv pip install --python .venv/bin/python 'data-designer==1.0.0' .
 ```
 
 The package declares Python >=3.10 and DD >=0.9.7. The checked combinations below are narrower than those dependency ranges; other combinations require validation.
 
 | Check | DD runtime | Gym runtime |
 | --- | --- | --- |
+| Plugin suite | DD 1.0.0, Python 3.11.9 and 3.12.12 | Simulated HTTP responses |
+| Installed wheel and local resource example | DD 1.0.0, Python 3.12.12 | Gym `58b3240e04f1fa2061328a5d9a8ec7581262f8eb`, Python 3.14.10 |
 | Plugin suite | DD 0.9.7, Python 3.10.21 and 3.12.12 | Simulated HTTP responses |
 | Installed wheel and local resource example | DD 0.9.7, Python 3.10.21 | Gym `58b3240e04f1fa2061328a5d9a8ec7581262f8eb`, Python 3.14.4 |
 | Optional Pi restart smoke | DD 0.9.7, Python 3.10.21 | Same Gym revision, Python 3.14.4, Pi 1.2.0, Node 25.9.0 |
@@ -37,7 +39,8 @@ This resource-only path uses a synthetic SQLite database and makes no model call
 ```bash
 uv venv --python 3.14 .venv-gym
 uv pip install --python .venv-gym/bin/python \
-    'nemo-gym @ https://github.com/NVIDIA-NeMo/Gym/archive/58b3240e04f1fa2061328a5d9a8ec7581262f8eb.tar.gz'
+    'nemo-gym @ https://github.com/NVIDIA-NeMo/Gym/archive/58b3240e04f1fa2061328a5d9a8ec7581262f8eb.tar.gz' \
+    'requests>=2.32,<3'
 ```
 
 In terminal 1, start the demo services. The unused model URL satisfies the launcher configuration; this path calls only the resource service.
