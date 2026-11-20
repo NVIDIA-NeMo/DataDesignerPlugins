@@ -27,7 +27,6 @@ judge:
     reasoning_effort: high
 concurrency: 1
 batch_size: 1
-missing_response_attempts: 1
 seed: 42
 # Omit instructions and instructions_per_context to use the built-in sampler:
 # one text, one figure, and one table task per selected context.

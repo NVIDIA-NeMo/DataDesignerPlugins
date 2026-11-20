@@ -9,19 +9,18 @@ import pytest
 from data_designer.engine.column_generators.utils.prompt_renderer import PromptType, RecordBasedPromptRenderer
 from data_designer.engine.processing.ginja import environment
 from test_multimodal_sdg import fixture_config
+from workflow_test_utils import install_inference
 
 from data_designer_retrieval_sdg.multimodal.bounds import RequestTooLarge, check_request, fit_contexts, tokenizer
-from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request
-from data_designer_retrieval_sdg.multimodal.models import ContextSummary, GenerationContext, QuerySlot
+from data_designer_retrieval_sdg.multimodal.inference import Request
+from data_designer_retrieval_sdg.multimodal.models import ContextSummary, GenerationContext
 from data_designer_retrieval_sdg.multimodal.planning import bounded_contexts
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
 from data_designer_retrieval_sdg.multimodal.storage import digest
 from data_designer_retrieval_sdg.multimodal.structured import RetrievalStructuredResponseRecipe
 from data_designer_retrieval_sdg.multimodal.summary_stages import summary_requests
 from data_designer_retrieval_sdg.multimodal.workflow import (
-    bounded_query_batches,
     generation_requests,
-    judgment_requests,
 )
 
 
@@ -96,10 +95,8 @@ def test_model_budget_counts_schema_utf8_images_overhead_and_output(tmp_path):
 def test_explicit_model_budget_requires_consistent_metadata(tmp_path, field):
     config = fixture_config(tmp_path)
     config.generator = config.generator.model_copy(update={field: None})
-    inference = DataDesignerInference(tmp_path / "unused", config)
     with pytest.raises(ValueError, match="Configure"):
-        inference.generate([Request("short", ContextSummary, "generator", (tmp_path / "page.png",))])
-    assert not inference.root.exists()
+        check_request(Request("short", ContextSummary, "generator", (tmp_path / "page.png",)), config)
 
 
 def test_judge_model_budget_is_independent(tmp_path):
@@ -110,61 +107,17 @@ def test_judge_model_budget_is_independent(tmp_path):
         check_request(Request("x " * 1000, ContextSummary, "judge"), config)
 
 
-class QueryInference:
-    """Return small queries while preserving every attempted concrete request."""
-
-    def __init__(self):
-        self.requests = []
-
-    def generate(self, requests):
-        self.requests.extend(requests)
-        return [
-            request.schema(
-                queries=[
-                    QuerySlot(slot=i, query="Which specification applies?", evidence_modality="text")
-                    for i in range(request.schema.model_fields["queries"].metadata[0].min_length)
-                ]
-            )
-            for request in requests
-        ]
-
-
-def test_repeated_judge_evidence_replans_queries_on_children(tmp_path):
-    config = fixture_config(tmp_path)
-    sources = {str(i): RetrievalSource(unit_id=str(i), document_id="doc", text="x" * 140000) for i in range(2)}
-    context = GenerationContext(context_id="parent", unit_ids=list(sources))
-    row = {"context": context.model_dump(), "slots": {"queries": []}}
-    outcomes = [row]
-    check_request(generation_requests(context, sources, config)[0], config)
-    slot = QuerySlot(slot=0, query="Which specification applies?", evidence_modality="text")
-    with pytest.raises(RequestTooLarge):
-        check_request(judgment_requests(context, slot, sources)[2], config)
-    inference = QueryInference()
-    selected, batches = bounded_query_batches([row], outcomes, sources, config, inference)
-    assert row["selection_reason"] == "request_size_replanned"
-    assert row["slots"]["queries"]  # Superseded response evidence is retained.
-    assert [key for child in selected for key in child["context"]["unit_ids"]] == list(sources)
-    assert len(selected) == len(batches) == 2
-    assert len(inference.requests) == 3  # Original, then two regenerated child queries.
-    for child, batch in zip(selected, batches, strict=True):
-        context = GenerationContext.model_validate(child["context"])
-        for slot in batch.queries:
-            for request in judgment_requests(context, slot, sources):
-                check_request(request, config)
-
-
-def test_tokenizer_truncation_cannot_hide_overflow_and_drift_changes_cache(tmp_path):
+def test_tokenizer_truncation_cannot_hide_overflow(tmp_path):
     from tokenizers import Tokenizer
 
     config = fixture_config(tmp_path)
     model = config.generator
     request = Request("x " * 1000, ContextSummary, "generator")
-    inference = DataDesignerInference(tmp_path / "unused", config)
-    original_key = inference.request_key(request)
+    original_key = digest(model.tokenizer_file)
     encoder = Tokenizer.from_file(str(model.tokenizer_file))
     encoder.enable_truncation(max_length=1)
     encoder.save(str(model.tokenizer_file))
-    assert inference.request_key(request) != original_key
+    assert digest(model.tokenizer_file) != original_key
     config.generator = model.model_copy(update={"context_window_tokens": 9000})
     with pytest.raises(RequestTooLarge):
         check_request(request, config)
@@ -186,18 +139,18 @@ def test_combination_rendering_splits_complete_summary_memberships(tmp_path):
 
 def test_combined_summary_workflow_submits_the_checked_request(tmp_path, monkeypatch):
     from test_multimodal_sections import SectionInference
+    from workflow_test_utils import generate_candidates
 
     from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
-    from data_designer_retrieval_sdg.multimodal.summary_stages import plan_summaries
 
     config = fixture_config(tmp_path)
     sources = load_retrieval_sources(config.sources_file)
     contexts = [GenerationContext(context_id=str(i), unit_ids=[sources[i].unit_id]) for i in range(2)]
-    monkeypatch.setattr(
-        "data_designer_retrieval_sdg.multimodal.summary_stages.semantic_combinations", lambda *args: [[0, 1]]
-    )
+    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.stages.semantic_combinations", lambda *args: [[0, 1]])
     inference = SectionInference()
-    rows = plan_summaries(sources, contexts, config, inference)
+    _, rows = generate_candidates(
+        config.model_copy(update={"context_strategy": "sections"}), sources, contexts, inference
+    )
     assert len(rows) == 3
     assert rows[-1]["combined"]
     assert rows[-1]["context"]["unit_ids"] == [sources[0].unit_id, sources[1].unit_id]
@@ -222,25 +175,12 @@ def without_model_budgets(config):
     return config.model_copy(update={"generator": model, "judge": model})
 
 
-def test_default_live_inference_needs_no_local_model_metadata(tmp_path):
-    from test_multimodal_sdg import MissingInference
-
-    config = without_model_budgets(fixture_config(tmp_path))
-    inference = MissingInference(tmp_path / "inference", config)
-    with pytest.raises(RuntimeError, match="Missing structured"):
-        inference.generate([Request("short", ContextSummary, "generator", (tmp_path / "page.png",))])
-    assert inference.calls == config.missing_response_attempts  # Reached the transport, with normal retry semantics.
-    with pytest.raises(RequestTooLarge, match="DD limit"):
-        inference.generate([Request("x" * (environment.MAX_RENDERED_LEN + 1), ContextSummary, "generator")])
-    assert inference.calls == config.missing_response_attempts  # Oversized prompt never reaches transport.
-
-
 def test_default_workflow_runs_without_tokenizer_or_allowances(tmp_path, monkeypatch):
     from test_multimodal_sdg import ScriptedInference
 
     from data_designer_retrieval_sdg.multimodal.workflow import run_multimodal_sdg
 
     config = without_model_budgets(fixture_config(tmp_path))
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    install_inference(monkeypatch, ScriptedInference())
     result = run_multimodal_sdg(config)
     assert result.is_file()

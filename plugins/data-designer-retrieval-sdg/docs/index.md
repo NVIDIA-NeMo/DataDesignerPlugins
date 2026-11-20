@@ -45,9 +45,11 @@ use independent evaluation data to measure retrieval quality.
 ## Data Designer Integration
 
 Text QA builds one four-column Data Designer configuration and uses Data
-Designer's generation and resume support. Multimodal coordinates planning,
-model-call batches, evidence checks, and bundle export in Python. Each inference
-batch uses a registered Data Designer structured-response column.
+Designer's generation and resume support. Multimodal declares one Data Designer
+`CompositeWorkflow` with named model columns, explicit dependencies, and persisted
+stage boundaries. Python code coordinates planning state, evidence checks,
+and bundle export. Refer to the [execution overview](multimodal-concepts.md#sources-contexts-and-queries)
+and [resume procedure](multimodal.md#resume-an-interrupted-run).
 
 The package registers three plugins automatically when installed:
 

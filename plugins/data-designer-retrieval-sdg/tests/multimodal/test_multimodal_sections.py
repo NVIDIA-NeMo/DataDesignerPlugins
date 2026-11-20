@@ -8,6 +8,7 @@ import random
 
 import pytest
 from test_multimodal_sdg import ScriptedInference, fixture_config, scripted_response
+from workflow_test_utils import generate_candidates, install_inference
 
 from data_designer_retrieval_sdg.multimodal.combinations import (
     cluster_combinations,
@@ -28,10 +29,8 @@ from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_so
 from data_designer_retrieval_sdg.multimodal.summary_stages import (
     bounded_enriched_contexts,
     enriched_text,
-    section_contexts,
 )
 from data_designer_retrieval_sdg.multimodal.workflow import (
-    generate_candidates,
     generation_context_rows,
     load_contexts,
     normalize_localization,
@@ -59,16 +58,19 @@ def test_sections_export_keeps_original_generic_sources(tmp_path, monkeypatch):
     config = fixture_config(tmp_path).model_copy(update={"contexts_file": None, "context_strategy": "sections"})
     before = config.sources_file.read_bytes()
     inference = SectionInference()
-    monkeypatch.setattr(
-        "data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", lambda *args: inference
-    )
+    install_inference(monkeypatch, inference)
     handoff = run_multimodal_sdg(config)
     assert config.sources_file.read_bytes() == before
     assert handoff.is_file()
     outcomes = json.loads((config.output_dir / "context_outcomes.json").read_text())
     assert [len(row["context"]["unit_ids"]) for row in outcomes] == [5, 5, 2, 1]
     assert all(set(row["summary_judgment"]) == set(SummaryJudgment.model_fields) for row in outcomes)
-    assert all("page_number" not in request.text for request in inference.requests)
+    for request in inference.requests:
+        if request.judge_stage == "localization":
+            payload = json.loads(request.text.splitlines()[-1])
+            assert all(source["page_number"] is None for source in payload["sources"])
+        else:
+            assert "page_number" not in request.text
     # Generated enrichment is planning-only; query and localization evidence remain original.
     grounded = [request for request in inference.requests if issubclass(request.schema, (QueryBatch, Localization))]
     assert grounded and all("Generated chart description" not in request.text for request in grounded)
@@ -81,7 +83,7 @@ def test_explicit_contexts_are_preserved_and_semantic_pairs_bounded(tmp_path, mo
     config = fixture_config(tmp_path).model_copy(update={"context_strategy": "sections"})
     sources = load_retrieval_sources(config.sources_file)
     monkeypatch.setattr(
-        "data_designer_retrieval_sdg.multimodal.summary_stages.semantic_combinations", lambda rows, config: [(0, 1)]
+        "data_designer_retrieval_sdg.multimodal.stages.semantic_combinations", lambda rows, config: [(0, 1)]
     )
     candidates, outcomes = generate_candidates(config, sources, load_contexts(config, sources), SectionInference())
     assert outcomes[0]["context"]["context_id"] == "context-0"
@@ -95,7 +97,9 @@ def test_enrichment_is_included_in_character_bounds(tmp_path):
     config = fixture_config(tmp_path).model_copy(update={"max_context_chars": 900})
     sources = load_retrieval_sources(config.sources_file)
     visual = {s.unit_id: {"description": "x" * 300, "has_visual_content": True} for s in sources}
-    contexts = section_contexts(sources, config)
+    from data_designer_retrieval_sdg.multimodal.sections import build_sections
+
+    contexts, _ = build_sections(sources, config, {})
     chunks = bounded_enriched_contexts(contexts, sources, visual, config)
     assert len(chunks) > len(contexts)
     by_id = {s.unit_id: s for s in sources}
@@ -158,7 +162,9 @@ def test_weighted_sampler_is_local_and_uses_fixed_metadata_vocabulary():
     assert any(first != sample_instructions(42, str(i)) for i in range(10))
 
 
-def test_localization_filters_unknown_and_keeps_highest_grade():
+def test_localization_filters_unknown_and_keeps_highest_grade(tmp_path):
+    sources = load_retrieval_sources(fixture_config(tmp_path).sources_file)
+    source = sources[0].model_copy(update={"unit_id": "arbitrary/α"})
     context = GenerationContext(context_id="opaque", unit_ids=["arbitrary/α"])
     support = {
         "unit_id": "arbitrary/α",
@@ -169,7 +175,9 @@ def test_localization_filters_unknown_and_keeps_highest_grade():
         "contribution": "Relevant",
     }
     result = normalize_localization(
-        Localization(supports=[support, {**support, "grade": 2}, {**support, "unit_id": "unknown"}]), context
+        Localization(supports=[support, {**support, "grade": 2}, {**support, "unit_id": "unknown"}]),
+        context,
+        {source.unit_id: source},
     )
     assert len(result.supports) == 1 and result.supports[0].grade == 2
 

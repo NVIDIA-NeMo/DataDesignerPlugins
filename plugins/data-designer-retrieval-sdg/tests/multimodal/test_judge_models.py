@@ -14,17 +14,17 @@ import yaml
 from data_designer.engine.models.facade import ModelFacade
 from data_designer.engine.testing import make_stub_completion_response
 from pydantic import ValidationError
-from test_failed_records import ControlledTransport, skip_config
 from test_multimodal_sdg import ScriptedInference, fixture_config
+from test_multimodal_sections import SectionInference
+from workflow_test_utils import ScriptedTransport, generate_candidates, install_inference
 
 from data_designer_retrieval_sdg.multimodal import JudgeModels, MultimodalSDGConfig, run_multimodal_sdg
 from data_designer_retrieval_sdg.multimodal.bounds import RequestTooLarge, check_request, validate_deployment
-from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request
-from data_designer_retrieval_sdg.multimodal.models import ContextSummary, GenerationContext, TOCConfirmation
+from data_designer_retrieval_sdg.multimodal.inference import Request
+from data_designer_retrieval_sdg.multimodal.models import ContextSummary, TOCConfirmation
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.storage import digest
-from data_designer_retrieval_sdg.multimodal.summary_stages import plan_summaries
-from data_designer_retrieval_sdg.multimodal.workflow import generate_candidates, load_contexts
+from data_designer_retrieval_sdg.multimodal.workflow import load_contexts
 
 
 class RecordingCompletion:
@@ -32,24 +32,26 @@ class RecordingCompletion:
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
+        self.transport = ScriptedTransport(SectionInference())
 
-    async def complete(self, facade: ModelFacade, *args, **kwargs):
+    async def complete(self, facade: ModelFacade, messages, **kwargs):
         self.calls.append(
             {
+                "alias": facade.model_alias,
                 "model": facade.model_name,
                 "provider": facade.model_provider,
                 "parameters": facade.consolidate_kwargs(),
                 "timeout": facade.request_timeout,
             }
         )
-        return make_stub_completion_response(content=json.dumps({"summary": facade.model_name, "visual_evidence": ""}))
+        return await self.transport.complete(facade, messages, **kwargs)
 
 
 class TOCRecordingCompletion:
     """Return native workflow responses and record the model confirming TOCs."""
 
     def __init__(self) -> None:
-        self.transport = ControlledTransport(())
+        self.transport = ScriptedTransport(SectionInference())
         self.toc_models: list[str] = []
 
     async def complete(self, facade: ModelFacade, messages, **kwargs):
@@ -65,12 +67,14 @@ class TOCRecordingCompletion:
             self.toc_models.append(facade.model_name)
             response = TOCConfirmation(has_table_of_contents=True, explanation="Three contents entries")
             return make_stub_completion_response(content=response.model_dump_json())
-        return await self.transport.complete(messages, **kwargs)
+        return await self.transport.complete(facade, messages, **kwargs)
 
 
 def toc_judge_config(tmp_path: Path) -> MultimodalSDGConfig:
     """Use all five overrides with a separate text-only fallback and a real TOC candidate."""
-    config = skip_config(tmp_path).model_copy(update={"contexts_file": None, "section_size": 1})
+    config = fixture_config(tmp_path).model_copy(
+        update={"contexts_file": None, "context_strategy": "sections", "section_size": 1}
+    )
     sources = [json.loads(line) for line in config.sources_file.read_text().splitlines()]
     sources[0]["text"] = "Table of contents\nAlpha ... 1\nBeta ... 2\nGamma ... 3"
     config.sources_file.write_text("".join(json.dumps(source) + "\n" for source in sources))
@@ -181,68 +185,70 @@ def test_every_workflow_judge_request_names_its_stage(tmp_path: Path) -> None:
 
 
 def test_section_planning_summary_uses_summary_judge(tmp_path: Path) -> None:
-    from test_multimodal_sections import SectionInference
-
     config = fixture_config(tmp_path)
     sources = load_retrieval_sources(config.sources_file)
     inference = SectionInference()
-    plan_summaries(sources, [GenerationContext(context_id="page", unit_ids=[sources[0].unit_id])], config, inference)
+    config.context_strategy = "sections"
+    generate_candidates(config, sources, load_contexts(config, sources), inference)
     judges = [request for request in inference.requests if request.role == "judge"]
-    assert judges and all(request.judge_stage == "summary" for request in judges)
+    assert any(request.judge_stage == "summary" for request in judges)
+    assert all(request.judge_stage == "summary" for request in judges if request.schema.__name__ == "SummaryJudgment")
 
 
-def test_native_batches_route_full_settings_and_selectively_reuse_cache(tmp_path: Path, monkeypatch) -> None:
+def test_native_columns_route_full_settings_and_resume_without_calls(tmp_path: Path, monkeypatch) -> None:
     config = fixture_config(tmp_path)
     monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
     monkeypatch.setenv("TEST_JUDGE_KEY", "judge-placeholder")
-    override = config.judge.model_copy(
-        update={
-            "model": "operator/small-text-judge",
-            "endpoint": "https://judge.example.invalid/v1",
-            "credential_env": "TEST_JUDGE_KEY",
-            "temperature": 0.0,
-            "max_tokens": 512,
-            "timeout": 123,
-            "extra_body": {"response_format": {"type": "json_object"}},
+    config.judges = JudgeModels(
+        **{
+            stage: config.judge.model_copy(
+                update={
+                    "model": "operator/" + stage,
+                    "endpoint": "https://" + stage.replace("_", "-") + ".example.invalid/v1",
+                    "credential_env": "TEST_JUDGE_KEY",
+                    "temperature": 0.0,
+                    "max_tokens": 512,
+                    "timeout": 123,
+                    "extra_body": {"response_format": {"type": "json_object"}},
+                }
+            )
+            for stage in JudgeModels.model_fields
         }
     )
-    config.judges = JudgeModels(query_metadata=override)
-    # Matching schemas and roles must still use separate native model/provider batches.
-    requests = [
-        Request("Summarize", ContextSummary, "judge", judge_stage=stage) for stage in ("summary", "query_metadata")
-    ]
     recorder = RecordingCompletion()
-    inference = DataDesignerInference(tmp_path / "inference", config)
     with patch.object(ModelFacade, "acompletion", autospec=True, side_effect=recorder.complete):
-        responses = inference.generate([*requests, requests[1]])
-        assert [r.summary for r in responses] == [config.judge.model, override.model, override.model]
-        assert len(recorder.calls) == 2
-        assert inference.generate(requests) == responses[:2]
-        assert len(recorder.calls) == 2
-        config.judges.query_metadata = override.model_copy(update={"model": "operator/replacement"})
-        assert [r.summary for r in inference.generate(requests)] == [config.judge.model, "operator/replacement"]
-        assert len(recorder.calls) == 3  # The unaffected summary judgment remains cached.
-    routed = recorder.calls[1]
-    assert routed["provider"].endpoint == override.endpoint
-    assert routed["provider"].api_key == override.credential_env
-    assert routed["parameters"]["temperature"] == override.temperature
-    assert routed["parameters"]["max_tokens"] == override.max_tokens
-    assert routed["parameters"]["extra_body"] == override.extra_body
-    assert routed["timeout"] == override.timeout
+        handoff = run_multimodal_sdg(config)
+        calls = len(recorder.calls)
+        assert calls > 0
+        assert run_multimodal_sdg(config.model_copy(update={"resume": True})) == handoff
+        assert len(recorder.calls) == calls
+        config.judges.query_metadata = config.judges.query_metadata.model_copy(update={"model": "replacement"})
+        with pytest.raises(ValueError, match="Artifact changed"):
+            run_multimodal_sdg(config.model_copy(update={"resume": True}))
+        assert len(recorder.calls) == calls
+    config.judges.query_metadata = config.judges.query_metadata.model_copy(update={"model": "operator/query_metadata"})
+    assert {call["alias"] for call in recorder.calls} == {"generator", *JudgeModels.model_fields}
+    for routed in recorder.calls:
+        model = config.generator if routed["alias"] == "generator" else getattr(config.judges, routed["alias"])
+        assert routed["model"] == model.model
+        assert routed["provider"].endpoint == model.endpoint
+        assert routed["provider"].api_key == model.credential_env
+        assert routed["parameters"]["temperature"] == model.temperature
+        assert routed["parameters"]["max_tokens"] == model.max_tokens
+        assert routed["parameters"].get("extra_body", {}) == model.extra_body
+        assert routed["timeout"] == model.timeout
 
 
-def test_unconfigured_stages_keep_original_judge_cache_keys(tmp_path: Path) -> None:
+def test_unconfigured_native_columns_use_fallback_judge(tmp_path: Path, monkeypatch) -> None:
     config = fixture_config(tmp_path)
-    inference = DataDesignerInference(tmp_path / "inference", config)
-    legacy = Request("Judge", ContextSummary, "judge")
-    for stage in JudgeModels.model_fields:
-        assert inference.request_key(
-            Request("Judge", ContextSummary, "judge", judge_stage=stage)
-        ) == inference.request_key(legacy)
-    config.judges = JudgeModels(summary=config.judge)
-    assert inference.request_key(
-        Request("Judge", ContextSummary, "judge", judge_stage="summary")
-    ) == inference.request_key(legacy)
+    config.judge = config.judge.model_copy(update={"model": "operator/default-judge"})
+    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
+    recorder = RecordingCompletion()
+    with patch.object(ModelFacade, "acompletion", autospec=True, side_effect=recorder.complete):
+        assert run_multimodal_sdg(config).is_file()
+    judges = [call for call in recorder.calls if call["alias"] != "generator"]
+    assert {call["alias"] for call in judges} == set(JudgeModels.model_fields)
+    assert all(call["model"] == config.judge.model for call in judges)
 
 
 def test_text_judges_need_no_image_allowance_but_vision_routes_do(tmp_path: Path) -> None:
@@ -260,7 +266,7 @@ def test_text_judges_need_no_image_allowance_but_vision_routes_do(tmp_path: Path
         check_request(Request("Judge", ContextSummary, "judge", (tmp_path / "page.png",), "localization"), config)
 
 
-def test_stage_token_budget_and_tokenizer_control_preflight_and_cache(tmp_path: Path) -> None:
+def test_stage_token_budget_and_tokenizer_control_preflight(tmp_path: Path) -> None:
     from tokenizers import Tokenizer
 
     config = fixture_config(tmp_path)
@@ -275,12 +281,9 @@ def test_stage_token_budget_and_tokenizer_control_preflight_and_cache(tmp_path: 
     check_request(Request(request.text, ContextSummary, "judge", judge_stage="summary"), config)
     with pytest.raises(RequestTooLarge, match="query_metadata request needs"):
         check_request(request, config)
-    inference = DataDesignerInference(tmp_path / "inference", config)
-    before = inference.request_key(request)
     encoder = Tokenizer.from_file(str(judge_tokenizer))
     encoder.enable_truncation(max_length=1)
     encoder.save(str(judge_tokenizer))
-    assert inference.request_key(request) != before
     with pytest.raises(RequestTooLarge):
         check_request(request, config)
 
@@ -302,7 +305,7 @@ def test_export_and_resume_record_resolved_models_and_override_tokenizers(tmp_pa
     config.judges = JudgeModels(
         query_metadata=config.judge.model_copy(update={"model": "small-judge", "tokenizer_file": judge_tokenizer})
     )
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    install_inference(monkeypatch, ScriptedInference())
     handoff = run_multimodal_sdg(config)
     manifest = json.loads((handoff.parent / "run_manifest.json").read_text())
     assert manifest["models"]["judge"]["model"] == config.judge.model

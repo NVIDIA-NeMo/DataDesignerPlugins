@@ -157,7 +157,7 @@ a fresh run otherwise. Data Designer owns checkpoint discovery, compatibility
 checks, and partial-result cleanup. `buffer_size` controls its write granularity;
 it is not a hard bound on peak memory during final profiling.
 
-Multimodal's `resume: true` and request cache apply only to the
+Multimodal's `resume: true` and stage checkpoints apply only to the
 [multimodal pipeline](multimodal.md#resume-an-interrupted-run).
 
 ## Use the Python API

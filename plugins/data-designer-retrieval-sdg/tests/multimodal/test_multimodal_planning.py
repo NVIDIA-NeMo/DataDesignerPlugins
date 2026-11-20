@@ -7,17 +7,15 @@ import json
 import random
 from itertools import combinations
 
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
+from data_designer.config import RunConfig
 from pydantic import ValidationError
 from test_multimodal_sdg import ScriptedInference, fixture_config, generated_fixture, scripted_response
+from workflow_test_utils import generate_candidates, install_inference
 
 from data_designer_retrieval_sdg.multimodal import run_multimodal_sdg
 from data_designer_retrieval_sdg.multimodal.export import export_multimodal_bundle
-from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request
 from data_designer_retrieval_sdg.multimodal.models import (
-    ContextSummary,
     GenerationContext,
     MultimodalSDGConfig,
     QueryBatch,
@@ -35,8 +33,7 @@ from data_designer_retrieval_sdg.multimodal.planning import (
 from data_designer_retrieval_sdg.multimodal.reporting import generation_report
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
-from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
-from data_designer_retrieval_sdg.multimodal.workflow import generate_candidates, load_contexts, localization_reasons
+from data_designer_retrieval_sdg.multimodal.workflow import load_contexts, localization_reasons
 
 
 def summary_row(key, units, quality=5, text="A substantive valve specification with useful source evidence"):
@@ -301,7 +298,7 @@ def test_automatic_planning_selection_export_and_resume(tmp_path, monkeypatch):
     for row in source_rows:
         row["language"] = "en"
     config.sources_file.write_text("".join(json.dumps(row) + "\n" for row in source_rows))
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    install_inference(monkeypatch, ScriptedInference())
     handoff = run_multimodal_sdg(config)
     rows = json.loads((handoff.parent / "context_outcomes.json").read_text())
     report = json.loads((handoff.parent / "report.json").read_text())
@@ -320,87 +317,15 @@ def test_summary_judging_can_be_disabled_without_fabricating_passes(tmp_path):
     assert all(row["summary_judgment"] is None for row in outcomes)
 
 
-class PartialInference(DataDesignerInference):
-    def run_batch(self, items):
-        self.batches = getattr(self, "batches", []) + [[key for key, _ in items]]
-        key, _ = items[0]
-        payload = {"summary": "cached", "visual_evidence": ""}
-        write_json(
-            self.root / "responses" / f"{key}.json",
-            {"request_id": key, "response": payload, "response_sha256": fingerprint(payload)},
-        )
-
-
-def test_missing_retries_never_regenerate_completed_responses(tmp_path):
-    inference = PartialInference(tmp_path / "inference", fixture_config(tmp_path))
-    requests = [Request(str(i), ContextSummary, "generator") for i in range(3)]
-    assert len(inference.generate(requests)) == 3
-    assert [len(batch) for batch in inference.batches] == [3, 2, 1]
-    inference.generate(requests)
-    assert len(inference.batches) == 3
-
-
-def test_runtime_exception_stops_without_automatic_retry(tmp_path, monkeypatch):
-    inference = DataDesignerInference(tmp_path / "inference", fixture_config(tmp_path))
-    monkeypatch.setattr(inference, "run_batch", fail_batch)
-    with pytest.raises(PermissionError):
-        inference.generate([Request("one", ContextSummary, "judge")])
-
-
-def fail_batch(items):
-    raise PermissionError("Provider failed")
-
-
-def test_completed_rows_can_be_collected_after_failed_batch(tmp_path):
-    inference = DataDesignerInference(tmp_path / "inference", fixture_config(tmp_path))
-    request = Request("one", ContextSummary, "generator")
-    key = inference.request_key(request)
-    dataset = tmp_path / "dataset"
-    dataset.mkdir()
-    pq.write_table(
-        pa.Table.from_pylist(
-            [{"request_id": key, "response": json.dumps({"summary": "completed", "visual_evidence": ""})}]
-        ),
-        dataset / "batch_0.parquet",
-    )
-    inference.collect_responses([(key, request)], dataset, tmp_path / "attempt")
-    assert inference.cached(request).summary == "completed"
-
-
-@pytest.mark.parametrize("first_valid,foreign_id", [(True, False), (False, False), (True, True)])
-def test_ambiguous_response_ids_never_publish_new_caches(tmp_path, first_valid, foreign_id):
-    """Reject the entire ambiguous attempt while preserving prior valid caches."""
-    inference = DataDesignerInference(tmp_path / "inference", fixture_config(tmp_path))
-    prior = Request("previous", ContextSummary, "generator")
-    request = Request("new", ContextSummary, "generator")
-    prior_key, key = inference.request_key(prior), inference.request_key(request)
-    payload = {"summary": "completed", "visual_evidence": ""}
-    prior_path = inference.root / "responses" / f"{prior_key}.json"
-    write_json(prior_path, {"request_id": prior_key, "response": payload, "response_sha256": fingerprint(payload)})
-    prior_bytes = prior_path.read_bytes()
-    dataset = tmp_path / "dataset"
-    dataset.mkdir()
-    for index, row in enumerate(
-        [
-            {"request_id": key, "response": json.dumps(payload) if first_valid else "{}"},
-            {"request_id": "foreign" if foreign_id else key, "response": json.dumps(payload)},
-        ]
-    ):
-        pq.write_table(pa.Table.from_pylist([row]), dataset / f"batch_{index}.parquet")
-    with pytest.raises(ValueError, match="Unexpected or duplicate"):
-        inference.collect_responses([(key, request)], dataset, tmp_path / "attempt")
-    resumed = DataDesignerInference(inference.root, inference.config)
-    assert resumed.cached(request) is None
-    assert resumed.cached(prior).summary == "completed"
-    assert prior_path.read_bytes() == prior_bytes
-
-
 @pytest.mark.parametrize(
     "updates",
     [
         {"summary_fraction": 0.5, "summary_count": 2},
         {"instructions_per_context": 4},
-        {"missing_response_attempts": 4},
+        {"missing_response_attempts": 3},
+        {"run_config": {"max_conversation_restarts": -1}},
+        {"run_config": {"max_conversation_correction_steps": -1}},
+        {"run_config": {"unknown_retry_setting": 1}},
         {"summary_near_duplicate_threshold": 0},
         {"related_contexts_per_context": 3},
         {"max_context_chars": 0},
@@ -409,3 +334,31 @@ def test_ambiguous_response_ids_never_publish_new_caches(tmp_path, first_valid, 
 def test_new_controls_are_validated(tmp_path, updates):
     with pytest.raises(ValidationError):
         MultimodalSDGConfig.model_validate({**fixture_config(tmp_path).model_dump(), **updates})
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {},
+        {"max_conversation_restarts": 0},
+        {"max_conversation_correction_steps": 2},
+        {"buffer_size": RunConfig().buffer_size, "disable_early_shutdown": False},
+    ],
+)
+def test_native_run_config_preserves_defaults_and_explicit_overrides_on_reload(tmp_path, overrides):
+    config = MultimodalSDGConfig.model_validate({**fixture_config(tmp_path).model_dump(), "run_config": overrides})
+    resolved = config.resolved_run_config()
+    native = RunConfig()
+    assert resolved.max_conversation_restarts == overrides.get(
+        "max_conversation_restarts", native.max_conversation_restarts
+    )
+    assert resolved.max_conversation_correction_steps == overrides.get(
+        "max_conversation_correction_steps", native.max_conversation_correction_steps
+    )
+    assert resolved.buffer_size == overrides.get("buffer_size", config.batch_size)
+    assert resolved.disable_early_shutdown == overrides.get("disable_early_shutdown", True)
+    assert config.model_dump()["run_config"] == overrides
+    assert "missing_response_attempts" not in config.model_dump()
+    restored = MultimodalSDGConfig.model_validate_json(config.model_dump_json())
+    assert restored.resolved_run_config() == resolved
+    assert restored.model_dump()["run_config"] == overrides

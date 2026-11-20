@@ -17,9 +17,12 @@ A context can contain multiple pages or documents, but a query does not have to
 use every member. Context membership determines the evidence available to the
 model. It does not determine the training split or prove multi-step reasoning.
 
-Python coordinates the stages and their saved state. Model-call batches use
-Data Designer structured-response columns. This differs from the single
-four-column Data Designer graph used by [Text QA](text-qa.md).
+The multimodal workflow uses one Data Designer `CompositeWorkflow` with
+named stages and structured-response columns. Deterministic callbacks prepare
+seeds, expand query slots, validate source identities, and save stage boundaries.
+Generation and judging calls execute in the declared model columns. Optional
+semantic combinations use separate embedding requests. [Text QA](text-qa.md)
+uses a four-column Data Designer graph.
 
 The workflow applies these stages:
 
@@ -35,7 +38,14 @@ The workflow applies these stages:
 
 Summaries and visual descriptions guide planning. They do not replace original
 source evidence in the corpus. Units that are not selected for generation can
-still appear as corpus documents.
+still appear as corpus documents. Image descriptions preserve prose visible only
+in pixels. Whole-unit query replanning uses a finite sequence of stages; unused
+rounds are skipped.
+
+Metadata, self-sufficiency, and relevance are independent Data Designer columns.
+Localization depends on all three and is skipped for rejected queries. Stage
+checkpoints can reuse completed rows, but identical prompts in separate rows can
+make separate calls. Model outputs can vary with scheduling and randomness.
 
 ## Requested Tasks and Observed Evidence
 
@@ -135,6 +145,12 @@ downstream view does not limit which queries the pipeline generated. To focus
 generation on particular evidence, configure the instruction pool as described in
 [Request Only Text Questions](multimodal.md#request-only-text-questions).
 Instruction modalities guide the model; they do not enforce the final support labels.
+
+The plugin selects the highest-grade valid entry when the judge repeats a source
+unit. Available carriers and configured quotation requirements determine whether
+an entry is valid. An invalid duplicate cannot displace valid support. A source
+unit in the context with only invalid support entries still causes the query to
+fail localization checks.
 
 A view includes every eligible corpus unit, including units with no accepted
 queries. It excludes a query when any positive cannot be represented; it does

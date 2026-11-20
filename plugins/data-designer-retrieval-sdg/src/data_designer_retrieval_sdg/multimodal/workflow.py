@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-from functools import partial
 from hashlib import sha256
 from importlib.metadata import version
 from pathlib import Path
@@ -15,52 +14,31 @@ from filelock import FileLock
 
 from data_designer_retrieval_sdg.multimodal import prompts
 from data_designer_retrieval_sdg.multimodal.bounds import (
-    RequestTooLarge,
-    check_request,
-    fit_contexts,
-    split_context,
     validate_deployment,
 )
-from data_designer_retrieval_sdg.multimodal.inference import (
-    DataDesignerInference,
-    Request,
-    generate_records,
-    request_identity,
-    source_request,
-)
+from data_designer_retrieval_sdg.multimodal.inference import Request, source_request
 from data_designer_retrieval_sdg.multimodal.models import (
-    Candidate,
     ContextSummary,
-    FailedGeneration,
     GenerationContext,
     Localization,
     MultimodalSDGConfig,
     QueryBatch,
     QueryJudgment,
     QueryMetadata,
+    QuerySlot,
     RelevanceJudgment,
     SelfSufficiencyJudgment,
-    SummaryJudgment,
 )
 from data_designer_retrieval_sdg.multimodal.planning import (
     automatic_contexts,
     bounded_contexts,
     context_instructions,
-    related_contexts,
-    select_summaries,
 )
 from data_designer_retrieval_sdg.multimodal.preflight import check_models
 from data_designer_retrieval_sdg.multimodal.source_directory import load_directory_sources
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
-from data_designer_retrieval_sdg.multimodal.storage import (
-    artifact,
-    digest,
-    fingerprint,
-    write_bytes,
-    write_json,
-    write_jsonl,
-)
+from data_designer_retrieval_sdg.multimodal.storage import artifact, digest, write_bytes, write_json, write_jsonl
 
 
 def load_contexts(config: MultimodalSDGConfig, sources: list[RetrievalSource]) -> list[GenerationContext]:
@@ -105,15 +83,36 @@ def source_text(context: GenerationContext, sources: dict[str, RetrievalSource])
     )
 
 
-def normalize_localization(localization: Localization, context: GenerationContext) -> Localization:
-    """Keep valid source identities and the highest grade for each repeated support."""
-    supports = {}
+def normalize_localization(
+    localization: Localization,
+    context: GenerationContext,
+    sources: dict[str, RetrievalSource],
+    require_verbatim_quotes: bool = False,
+) -> Localization:
+    """Prefer valid duplicates while preserving invalid-only units for rejection.
+
+    Args:
+        localization: Unmodified judge response, possibly containing duplicates.
+        context: Source membership the judge was allowed to cite.
+        sources: Canonical records used to validate each claimed evidence carrier.
+        require_verbatim_quotes: Whether text support requires a matching quote.
+
+    Returns:
+        One support per known unit, in first-unit-occurrence order. Select the
+        highest-grade valid support when available, otherwise the highest-grade
+        original support for downstream validation. Equal grades retain the first.
+    """
+    supports, valid_supports = {}, {}
     for support in localization.supports:
-        if support.unit_id in context.unit_ids and (
-            support.unit_id not in supports or support.grade > supports[support.unit_id].grade
-        ):
+        if support.unit_id not in context.unit_ids:
+            continue
+        if support.unit_id not in supports or support.grade > supports[support.unit_id].grade:
             supports[support.unit_id] = support
-    return Localization(supports=list(supports.values()))
+        if not localization_reasons(Localization(supports=[support]), context, sources, require_verbatim_quotes) and (
+            support.unit_id not in valid_supports or support.grade > valid_supports[support.unit_id].grade
+        ):
+            valid_supports[support.unit_id] = support
+    return Localization(supports=[valid_supports.get(unit_id, support) for unit_id, support in supports.items()])
 
 
 def localization_reasons(
@@ -163,56 +162,6 @@ def evidence_summary_requests(c, sources):
             c,
             sources,
         )
-    ]
-
-
-def summarize_contexts(contexts, sources, config, inference) -> list[dict]:
-    """Summarize original evidence and optionally judge each summary against it.
-
-    Args:
-        contexts: Bounded memberships.
-        sources: Canonical unit lookup.
-        config: Summary judging policy.
-        inference: Cached structured inference implementation.
-
-    Returns:
-        Complete summary records, including rejected summaries and empty query slots.
-    """
-    builder = partial(evidence_summary_requests, sources=sources)
-    contexts = fit_contexts(contexts, builder, config)
-    summaries = generate_records(
-        inference, [builder(c)[0] for c in contexts], "summary", [request_identity(c) for c in contexts]
-    )
-    successful = [(c, s) for c, s in zip(contexts, summaries, strict=True) if not isinstance(s, FailedGeneration)]
-    contexts = [c for c, _ in successful]
-    summaries = [s for _, s in successful]
-    judgments = (
-        generate_records(
-            inference,
-            [
-                Request(
-                    prompts.render("judgment", summary=s.summary, persona=config.persona, language=c.language),
-                    SummaryJudgment,
-                    "judge",
-                    judge_stage="summary",
-                )
-                for c, s in zip(contexts, summaries, strict=True)
-            ],
-            "summary-judgment",
-            [request_identity(c) for c in contexts],
-        )
-        if config.judge_summaries
-        else [None] * len(contexts)
-    )
-    return [
-        {
-            "context": c.model_dump(),
-            "summary": s.model_dump(),
-            "summary_judgment": j.model_dump() if j is not None and not isinstance(j, FailedGeneration) else None,
-            **({"summary_judgment_failed": True} if isinstance(j, FailedGeneration) else {}),
-            "slots": {"queries": []},
-        }
-        for c, s, j in zip(contexts, summaries, judgments, strict=True)
     ]
 
 
@@ -269,8 +218,20 @@ def generation_requests(context, sources, config):
     ]
 
 
-def judgment_requests(context, slot, sources):
-    """Build every downstream prompt using the actual generated query and evidence."""
+def judgment_requests(
+    context: GenerationContext, slot: QuerySlot, sources: dict[str, RetrievalSource]
+) -> list[Request]:
+    """Build every downstream prompt using the actual generated query and evidence.
+
+    Args:
+        context: Membership of the source context used to generate the query.
+        slot: Generated query to classify, judge, and localize.
+        sources: Original source records keyed by unit ID.
+
+    Returns:
+        Requests for query metadata, self-sufficiency, relevance, and localization,
+        in that order, with each request assigned to its configured judge stage.
+    """
     return [
         Request(
             prompts.render("query_metadata", query=slot.query), QueryMetadata, "judge", judge_stage="query_metadata"
@@ -296,53 +257,6 @@ def judgment_requests(context, slot, sources):
     ]
 
 
-def bounded_query_batches(selected, outcomes, sources, config, inference):
-    """Regenerate on smaller memberships when an actual downstream request cannot fit.
-
-    Do not judge a multi-page query against only a fragment. Preserve superseded
-    generated slots in outcomes, then generate new queries on the child contexts.
-    Each split strictly reduces membership size, bounding replanning depth.
-    """
-    pending, accepted, batches = list(selected), [], []
-    builder = partial(generation_requests, sources=sources, config=config)
-    while pending:
-        rows = []
-        for row in pending:
-            context = GenerationContext.model_validate(row["context"])
-            children = fit_contexts([context], builder, config)
-            rows.extend(child_rows(row, children, outcomes))
-        for row in rows:
-            row["instructions"] = [
-                item.model_dump() for item in context_instructions(config, row["context"]["context_id"])
-            ]
-        contexts = [GenerationContext.model_validate(row["context"]) for row in rows]
-        responses = generate_records(
-            inference,
-            [builder(context)[0] for context in contexts],
-            "query-generation",
-            [request_identity(c, instructions=row["instructions"]) for c, row in zip(contexts, rows, strict=True)],
-        )
-        pending = []
-        for row, batch in zip(rows, responses, strict=True):
-            if isinstance(batch, FailedGeneration):
-                row["selection_reason"] = "generation_failed"
-                continue
-            context = GenerationContext.model_validate(row["context"])
-            try:
-                for slot in batch.queries:
-                    if slot.query is not None:
-                        for request in judgment_requests(context, slot, sources):
-                            check_request(request, config)
-            except RequestTooLarge:
-                row["slots"] = batch.model_dump()
-                row["selection_reason"] = "request_size_replanned"
-                pending.extend(child_rows(row, split_context(context), outcomes))
-            else:
-                accepted.append(row)
-                batches.append(batch)
-    return accepted, batches
-
-
 def child_rows(row, contexts, outcomes):
     """Record every partition's lineage and retain the original row when it fits."""
     result = []
@@ -362,120 +276,6 @@ def child_rows(row, contexts, outcomes):
     return result
 
 
-def generate_candidates(
-    config: MultimodalSDGConfig,
-    sources: list[RetrievalSource],
-    contexts: list[GenerationContext],
-    inference: DataDesignerInference,
-) -> tuple[list[Candidate], list[dict]]:
-    """Generate and judge bounded contexts, retaining abstentions and every rejected candidate."""
-    by_id = {source.unit_id: source for source in sources}
-    if config.context_strategy == "sections":
-        from data_designer_retrieval_sdg.multimodal.summary_stages import plan_summaries
-
-        outcomes = plan_summaries(sources, contexts, config, inference)
-    else:
-        outcomes = summarize_contexts(contexts, by_id, config, inference)
-    if config.related_contexts_per_context:
-        additional = related_contexts(outcomes, sources, config)
-        outcomes.extend(summarize_contexts(additional, by_id, config, inference))
-    selected = select_summaries(outcomes, config)
-    selected = generation_context_rows(selected, outcomes, sources, config)
-    selected, batches = bounded_query_batches(selected, outcomes, by_id, config, inference)
-    contexts = [GenerationContext.model_validate(row["context"]) for row in selected]
-    instructions = {c.context_id: context_instructions(config, c.context_id) for c in contexts}
-    pending = []
-    for context, row, batch in zip(contexts, selected, batches, strict=True):
-        if sorted(slot.slot for slot in batch.queries) != list(range(len(instructions[context.context_id]))):
-            raise ValueError("Generator did not return exactly one outcome for every requested slot")
-        row["slots"] = batch.model_dump()
-        row["instructions"] = [item.model_dump() for item in instructions[context.context_id]]
-        for slot in sorted(batch.queries, key=lambda s: s.slot):
-            if slot.query is None:
-                if slot.evidence_modality != "none":
-                    raise ValueError("Abstention must declare evidence_modality=none")
-                continue
-            if not slot.query or slot.evidence_modality == "none":
-                raise ValueError("Generated query must be nonempty and declare evidence")
-            pending.append((context, slot))
-    judgments = [judgment_requests(c, slot, by_id) for c, slot in pending]
-    records = [
-        request_identity(
-            c,
-            query_id="q_" + fingerprint([c.context_id, slot.slot, slot.query])[:32],
-            query=slot.query,
-            slot=slot.slot,
-            instructions=[instructions[c.context_id][slot.slot].model_dump()],
-        )
-        for c, slot in pending
-    ]
-    metadata = generate_records(inference, [requests[0] for requests in judgments], "query-metadata", records)
-    sufficiency = generate_records(inference, [requests[1] for requests in judgments], "self-sufficiency", records)
-    relevance = generate_records(inference, [requests[2] for requests in judgments], "relevance", records)
-    valid = [
-        i
-        for i, values in enumerate(zip(metadata, sufficiency, relevance, strict=True))
-        if not any(isinstance(value, FailedGeneration) for value in values)
-    ]
-    pending, judgments, records, metadata, sufficiency, relevance = (
-        [items[i] for i in valid] for items in (pending, judgments, records, metadata, sufficiency, relevance)
-    )
-    query_judgments = [
-        QueryJudgment(
-            self_sufficiency=s.self_sufficiency,
-            has_answer=m.has_answer,
-            observed_type=m.actual_query_type,
-            observed_format=m.actual_query_format,
-            reasoning=s.reasoning + "\n" + m.classification_reasoning,
-        )
-        for s, m in zip(sufficiency, metadata, strict=True)
-    ]
-    reasons_by_index = [quality_reasons(q, r, config) for q, r in zip(query_judgments, relevance, strict=True)]
-    localized_indexes = [i for i, reasons in enumerate(reasons_by_index) if not reasons]
-    localizations = generate_records(
-        inference,
-        [judgments[i][3] for i in localized_indexes],
-        "localization",
-        [records[i] for i in localized_indexes],
-    )
-    by_index = dict(zip(localized_indexes, localizations, strict=True))
-    candidates = []
-    for i, ((context, slot), query_judge, relevance_judge) in enumerate(
-        zip(pending, query_judgments, relevance, strict=True)
-    ):
-        reasons = reasons_by_index[i]
-        localization = by_index.get(i)
-        if isinstance(localization, FailedGeneration):
-            continue
-        if localization is not None:
-            localization = normalize_localization(localization, context)
-            reasons.extend(localization_reasons(localization, context, by_id, config.require_verbatim_quotes))
-        candidates.append(
-            Candidate(
-                query_id="q_" + fingerprint([context.context_id, slot.slot, slot.query])[:32],
-                context_id=context.context_id,
-                query=slot.query,
-                source_unit_ids=context.unit_ids,
-                language=context.language,
-                requested_instruction=instructions[context.context_id][slot.slot],
-                evidence_modality=slot.evidence_modality,
-                quote_verification={
-                    s.unit_id: quote_verified(s.quote, by_id[s.unit_id].text)
-                    for s in localization.supports
-                    if s.unit_id in by_id and s.modality != "image"
-                }
-                if localization
-                else {},
-                query_judgment=query_judge,
-                relevance_judgment=relevance_judge,
-                localization=localization,
-                accepted=not reasons,
-                rejection_reasons=reasons,
-            )
-        )
-    return candidates, outcomes
-
-
 def quality_reasons(query: QueryJudgment, relevance: RelevanceJudgment, config: MultimodalSDGConfig) -> list[str]:
     """Return the retrieval-first hard-gate failures, independent of requested style."""
     reasons = []
@@ -489,7 +289,7 @@ def quality_reasons(query: QueryJudgment, relevance: RelevanceJudgment, config: 
 
 
 def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
-    """Run the EA workflow and return its validated-provenance portable handoff.
+    """Run the Data Designer workflow and export a checksummed portable bundle.
 
     Args:
         config: Explicit inputs, model roles, bounds, and split settings.
@@ -501,6 +301,7 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
         ValueError: Input/config drift, invalid responses or no accepted queries.
         FileExistsError: Existing run unless resume was explicitly requested.
     """
+    from data_designer_retrieval_sdg.multimodal.execution import generate_candidates, verify_boundaries
     from data_designer_retrieval_sdg.multimodal.export import export_multimodal_bundle
 
     root = config.output_dir.resolve()
@@ -515,43 +316,7 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             sources = load_retrieval_sources(config.sources_file)
         validate_deployment(config, any(source.images for source in sources))
         contexts = load_contexts(config, sources)
-        identity = {
-            "config": config.model_dump(mode="json", exclude={"resume", "output_dir"}),
-            "sources": [s.model_dump() for s in sources],
-            "contexts": [c.model_dump() for c in contexts],
-            "tokenizers": {
-                role: digest(model.tokenizer_file)
-                for role, model in {"generator": config.generator, **config.active_judges()}.items()
-                if model.context_window_tokens is not None and model.tokenizer_file is not None
-            },
-            "images": {image: digest(Path(image)) for s in sources for image in s.images},
-            "implementation": {
-                p.relative_to(Path(__file__).parents[1]).as_posix(): digest(p)
-                for p in sorted(Path(__file__).parents[1].rglob("*"))
-                if p.is_file() and p.suffix in {".py", ".j2", ".json", ".txt"}
-            },
-            "dependencies": {
-                name: version(name)
-                for name in (
-                    "data-designer",
-                    "data-designer-engine",
-                    "data-designer-config",
-                    "pydantic",
-                    "pyarrow",
-                    "jinja2",
-                )
-                + (
-                    (
-                        "httpx" if config.summary_embedding_endpoint else "sentence-transformers",
-                        "scikit-learn",
-                        "umap-learn",
-                        "numpy",
-                    )
-                    if config.combination_iterations
-                    else ()
-                )
-            },
-        }
+        identity = run_identity(config, sources, contexts)
         if source_manifest is not None:
             identity["source_files"] = source_manifest["files"]
             if "source_preparation" in source_manifest:
@@ -568,12 +333,15 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
         if root.exists():
             write_json(root / "identity.json", identity)
         if (root / "complete.json").exists():
+            verify_boundaries(root / "data_designer", require_complete=True)
             complete = json.loads((root / "complete.json").read_text())
             for record in complete["artifacts"]:
                 path = root / record["path"]
-                if path.stat().st_size != record["bytes"] or digest(path) != record["sha256"]:
+                if not path.is_file() or path.stat().st_size != record["bytes"] or digest(path) != record["sha256"]:
                     raise ValueError("Completed run integrity failure")
             return root / "bundle/generation_result.json"
+        if (root / "data_designer").exists():
+            verify_boundaries(root / "data_designer")
         check_models(config)
         write_json(root / "identity.json", identity)
         frozen = []
@@ -599,19 +367,12 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
                     for source in frozen
                 ],
             )
-        inference = DataDesignerInference(root / "inference", config)
-        candidates, outcomes = generate_candidates(config, frozen, contexts, inference)
-        if config.failed_record_policy == "skip":
-            write_json(
-                root / "generation_failures.json",
-                {"policy": "skip", "records": [inference.failures[key] for key in sorted(inference.failures)]},
-            )
+        candidates, outcomes = generate_candidates(config, frozen, contexts)
         write_json(root / "candidates.json", [c.model_dump(mode="json") for c in candidates])
         write_json(root / "context_outcomes.json", outcomes)
         handoff = export_multimodal_bundle(root / "bundle", frozen, candidates, outcomes, config)
         completed_paths = sorted((root / "bundle").rglob("*"))
-        if source_manifest is not None:
-            completed_paths.extend(sorted((root / "inputs").rglob("*")))
+        completed_paths.extend(sorted((root / "inputs").rglob("*")))
         if config.failed_record_policy == "skip":
             completed_paths.append(root / "generation_failures.json")
         write_json(
@@ -619,3 +380,46 @@ def run_multimodal_sdg(config: MultimodalSDGConfig) -> Path:
             {"artifacts": [artifact(p, root) for p in completed_paths if p.is_file()]},
         )
         return handoff
+
+
+def run_identity(
+    config: MultimodalSDGConfig, sources: list[RetrievalSource], contexts: list[GenerationContext]
+) -> dict:
+    """Bind resumable artifacts to configuration, evidence, code and dependencies."""
+    return {
+        "config": config.model_dump(mode="json", exclude={"resume", "output_dir"}),
+        "sources": [s.model_dump() for s in sources],
+        "contexts": [c.model_dump() for c in contexts],
+        "tokenizers": {
+            role: digest(model.tokenizer_file)
+            for role, model in {"generator": config.generator, **config.active_judges()}.items()
+            if model.context_window_tokens is not None and model.tokenizer_file is not None
+        },
+        "images": {image: digest(Path(image)) for s in sources for image in s.images},
+        "implementation": {
+            p.relative_to(Path(__file__).parents[1]).as_posix(): digest(p)
+            for p in sorted(Path(__file__).parents[1].rglob("*"))
+            if p.is_file() and p.suffix in {".py", ".j2", ".json", ".txt"}
+        },
+        "dependencies": {
+            name: version(name)
+            for name in (
+                "data-designer",
+                "data-designer-engine",
+                "data-designer-config",
+                "pydantic",
+                "pyarrow",
+                "jinja2",
+            )
+            + (
+                (
+                    "httpx" if config.summary_embedding_endpoint else "sentence-transformers",
+                    "scikit-learn",
+                    "umap-learn",
+                    "numpy",
+                )
+                if config.combination_iterations
+                else ()
+            )
+        },
+    }

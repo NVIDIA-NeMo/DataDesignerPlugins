@@ -14,6 +14,7 @@ from PIL import Image
 from pydantic import ValidationError
 from test_multimodal_sdg import ScriptedInference, fixture_config
 from transformers import PreTrainedTokenizerFast
+from workflow_test_utils import install_inference
 
 from data_designer_retrieval_sdg.multimodal import MultimodalSDGConfig, SourceDirectoryConfig, run_multimodal_sdg
 from data_designer_retrieval_sdg.multimodal.source_directory import load_directory_sources
@@ -256,19 +257,21 @@ def test_symlink_files_are_rejected_and_directory_links_are_not_followed(tmp_pat
 def test_output_cannot_be_discovered_as_input(tmp_path, monkeypatch):
     config = directory_config(tmp_path)
     config.output_dir = config.source_directory.path / "run"
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", UnexpectedInference)
+    completion = install_inference(monkeypatch, ScriptedInference())
     with pytest.raises(ValueError, match="outside source_directory"):
         run_multimodal_sdg(config)
     assert not config.output_dir.exists()
+    completion.assert_not_awaited()
 
 
 def test_invalid_directory_input_fails_before_run_initialization(tmp_path, monkeypatch):
     config = directory_config(tmp_path)
     (config.source_directory.path / "manual.txt").write_bytes(b"\xff")
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", UnexpectedInference)
+    completion = install_inference(monkeypatch, ScriptedInference())
     with pytest.raises(ValueError, match="UTF-8"):
         run_multimodal_sdg(config)
     assert not config.output_dir.exists()
+    completion.assert_not_awaited()
 
 
 @pytest.mark.parametrize("with_images", [False, True])
@@ -276,7 +279,7 @@ def test_prepared_sources_round_trip_and_completed_resume(tmp_path, monkeypatch,
     config = directory_config(tmp_path)
     if not with_images:
         (config.source_directory.path / "figure.png").unlink()
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    completion = install_inference(monkeypatch, ScriptedInference())
     handoff = run_multimodal_sdg(config)
     prepared = config.output_dir / "inputs/sources.jsonl"
     sources = load_retrieval_sources(prepared)
@@ -291,14 +294,15 @@ def test_prepared_sources_round_trip_and_completed_resume(tmp_path, monkeypatch,
     )
     exported = json.loads((handoff.parent / "run_manifest.json").read_text())
     assert "source_directory" not in exported["policy"]["generation_config"]
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", UnexpectedInference)
+    completion.reset_mock()
     assert run_multimodal_sdg(config.model_copy(update={"resume": True})) == handoff
+    completion.assert_not_awaited()
 
 
 @pytest.mark.parametrize("change", ["add", "delete", "rename", "text", "image", "settings", "chunking_mode"])
 def test_directory_input_drift_rejects_resume_before_inference(tmp_path, monkeypatch, change):
     config = directory_config(tmp_path)
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    completion = install_inference(monkeypatch, ScriptedInference())
     run_multimodal_sdg(config)
     directory = config.source_directory.path
     if change == "add":
@@ -317,9 +321,10 @@ def test_directory_input_drift_rejects_resume_before_inference(tmp_path, monkeyp
         config.source_directory = config.source_directory.model_copy(update={"sentences_per_chunk": 1})
     else:
         config.source_directory = config.source_directory.model_copy(update={"text_chunking": "none"})
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", UnexpectedInference)
+    completion.reset_mock()
     with pytest.raises(ValueError, match="Artifact changed"):
         run_multimodal_sdg(config.model_copy(update={"resume": True}))
+    completion.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -334,14 +339,14 @@ def test_directory_input_drift_rejects_resume_before_inference(tmp_path, monkeyp
 )
 def test_completed_directory_artifacts_are_checked_on_resume(tmp_path, monkeypatch, policy, artifact):
     config = directory_config(tmp_path).model_copy(update={"failed_record_policy": policy})
-    monkeypatch.setattr(ScriptedInference, "failures", {}, raising=False)
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    completion = install_inference(monkeypatch, ScriptedInference())
     handoff = run_multimodal_sdg(config)
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", UnexpectedInference)
+    completion.reset_mock()
     assert run_multimodal_sdg(config.model_copy(update={"resume": True})) == handoff
     (config.output_dir / artifact).write_text("changed")
     with pytest.raises(ValueError, match="integrity"):
         run_multimodal_sdg(config.model_copy(update={"resume": True}))
+    completion.assert_not_awaited()
 
 
 @pytest.mark.parametrize("mode", ["sentences", "none", "tokens"])
@@ -367,7 +372,7 @@ def test_directory_and_equivalent_jsonl_produce_same_bundle(tmp_path, monkeypatc
     assert [source for source in sources if source.images] == [source for source in original if source.images]
     source_file = tmp_path / "canonical.jsonl"
     source_file.write_text("".join(source.model_dump_json() + "\n" for source in sources))
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    install_inference(monkeypatch, ScriptedInference())
     directory_handoff = run_multimodal_sdg(config)
     jsonl_config = MultimodalSDGConfig.model_validate(
         config.model_dump()

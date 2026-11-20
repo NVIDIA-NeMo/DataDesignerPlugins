@@ -143,7 +143,6 @@ judge:
   max_tokens: 8192
 concurrency: 1
 batch_size: 1
-missing_response_attempts: 1
 seed: 42
 ```
 
@@ -318,14 +317,32 @@ resolving an external issue, set `resume: true` in the same configuration and ru
 the command again. Keep the inputs, remaining configuration, package code, and
 dependencies unchanged.
 
-Resume reuses compatible cached responses. A completed run verifies its artifacts
-and returns the existing handoff. Changed inputs or corrupted artifacts fail
-integrity checks. Bundle export uses a staging directory and publishes only a
-complete bundle. An interrupted export can resume from compatible cached work.
-If publication finished before the completion record was saved, resume reuses the
-bundle only when every file matches the regenerated export. An existing partial
-or different destination is not overwritten; preserve it for investigation and
-use a new output directory for a separate run.
+Inspect `data_designer/multimodal/workflow-metadata.json` and its named stage
+directories for status, configurations, saved responses, and errors. Resume reuses
+successful stages and resumes incomplete stages from Data Designer checkpoints.
+
+If a saved batch contains only some expected rows, explicit resume retries those
+missing rows through a separate Data Designer run. Each affected stage gets at most one
+recovery attempt per explicit resume, under `recovery/attempt-*/`. Successful
+saved rows remain unchanged. A dropped row is retried as a row, so completed calls
+without a persisted row can repeat. Missing or duplicate row identities still
+stop export.
+
+Changed inputs, settings, code, dependencies, or completed boundary contents fail
+integrity checks. Resume requires the code and dependencies that created the run;
+start a new output directory after changing them. If saved responses or boundaries
+lack matching workflow metadata, resume stops before regenerating anything.
+An unfinished stage with saved responses also requires its Data Designer
+`metadata.json`. Preserve the directory for investigation; do not delete responses
+or edit progress metadata to bypass these checks.
+
+A completed run verifies its artifacts and returns the existing handoff. Bundle
+export uses a staging directory and publishes only a complete bundle. An export
+interruption does not repeat completed model stages. If publication finished
+before the completion record was saved, resume reuses the bundle only when every
+file matches the regenerated export. An existing partial or different destination
+is not overwritten; preserve it for investigation and use a new output directory
+for a separate run.
 
 ## Troubleshoot a Small Run
 
@@ -334,8 +351,11 @@ query judgments and localized evidence, and `context_outcomes.json` for summary
 selection. Both files are in `output_dir`. The files `bundle/report.json` and
 `bundle/candidate_diagnostics.jsonl` are not written in this case. If inference
 fails earlier, inspect the command error and any saved artifacts under
-`inference/attempts/` instead. Missing or invalid required responses stop the
-workflow before export; they are not query-quality rejections.
+`data_designer/multimodal/` instead. Missing rows stop the workflow before export.
+Exhausted model-validation errors follow `failed_record_policy`; they are not
+query-quality rejections. After generation completes, inspect
+`generation_failures.json` for skipped records. For an interrupted run, inspect
+`boundary/skipped_records.json` in each completed stage directory.
 
 Use the following checks before increasing the corpus size:
 
@@ -345,11 +365,11 @@ Use the following checks before increasing the corpus size:
 | Many answer-leakage rejections | Confirm that the judge distinguishes a question that contains its answer from a question that can be answered. Inspect its reasoning. |
 | Missing image or provider image error | Check file paths, image readability, and both models' image-input support and limits. |
 | A source unit exceeds a request limit | Split it during preprocessing and assign stable IDs to the new units. Context splitting cannot divide one unit. |
-| Incomplete structured responses | Inspect the attempt's errors and saved responses. Check output-token limits, including reasoning-token usage, and the endpoint's [JSON formatting support](multimodal-reference.md#model-settings). |
+| Incomplete structured responses | Inspect the Data Designer stage's errors and saved responses. Check output-token limits, including reasoning-token usage, and the endpoint's [JSON formatting support](multimodal-reference.md#model-settings). |
 | A training view is empty | Inspect its accepted-query and split counts. Choose an evidence-compatible view with training records; do not substitute another view silently. |
 | An existing run is rejected | Use explicit resume only for a compatible run, or choose a new output directory for changed inputs or configuration. |
 
-Batch size and missing-response attempts are not aggregate request, token, or
+Batch size and native retry settings are not aggregate request, token, or
 spending limits. Monitor provider usage and begin with a bounded source sample.
 Use an external job time limit when you need a hard elapsed-time bound.
 Keep run directories protected because they contain source content and model

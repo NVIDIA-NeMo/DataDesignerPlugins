@@ -49,13 +49,14 @@ class RetrievalStructuredResponseRecipe(StructuredResponseRecipe):
     """Accept one complete JSON object while retaining native schema validation."""
 
     def parse(self, response: str) -> dict:
-        """Decode bare or singly fenced JSON without repairing its contents.
+        """Decode valid JSON and materialize declared optional top-level defaults.
 
         Args:
             response: Complete model response, optionally enclosed in a JSON fence.
 
         Returns:
-            The object validated by Data Designer against the original schema.
+            The object validated by Data Designer against the original schema,
+            with omitted optional top-level defaults made explicit before storage.
 
         Raises:
             ParserException: If decoding or schema validation fails. Data Designer
@@ -73,9 +74,21 @@ class RetrievalStructuredResponseRecipe(StructuredResponseRecipe):
                 raise ValueError("Expected exactly one JSON object")
         except (ValueError, TypeError, AttributeError, RecursionError) as exc:
             raise ParserException(f"Invalid retrieval JSON response: {exc}", source=response) from exc
-        # Format normalization only: no field pruning, query rewriting, type
-        # coercion, value repair, or conversion of negative judgements to passes.
-        return super().parse("```json\n" + json.dumps(value, ensure_ascii=False, allow_nan=False) + "\n```")
+        # Validate the original response first: defaults must not rescue missing
+        # required fields, explicit nulls, invalid types, or negative judgments.
+        result = super().parse("```json\n" + json.dumps(value, ensure_ascii=False, allow_nan=False) + "\n```")
+        defaults = {
+            name: field["default"]
+            for name, field in self.json_schema.get("properties", {}).items()
+            if name not in result and isinstance(field, dict) and "default" in field
+        }
+        if defaults:
+            # Arrow otherwise turns an omitted key into null when another row
+            # includes it. Revalidate the explicit defaults before persistence.
+            result = super().parse(
+                "```json\n" + json.dumps({**result, **defaults}, ensure_ascii=False, allow_nan=False) + "\n```"
+            )
+        return result
 
 
 class RetrievalStructuredCellGenerator(LLMStructuredCellGenerator):
