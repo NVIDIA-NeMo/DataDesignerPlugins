@@ -20,3 +20,9 @@ harness_plugin = Plugin(
     impl_qualified_name="data_designer_gym.columns.GymHarnessColumnGenerator",
     plugin_type=PluginType.COLUMN_GENERATOR,
 )
+
+native_llm_plugin = Plugin(
+    config_qualified_name="data_designer_gym.native_config.GymNativeLLMColumnConfig",
+    impl_qualified_name="data_designer_gym.native_llm.GymNativeLLMColumnGenerator",
+    plugin_type=PluginType.COLUMN_GENERATOR,
+)

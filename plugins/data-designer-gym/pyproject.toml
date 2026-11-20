@@ -24,6 +24,7 @@ classifiers = [
 gym = "data_designer_gym.plugin:plugin"
 gym-resource = "data_designer_gym.plugin:resource_plugin"
 gym-harness = "data_designer_gym.plugin:harness_plugin"
+gym-native-llm = "data_designer_gym.plugin:native_llm_plugin"
 
 [project.scripts]
 data-designer-gym = "data_designer_gym.cli:main"
