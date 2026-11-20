@@ -27,6 +27,7 @@ from data_designer.engine.testing.utils import assert_valid_plugin
 from pydantic import BaseModel, ConfigDict
 
 from data_designer_retrieval_sdg.multimodal.config import RetrievalStructuredColumnConfig
+from data_designer_retrieval_sdg.multimodal.models import QueryBatch, QueryMetadata, Support
 from data_designer_retrieval_sdg.multimodal.plugins import retrieval_structured_plugin
 from data_designer_retrieval_sdg.multimodal.structured import (
     FAILURE_KEY,
@@ -86,6 +87,83 @@ def test_invalid_or_ambiguous_responses_fail_closed(value: str) -> None:
         response_recipe().parse(value)
 
 
+def test_optional_metadata_defaults_are_explicit_without_changing_valid_values() -> None:
+    recipe = RetrievalStructuredResponseRecipe(QueryMetadata.model_json_schema(), pruning=False)
+    value = {"actual_query_type": "numerical", "actual_query_format": "question", "has_answer": False}
+    assert recipe.parse(json.dumps(value)) == QueryMetadata.model_validate(value).model_dump()
+    value.update(classification_reasoning="A stated answer", classification_confidence=0.75, has_answer=True)
+    assert recipe.parse(json.dumps(value)) == value
+
+
+@pytest.mark.parametrize("reason", [None, 42])
+def test_optional_metadata_defaults_do_not_replace_invalid_values(reason) -> None:
+    recipe = RetrievalStructuredResponseRecipe(QueryMetadata.model_json_schema(), pruning=False)
+    value = {
+        "actual_query_type": "numerical",
+        "actual_query_format": "question",
+        "has_answer": False,
+        "classification_reasoning": reason,
+    }
+    with pytest.raises(ParserException):
+        recipe.parse(json.dumps(value))
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "object", "properties": {"reason": {"type": "string", "default": ""}}, "required": ["reason"]},
+        {"type": "object", "properties": {"reason": {"type": "string", "default": None}}},
+    ],
+)
+def test_defaults_cannot_bypass_required_fields_or_schema_types(schema: dict) -> None:
+    with pytest.raises(ParserException):
+        RetrievalStructuredResponseRecipe(schema, pruning=False).parse("{}")
+
+
+@pytest.mark.parametrize("field", ["unit_id", "contribution"])
+def test_support_schema_rejects_whitespace_before_persistence(field: str) -> None:
+    recipe = RetrievalStructuredResponseRecipe(Support.model_json_schema(), pruning=False)
+    value = {
+        "unit_id": "source-1",
+        "grade": 1,
+        "modality": "text",
+        "quote": "Source evidence",
+        "visual_evidence": "",
+        "contribution": "Useful partial evidence",
+        field: "   ",
+    }
+    with pytest.raises(ParserException):
+        recipe.parse(json.dumps(value))
+
+
+@pytest.mark.parametrize("slots", [[], [0, 1], [0, 1, 1], [0, 1, 3], [0, 1, 2, 3]])
+def test_query_schema_requires_exact_requested_slot_membership(slots):
+    recipe = RetrievalStructuredResponseRecipe(QueryBatch.for_slot_count(3).model_json_schema(), pruning=False)
+    value = {"queries": [{"slot": slot, "query": None, "evidence_modality": "none"} for slot in slots]}
+    with pytest.raises(ParserException):
+        recipe.parse(json.dumps(value))
+
+
+@pytest.mark.parametrize("invalid_query", ["", "null"])
+def test_query_schema_rejects_inconsistent_abstentions(invalid_query):
+    recipe = RetrievalStructuredResponseRecipe(QueryBatch.for_slot_count(1).model_json_schema(), pruning=False)
+    value = {"queries": [{"slot": 0, "query": invalid_query, "evidence_modality": "none"}]}
+    with pytest.raises(ParserException):
+        recipe.parse(json.dumps(value))
+
+
+def test_query_schema_preserves_valid_out_of_order_slots_wording_and_abstentions():
+    recipe = RetrievalStructuredResponseRecipe(QueryBatch.for_slot_count(3).model_json_schema(), pruning=False)
+    value = {
+        "queries": [
+            {"slot": 2, "query": None, "evidence_modality": "none"},
+            {"slot": 0, "query": "What pressure opens the valve?", "evidence_modality": "text"},
+            {"slot": 1, "query": None, "evidence_modality": "none"},
+        ]
+    }
+    assert recipe.parse(json.dumps(value)) == value
+
+
 def test_nested_duplicate_judgements_are_rejected() -> None:
     recipe = RetrievalStructuredResponseRecipe({"type": "object"}, pruning=False)
     with pytest.raises(ParserException, match="Duplicate"):
@@ -116,10 +194,13 @@ def structured_generator(
     policy: str,
     with_trace: dd.TraceType = dd.TraceType.NONE,
     extract_reasoning_content: bool = False,
+    max_conversation_restarts: int = 0,
 ) -> LLMStructuredCellGenerator:
-    """Use native model generation with two validation attempts and explicit policy."""
+    """Use native model generation with two attempts per conversation and explicit policy."""
     resources = MagicMock()
-    resources.run_config = dd.RunConfig(max_conversation_correction_steps=1, max_conversation_restarts=0)
+    resources.run_config = dd.RunConfig(
+        max_conversation_correction_steps=1, max_conversation_restarts=max_conversation_restarts
+    )
     resources.model_registry.get_model.return_value = facade
     return RetrievalStructuredCellGenerator(
         RetrievalStructuredColumnConfig(
@@ -181,16 +262,29 @@ def test_structured_column_policy_uses_native_validation_budget(
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
-def test_structured_column_never_converts_provider_errors(monkeypatch, asynchronous):
+@pytest.mark.parametrize("policy", ["error", "skip"])
+def test_structured_column_never_converts_provider_errors(monkeypatch, asynchronous, policy):
     facade = model_facade()
     monkeypatch.setattr(facade, "_get_mcp_facade", lambda _: None)
     completion = (AsyncMock if asynchronous else MagicMock)(side_effect=PermissionError("Controlled provider failure"))
     monkeypatch.setattr(facade, "acompletion" if asynchronous else "completion", completion)
-    generator = structured_generator(facade, "skip")
+    generator = structured_generator(facade, policy)
     with pytest.raises(DataDesignerError) as raised:
         asyncio.run(generator.agenerate({})) if asynchronous else generator.generate({})
     assert not isinstance(raised.value, ModelGenerationValidationFailureError)
     assert completion.call_count == 1
+
+
+def test_standalone_column_diagnostic_includes_configured_restart_budget(monkeypatch):
+    facade = model_facade()
+    monkeypatch.setattr(facade, "_get_mcp_facade", lambda _: None)
+    completion = MagicMock(return_value=make_stub_completion_response(content="not JSON"))
+    monkeypatch.setattr(facade, "completion", completion)
+    generator = structured_generator(facade, "skip", max_conversation_restarts=2)
+    result = generator.generate({"id": "same-row"})
+    assert result["id"] == "same-row"
+    assert json.loads(result["decision"])[FAILURE_KEY]["max_model_attempts"] == 6
+    assert completion.call_count == 6
 
 
 def test_native_corrections_are_bounded_and_keep_a_valid_rejection(monkeypatch: pytest.MonkeyPatch) -> None:

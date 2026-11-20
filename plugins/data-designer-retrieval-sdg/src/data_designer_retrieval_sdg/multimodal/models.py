@@ -9,7 +9,17 @@ from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
+from data_designer.config import RunConfig
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializationInfo,
+    create_model,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from data_designer_retrieval_sdg.multimodal.query_groups import QueryProvenance
 from data_designer_retrieval_sdg.multimodal.source_models import SourceDirectoryConfig, SplitRatios
@@ -138,7 +148,7 @@ class MultimodalSDGConfig(StrictModel):
     summary_fraction: float | None = Field(default=None, gt=0, le=1)
     summary_near_duplicate_threshold: float | None = Field(default=None, gt=0, le=1)
     instructions_per_context: int | None = Field(default=None, gt=0)
-    missing_response_attempts: int = Field(default=3, ge=1, le=3)
+    run_config: RunConfig = Field(default_factory=RunConfig)
     failed_record_policy: Literal["error", "skip"] = "error"
     require_verbatim_quotes: bool = False
     instructions: list[QueryInstruction] = Field(default_factory=lambda: list(DEFAULT_INSTRUCTIONS), min_length=1)
@@ -148,6 +158,37 @@ class MultimodalSDGConfig(StrictModel):
     seed: int = 42
     group_near_duplicates: bool = False
     resume: bool = False
+
+    @field_serializer("run_config")
+    def serialize_run_config(self, value: RunConfig, info: SerializationInfo) -> dict[str, Any]:
+        """Preserve explicit overrides when configuration is saved and reloaded.
+
+        Args:
+            value: Validated native runtime configuration.
+            info: Requested Python or JSON serialization mode.
+
+        Returns:
+            Only explicitly configured fields, including values equal to native defaults.
+        """
+        return value.model_dump(mode=info.mode, exclude_unset=True)
+
+    def resolved_run_config(self) -> RunConfig:
+        """Combine workflow runtime preferences with explicit native overrides.
+
+        Returns:
+            Validated Data Designer settings. Retry defaults come from Data Designer;
+            explicit overrides take precedence over workflow runtime preferences.
+        """
+        return RunConfig(
+            **{
+                "disable_early_shutdown": True,
+                "buffer_size": self.batch_size,
+                "max_concurrent_row_groups": 1,
+                "display_tui": False,
+                "otel_metrics_port": None,
+                **self.run_config.model_dump(exclude_unset=True),
+            }
+        )
 
     def model_for(self, role: ModelRole, judge_stage: JudgeStage | None = None) -> ModelSettings:
         """Resolve the complete model settings for a request.
@@ -306,7 +347,7 @@ class QuerySlot(StrictModel):
     """One generated query or explicit abstention."""
 
     # Data Designer validates JSON Schema before Python models are reconstructed.
-    # Encode the relation here too, so native correction receives the actual error.
+    # Encode the relation here too, so structured-response validation detects inconsistent slots.
     model_config = ConfigDict(
         json_schema_extra={
             "if": {"properties": {"slot": {}, "query": {}, "evidence_modality": {"const": "none"}}},
@@ -401,12 +442,12 @@ class RelevanceJudgment(StrictModel):
 class Support(StrictModel):
     """Source-local silver relevance; a grade is not an embedding similarity score."""
 
-    unit_id: str = Field(min_length=1)
+    unit_id: str = Field(min_length=1, pattern=r"\S")
     grade: Literal[1, 2]
     modality: Literal["text", "image", "text_and_image"]
     quote: str
     visual_evidence: str
-    contribution: str = Field(min_length=1)
+    contribution: str = Field(min_length=1, pattern=r"\S")
 
 
 class Localization(StrictModel):

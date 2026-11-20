@@ -16,6 +16,7 @@ from test_multimodal_sdg import ScriptedInference
 from test_source_directory import UnexpectedInference, directory_config
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, processors
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
+from workflow_test_utils import install_inference
 
 from data_designer_retrieval_sdg.multimodal import SourceDirectoryConfig, run_multimodal_sdg
 from data_designer_retrieval_sdg.multimodal.source_directory import load_directory_sources
@@ -227,11 +228,12 @@ def test_bpe_dropout_rejected_before_inference_and_run_creation(tmp_path, monkey
         max_tokens_per_chunk=1000,
         tokenizer=save_bpe_tokenizer(tmp_path, dropout),
     )
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", UnexpectedInference)
+    completion = install_inference(monkeypatch, ScriptedInference())
     with pytest.raises(ValueError, match=r"BPE dropout.*null or 0") as error:
         run_multimodal_sdg(config)
     assert str(config.source_directory.tokenizer) in str(error.value)
     assert not config.output_dir.exists()
+    completion.assert_not_awaited()
 
 
 @pytest.mark.parametrize("dropout", [None, 0.0])
@@ -314,10 +316,11 @@ def test_oversized_sentence_rejected_before_inference_and_run_creation(tmp_path,
         max_tokens_per_chunk=3,
         tokenizer=save_embedding_tokenizer(tmp_path),
     )
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", UnexpectedInference)
+    completion = install_inference(monkeypatch, ScriptedInference())
     with pytest.raises(ValueError, match="split_oversized_sentences"):
         run_multimodal_sdg(config)
     assert not config.output_dir.exists()
+    completion.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -330,7 +333,7 @@ def test_resume_binds_tokenizer_snapshot_and_budget_even_if_units_unchanged(tmp_
         max_tokens_per_chunk=100,
         tokenizer=save_embedding_tokenizer(tmp_path),
     )
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    completion = install_inference(monkeypatch, ScriptedInference())
     handoff = run_multimodal_sdg(config)
     manifest = json.loads((config.output_dir / "inputs/source_manifest.json").read_text())
     identity = json.loads((config.output_dir / "identity.json").read_text())
@@ -339,7 +342,7 @@ def test_resume_binds_tokenizer_snapshot_and_budget_even_if_units_unchanged(tmp_
     assert manifest["source_preparation"]["tokenizers_version"] == version("tokenizers")
     assert manifest["source_preparation"]["transformers_version"] == version("transformers")
     original, _ = load_directory_sources(config.source_directory)
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", UnexpectedInference)
+    completion.reset_mock()
     assert run_multimodal_sdg(config.model_copy(update={"resume": True})) == handoff
     if change == "tokenizer_backend":
         path = Path(config.source_directory.tokenizer) / "tokenizer.json"
@@ -365,6 +368,7 @@ def test_resume_binds_tokenizer_snapshot_and_budget_even_if_units_unchanged(tmp_
     assert unchanged == original
     with pytest.raises(ValueError, match="Artifact changed"):
         run_multimodal_sdg(config.model_copy(update={"resume": True}))
+    completion.assert_not_awaited()
 
 
 def changed_version(distribution: str) -> str:

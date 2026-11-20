@@ -6,29 +6,29 @@
 from __future__ import annotations
 
 import json
-from collections import defaultdict
-from functools import partial
 
 from data_designer_retrieval_sdg.multimodal import prompts
-from data_designer_retrieval_sdg.multimodal.bounds import fit_contexts
-from data_designer_retrieval_sdg.multimodal.combinations import semantic_combinations
-from data_designer_retrieval_sdg.multimodal.inference import Request, generate_records, request_identity, source_request
+from data_designer_retrieval_sdg.multimodal.inference import Request
 from data_designer_retrieval_sdg.multimodal.models import (
     ContextSummary,
     Description,
-    FailedGeneration,
     GenerationContext,
-    SummaryJudgment,
-    VisualDescription,
 )
-from data_designer_retrieval_sdg.multimodal.planning import automatic_contexts, bounded_contexts
-from data_designer_retrieval_sdg.multimodal.sections import section_contexts, verify_section_coverage
+from data_designer_retrieval_sdg.multimodal.planning import bounded_contexts
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
-from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
 
 
 def visual_description(visual: dict, unit_id: str) -> str:
-    """Use enrichment only when the model identified substantive visual content."""
+    """Use enrichment only when the model identified substantive visual content.
+
+    Args:
+        visual: Generated enrichment records keyed by source unit ID.
+        unit_id: Source unit whose description is needed.
+
+    Returns:
+        The description when substantive visual content was identified, or an
+        empty string when the record is absent or marked nonvisual.
+    """
     record = visual.get(unit_id, {})
     return record.get("description", "") if record.get("has_visual_content", False) else ""
 
@@ -91,49 +91,7 @@ def summary_requests(context, sources, visual, descriptions=None):
             ),
         )
         schema = ContextSummary
-    return [Request(text, schema, "generator")]
-
-
-def visual_enrichment(sources, inference) -> dict:
-    """Describe source images once; ordinary text and decorations are not visual evidence."""
-    by_id = {s.unit_id: s for s in sources}
-    selected = [s for s in sources if s.images]
-    requests = [
-        source_request(
-            prompts.VISUAL_DESCRIPTION,
-            VisualDescription,
-            "generator",
-            GenerationContext(context_id=s.unit_id, unit_ids=[s.unit_id], language=s.language),
-            by_id,
-        )
-        for s in selected
-    ]
-    responses = generate_records(
-        inference, requests, "visual-enrichment", [{"source_unit_ids": [s.unit_id]} for s in selected]
-    )
-    return {
-        s.unit_id: r.model_dump()
-        for s, r in zip(selected, responses, strict=True)
-        if not isinstance(r, FailedGeneration)
-    }
-
-
-def describe_documents(sources, visual, config, inference) -> dict:
-    """Describe documents in bounded text requests, retaining all supplied units."""
-    by_id = {s.unit_id: s for s in sources}
-    documents = automatic_contexts(sources, "document")
-    chunks = bounded_enriched_contexts(documents, sources, visual, config)
-    builder = partial(summary_requests, sources=by_id, visual=visual)
-    chunks = fit_contexts(chunks, builder, config)
-    responses = generate_records(
-        inference, [builder(c)[0] for c in chunks], "document-description", [request_identity(c) for c in chunks]
-    )
-    descriptions = defaultdict(list)
-    for context, response in zip(chunks, responses, strict=True):
-        if isinstance(response, FailedGeneration):
-            continue
-        descriptions[(by_id[context.unit_ids[0]].document_id, context.language)].append(response.description)
-    return {key: "\n".join(values) for key, values in descriptions.items()}
+    return [Request(text, schema, "generator", context=context)]
 
 
 def summary_row(context, summary, sources, visual, combined=False) -> dict:
@@ -162,113 +120,3 @@ def combination_requests(context, rows):
             "generator",
         )
     ]
-
-
-def plan_summaries(sources, contexts, config, inference) -> list[dict]:
-    """Run the reference-style planning stages over the existing generic input contracts.
-
-    Args:
-        sources: Complete canonical sources, whose text/assets are never rewritten.
-        contexts: Validated caller contexts; automatic sections are used only without an override.
-        config: Run settings including optional semantic combinations.
-        inference: Cached structured Data Designer calls.
-
-    Returns:
-        Single and combined summary records before grading/deduplication/budgeting.
-    """
-    root = config.output_dir / "planning"
-    by_id = {s.unit_id: s for s in sources}
-    if config.contexts_file is None:
-        contexts = section_contexts(sources, config, inference)
-    visual = visual_enrichment(sources, inference)
-    write_json(root / "visual_descriptions.json", visual)
-    descriptions = describe_documents(sources, visual, config, inference)
-    write_json(
-        root / "document_descriptions.json",
-        [{"document_id": key[0], "language": key[1], "description": value} for key, value in descriptions.items()],
-    )
-    # Section summaries need text, not bounded image attachments. Keep larger memberships
-    # for semantic combinations and deduplication; bound image requests after selection.
-    contexts = bounded_enriched_contexts(contexts, sources, visual, config)
-    builder = partial(summary_requests, sources=by_id, visual=visual, descriptions=descriptions)
-    contexts = fit_contexts(contexts, builder, config)
-    if config.contexts_file is None:
-        verify_section_coverage(contexts, sources, 2 * config.section_size)
-    summaries = generate_records(
-        inference, [builder(c)[0] for c in contexts], "summary", [request_identity(c) for c in contexts]
-    )
-    rows = [
-        summary_row(c, s, by_id, visual)
-        for c, s in zip(contexts, summaries, strict=True)
-        if not isinstance(s, FailedGeneration)
-    ]
-    combinations = semantic_combinations(rows, config)
-    combination_builder = partial(combination_requests, rows=rows)
-    combination_contexts = [
-        GenerationContext(
-            context_id="combination_" + fingerprint(group)[:32],
-            unit_ids=[str(i) for i in group],
-            language=rows[group[0]]["context"]["language"],
-        )
-        for group in combinations
-    ]
-    combination_contexts = fit_contexts(combination_contexts, combination_builder, config)
-    combinations = [[int(i) for i in c.unit_ids] for c in combination_contexts]
-    write_json(
-        root / "combinations.json",
-        {
-            "section_summaries": len(rows),
-            "iterations": config.combination_iterations,
-            "small_input_skip": bool(config.combination_iterations and len(rows) < 12),
-            "members": [[rows[i]["context"]["context_id"] for i in group] for group in combinations],
-        },
-    )
-    combined = generate_records(
-        inference,
-        [combination_builder(c)[0] for c in combination_contexts],
-        "summary-combinations",
-        [
-            {
-                "summary_context_ids": [rows[i]["context"]["context_id"] for i in group],
-                "source_unit_ids": list(dict.fromkeys(key for i in group for key in rows[i]["context"]["unit_ids"])),
-            }
-            for group in combinations
-        ],
-    )
-    for group, summary in zip(combinations, combined, strict=True):
-        if isinstance(summary, FailedGeneration):
-            continue
-        ids = list(dict.fromkeys(key for i in group for key in rows[i]["context"]["unit_ids"]))
-        context = GenerationContext(
-            context_id="combined_" + fingerprint([rows[i]["context"]["context_id"] for i in group])[:32],
-            unit_ids=ids,
-            language=rows[group[0]]["context"]["language"],
-        )
-        rows.append(summary_row(context, summary, by_id, visual, combined=True))
-    if config.judge_summaries:
-        judgments = generate_records(
-            inference,
-            [
-                Request(
-                    prompts.render(
-                        "judgment",
-                        summary=row["summary"]["summary"],
-                        persona=config.persona,
-                        language=row["context"]["language"],
-                    ),
-                    SummaryJudgment,
-                    "judge",
-                    judge_stage="summary",
-                )
-                for row in rows
-            ],
-            "summary-judgment",
-            [request_identity(GenerationContext.model_validate(row["context"])) for row in rows],
-        )
-        for row, judgment in zip(rows, judgments, strict=True):
-            if isinstance(judgment, FailedGeneration):
-                row["summary_judgment_failed"] = True
-            else:
-                row["summary_judgment"] = judgment.model_dump()
-    write_json(root / "summaries.json", rows)
-    return rows

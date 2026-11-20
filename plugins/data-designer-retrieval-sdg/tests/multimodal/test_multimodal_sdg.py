@@ -8,17 +8,15 @@ from __future__ import annotations
 import json
 from functools import partial
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
-from data_designer.engine.models.facade import ModelFacade
-from data_designer.engine.testing import make_stub_completion_response
 from PIL import Image
 from pydantic import ValidationError
+from workflow_test_utils import generate_candidates, install_inference
 
 from data_designer_retrieval_sdg.multimodal import ModelSettings, MultimodalSDGConfig, run_multimodal_sdg
 from data_designer_retrieval_sdg.multimodal.export import export_multimodal_bundle
-from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference, Request
 from data_designer_retrieval_sdg.multimodal.models import (
     ContextSummary,
     Localization,
@@ -32,7 +30,7 @@ from data_designer_retrieval_sdg.multimodal.models import (
 )
 from data_designer_retrieval_sdg.multimodal.source_file import load_retrieval_sources
 from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
-from data_designer_retrieval_sdg.multimodal.workflow import generate_candidates, load_contexts, localization_reasons
+from data_designer_retrieval_sdg.multimodal.workflow import load_contexts, localization_reasons
 
 
 def fixture_config(tmp_path: Path) -> MultimodalSDGConfig:
@@ -165,7 +163,7 @@ def generated_fixture(tmp_path):
 
 def test_complete_generic_workflow_and_verified_resume(tmp_path, monkeypatch):
     config = fixture_config(tmp_path)
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    install_inference(monkeypatch, ScriptedInference())
     handoff = run_multimodal_sdg(config)
     assert handoff.is_file()
     report = json.loads((handoff.parent / "report.json").read_text())
@@ -278,44 +276,6 @@ def test_full_nemotron_consumer_contract(tmp_path, modality):
         assert consumer.resolve_portable_evaluation_input(handoff, view)[0].is_dir()
 
 
-def test_request_cache_binds_schema_model_pixels_and_detects_edits(tmp_path):
-    config = fixture_config(tmp_path)
-    inference = DataDesignerInference(tmp_path / "inference", config)
-    request = Request("Read evidence", ContextSummary, "generator", (tmp_path / "page.png",))
-    first = inference.request_key(request)
-    Image.new("RGB", (24, 24), "black").save(tmp_path / "page.png")
-    assert inference.request_key(request) != first
-    assert inference.request_key(
-        Request("Changed", ContextSummary, "generator", request.images)
-    ) != inference.request_key(request)
-    key = inference.request_key(request)
-    write_json(
-        inference.root / "responses" / f"{key}.json",
-        {"request_id": key, "response": {"summary": "x", "visual_evidence": ""}, "response_sha256": "bad"},
-    )
-    with pytest.raises(ValueError, match="integrity"):
-        inference.cached(request)
-
-
-@pytest.mark.parametrize("with_images", [False, True])
-def test_native_dd_batch_accepts_bare_json_without_core_patch(tmp_path, monkeypatch, with_images):
-    config = fixture_config(tmp_path)
-    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
-    completion = AsyncMock(
-        return_value=make_stub_completion_response(
-            content='{"summary":"Actual structured response","visual_evidence":""}'
-        )
-    )
-    monkeypatch.setattr(ModelFacade, "acompletion", completion)
-    inference = DataDesignerInference(tmp_path / "inference", config)
-    request = Request("Summarize", ContextSummary, "generator", (tmp_path / "page.png",) if with_images else ())
-    result = inference.generate([request, request])
-    assert result[0].summary == "Actual structured response"
-    assert result[0] == result[1] and completion.await_count == 1
-    assert inference.generate([request])[0] == result[0]
-    assert completion.await_count == 1
-
-
 @pytest.mark.parametrize(
     "changes",
     [
@@ -370,20 +330,6 @@ def test_failed_gates_preserve_rejections_and_never_localize(tmp_path):
     assert not (tmp_path / "bundle").exists()
 
 
-class MissingInference(DataDesignerInference):
-    def run_batch(self, items):
-        self.calls = getattr(self, "calls", 0) + 1
-
-
-@pytest.mark.parametrize("policy", ["error", "skip"])
-def test_missing_response_has_finite_attempts_without_fabrication(tmp_path, policy):
-    config = fixture_config(tmp_path).model_copy(update={"failed_record_policy": policy})
-    inference = MissingInference(tmp_path / "inference", config)
-    with pytest.raises(RuntimeError, match="Missing structured"):
-        inference.generate([Request("one", ContextSummary, "judge")])
-    assert inference.calls == 3
-
-
 def test_run_lock_prevents_duplicate_workers(tmp_path):
     from filelock import FileLock, Timeout
 
@@ -407,7 +353,7 @@ def test_partial_bundle_is_preserved_not_overwritten(tmp_path):
 
 def test_source_content_drift_blocks_resume_before_inference(tmp_path, monkeypatch):
     config = fixture_config(tmp_path)
-    monkeypatch.setattr("data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", ScriptedInference)
+    install_inference(monkeypatch, ScriptedInference())
     run_multimodal_sdg(config)
     config.sources_file.write_text(config.sources_file.read_text().replace("20 bar", "25 bar"))
     with pytest.raises(ValueError, match="Artifact changed"):
@@ -452,86 +398,6 @@ def test_single_modality_views_require_all_localized_evidence(tmp_path, modality
         rows = json.loads((handoff.parent / "views" / view / "train.json").read_text())["data"]
         assert bool(rows) == bool(expected)
         assert all(len(row["pos_doc"]) == 2 for row in rows)
-
-
-@pytest.mark.parametrize("invalid_query", ["", "null"])
-def test_inconsistent_slot_is_retried_without_rewriting_response(tmp_path, monkeypatch, invalid_query):
-    config = fixture_config(tmp_path)
-    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
-    completion = AsyncMock(
-        side_effect=[
-            make_stub_completion_response(
-                content=json.dumps({"queries": [{"slot": 0, "query": invalid_query, "evidence_modality": "none"}]})
-            ),
-            make_stub_completion_response(content='{"queries":[{"slot":0,"query":null,"evidence_modality":"none"}]}'),
-        ]
-    )
-    monkeypatch.setattr(ModelFacade, "acompletion", completion)
-    inference = DataDesignerInference(tmp_path / "inference", config)
-    result = inference.generate([Request("Generate or abstain explicitly", QueryBatch, "generator")])
-    assert result[0].queries[0].query is None
-    assert len(list((inference.root / "attempts").iterdir())) == 1
-    assert completion.await_count == 2
-    assert inference.generate([Request("Generate or abstain explicitly", QueryBatch, "generator")]) == result
-    assert completion.await_count == 2
-
-
-@pytest.mark.parametrize("slots", [[], [0, 1], [0, 1, 1], [0, 1, 3], [0, 1, 2, 3]])
-def test_slot_membership_is_corrected_natively_before_caching(tmp_path, monkeypatch, slots):
-    config = fixture_config(tmp_path)
-    monkeypatch.setenv("TEST_SDG_KEY", "test-placeholder")
-    invalid = {"queries": [{"slot": slot, "query": None, "evidence_modality": "none"} for slot in slots]}
-    corrected = {
-        "queries": [
-            {"slot": 2, "query": None, "evidence_modality": "none"},
-            {"slot": 0, "query": "What pressure opens the valve?", "evidence_modality": "text"},
-            {"slot": 1, "query": None, "evidence_modality": "none"},
-        ]
-    }
-    schema = QueryBatch.for_slot_count(3)
-    with pytest.raises(ValidationError):
-        schema.model_validate(invalid)
-    completion = AsyncMock(
-        side_effect=[
-            make_stub_completion_response(content=json.dumps(invalid)),
-            make_stub_completion_response(content=json.dumps(corrected)),
-        ]
-    )
-    monkeypatch.setattr(ModelFacade, "acompletion", completion)
-    inference = DataDesignerInference(tmp_path / "inference", config)
-    request = Request("Generate three addressed query slots", schema, "generator")
-    result = inference.generate([request])[0]
-    assert result.model_dump() == corrected  # Preserve model order, wording and abstentions.
-    assert completion.await_count == 2
-    assert len(list((inference.root / "attempts").iterdir())) == 1
-    resumed = DataDesignerInference(inference.root, config.model_copy(update={"resume": True}))
-    assert resumed.generate([request])[0] == result
-    assert completion.await_count == 2
-    caches = list((inference.root / "responses").glob("*.json"))
-    assert len(caches) == 1 and json.loads(caches[0].read_text())["response"] == corrected
-
-
-def test_request_slot_count_changes_cache_identity_and_invalid_rows_are_not_cached(tmp_path):
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-
-    config = fixture_config(tmp_path)
-    inference = DataDesignerInference(tmp_path / "inference", config)
-    request = Request("Generate queries", QueryBatch.for_slot_count(3), "generator")
-    assert inference.request_key(request) != inference.request_key(
-        Request(request.text, QueryBatch.for_slot_count(2), request.role)
-    )
-    assert inference.request_key(request) != inference.request_key(Request(request.text, QueryBatch, request.role))
-    dataset = tmp_path / "dataset"
-    dataset.mkdir()
-    pq.write_table(
-        pa.Table.from_pylist([{"request_id": inference.request_key(request), "response": '{"queries":[]}'}]),
-        dataset / "batch_000.parquet",
-    )
-    inference.collect_responses([(inference.request_key(request), request)], dataset, tmp_path / "attempt")
-    assert inference.cached(request) is None
-    outcome = json.loads((tmp_path / "attempt/outcome.json").read_text())
-    assert outcome["returned"] == 0 and outcome["invalid"] == [inference.request_key(request)]
 
 
 @pytest.mark.parametrize("split", ["train", "validation", "evaluation"])
@@ -581,16 +447,6 @@ def test_mixed_view_preserves_text_and_image_positive_set(tmp_path, split):
         assert rows[0]["neg_doc"] == []
 
 
-def cache_scripted_batch(inference, items):
-    """Exercise production cache reads with deterministic inference responses."""
-    for key, request in items:
-        response = scripted_response(request).model_dump(mode="json")
-        write_json(
-            inference.root / "responses" / f"{key}.json",
-            {"request_id": key, "response": response, "response_sha256": fingerprint(response)},
-        )
-
-
 def interrupt_json_write(path, value, *, filename):
     """Interrupt at a selected publication boundary without changing saved files."""
     if path.name == filename:
@@ -599,10 +455,11 @@ def interrupt_json_write(path, value, *, filename):
 
 
 @pytest.mark.parametrize("filename", ["report.json", "complete.json"])
-def test_export_interruption_resumes_without_repeating_inference(tmp_path, filename):
+def test_export_interruption_resumes_without_repeating_inference(tmp_path, monkeypatch, filename):
     config = fixture_config(tmp_path)
     module = "export" if filename == "report.json" else "workflow"
-    with patch.object(DataDesignerInference, "run_batch", autospec=True, side_effect=cache_scripted_batch) as batches:
+    batches = install_inference(monkeypatch, ScriptedInference())
+    with patch.dict("os.environ", {"TEST_SDG_KEY": "test-placeholder"}):
         with patch(
             f"data_designer_retrieval_sdg.multimodal.{module}.write_json",
             side_effect=partial(interrupt_json_write, filename=filename),

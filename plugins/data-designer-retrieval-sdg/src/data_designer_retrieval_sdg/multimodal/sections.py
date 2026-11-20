@@ -9,18 +9,10 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 
-from data_designer_retrieval_sdg.multimodal import prompts
-from data_designer_retrieval_sdg.multimodal.bounds import check_request
-from data_designer_retrieval_sdg.multimodal.inference import Request, generate_records
-from data_designer_retrieval_sdg.multimodal.models import (
-    FailedGeneration,
-    GenerationContext,
-    MultimodalSDGConfig,
-    TOCConfirmation,
-)
-from data_designer_retrieval_sdg.multimodal.planning import automatic_contexts, context_chars
+from data_designer_retrieval_sdg.multimodal.models import GenerationContext
+from data_designer_retrieval_sdg.multimodal.planning import automatic_contexts
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
-from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
+from data_designer_retrieval_sdg.multimodal.storage import fingerprint
 
 
 def structural_lines(text: str) -> list[str]:
@@ -60,7 +52,7 @@ def toc_entries(text: str) -> list[dict]:
     """Read title/trailing-Arabic-page rows; preserve source order for validation.
 
     Unsupported Roman labels and ambiguous rows remain ordinary source content.
-    A numbered list alone is not a TOC: candidate detection and cached confirmation
+    A numbered list alone is not a TOC: candidate detection and Data Designer judge confirmation
     are separate gates, followed by title/offset validation within the document.
     """
     entries = []
@@ -74,53 +66,13 @@ def toc_entries(text: str) -> list[dict]:
 
 
 def toc_candidate(text: str) -> bool:
-    """Find likely TOCs, leaving final classification to the cached judge call."""
+    """Find likely TOCs, leaving final classification to the Data Designer judge column."""
     count = len(toc_entries(text))
     marker = re.search(
         r"\b(?:table of contents|contents|table des matieres|sommaire|inhaltsverzeichnis|indice)\b",
         normalized_title(" ".join(structural_lines(text))),
     )
     return count >= 9 or (count >= 3 and marker is not None)
-
-
-def confirm_tocs(sources, config, inference) -> dict[str, dict]:
-    """Confirm bounded candidate units through the existing schema/cache/retry path."""
-    candidates = [source for source in sources if toc_candidate(source.text)]
-    by_id = {s.unit_id: s for s in sources}
-    bounded = [
-        s
-        for s in candidates
-        if config.max_context_chars is None or context_chars([s.unit_id], by_id) <= config.max_context_chars
-    ]
-    for source in bounded:
-        check_request(
-            Request(prompts.render("check_toc", page=source.text, language=source.language), TOCConfirmation, "judge"),
-            config,
-        )
-    responses = (
-        generate_records(
-            inference,
-            [
-                Request(prompts.render("check_toc", page=s.text, language=s.language), TOCConfirmation, "judge")
-                for s in bounded
-            ],
-            "toc-confirmation",
-            [{"source_unit_ids": [s.unit_id]} for s in bounded],
-        )
-        if bounded
-        else []
-    )
-    result = {
-        s.unit_id: {"generation_failed": True} if isinstance(response, FailedGeneration) else response.model_dump()
-        for s, response in zip(bounded, responses, strict=True)
-    }
-    for source in candidates:
-        if source.unit_id not in result:
-            result[source.unit_id] = {
-                "has_table_of_contents": False,
-                "explanation": "Candidate exceeds the text bound; no truncated confirmation request was made.",
-            }
-    return result
 
 
 def title_locations(sources: list[RetrievalSource], excluded: set[str]) -> dict[str, set[int]]:
@@ -318,19 +270,3 @@ def build_sections(sources, config, confirmations=None) -> tuple[list[Generation
         "documents": documents,
         "coverage": coverage,
     }
-
-
-def section_contexts(
-    sources: list[RetrievalSource], config: MultimodalSDGConfig, inference=None
-) -> list[GenerationContext]:
-    """Confirm TOCs through cached inference when supplied, then check complete coverage.
-
-    Without inference, only headings contribute structural evidence. Explicit
-    caller contexts bypass this automatic planner in the workflow. Confirmation
-    failures follow the configured error/skip policy and never become approvals.
-    """
-    confirmations = confirm_tocs(sources, config, inference) if inference is not None else {}
-    contexts, audit = build_sections(sources, config, confirmations)
-    if inference is not None:
-        write_json(config.output_dir / "planning/section_boundaries.json", audit)
-    return contexts

@@ -20,29 +20,51 @@ image paths inside source records resolve relative to their JSONL file.
 | `judges` | `{}` | Optional complete model settings for individual judgment stages. |
 | `contexts_file` | `null` | Explicit context JSONL; replaces automatic context grouping. |
 | `concurrency` | `8` | Model-call concurrency, from 1 to 128. |
-| `batch_size` | `30` | Request batch size, from 1 to 128. |
-| `missing_response_attempts` | `3` | Total attempts for missing or invalid rows in normally completed batches, from 1 to 3. |
+| `batch_size` | `30` | Seed batch size and default Data Designer row-group size, from 1 to 128. |
+| `run_config` | `{}` | Native Data Designer `RunConfig` overrides, including retry settings. Omitted retry fields use Data Designer defaults. |
 | `failed_record_policy` | `error` | Use `skip` to record exhausted model-validation failures and continue with usable records. |
 | `seed` | `42` | Seed for instruction sampling, selection, and query-group splitting. Model output can still vary. |
-| `resume` | `false` | Reuse a compatible run and cached responses. |
+| `resume` | `false` | Reuse a compatible run and its Data Designer stage checkpoints. |
 | `ratios` | `{train: 0.8, validation: 0.0, evaluation: 0.2}` | Query-group split fractions, each from 0 to 1 and summing to 1. |
 | `group_near_duplicates` | `false` | Add conservative lexical query grouping before splitting. |
 
-The plugin groups requests by resolved model settings, response schema, and presence of images.
-Each batch runs a Data Designer structured-response column. Matching requests
-reuse cached responses keyed by their prompt, schema, model settings, and image
-content.
+The multimodal entry point builds one Data Designer `CompositeWorkflow` with
+named model columns, explicit dependencies, and persisted stage boundaries.
+Checkpoints belong to rows and stages. Identical requests in different rows can
+make separate model calls; there is no shared content-addressed response cache.
 
-`missing_response_attempts` limits attempts for missing or invalid rows after a
-batch completes normally. Valid responses are cached before retrying the missing
-rows. Runtime exceptions stop the run after preserving available completed rows;
-continuing requires explicit resume. Unexpected or duplicate response identities
-stop the run before new responses from that attempt are cached.
+Data Designer owns validation retries, conversation corrections, and restarts.
+The plugin does not set retry defaults or impose its own attempt limit. To
+override native settings, add a `run_config` mapping to the YAML configuration:
 
-This limit is separate from Data Designer's structured-response correction and
-provider retry behavior. Batch size and retry settings do not define a total
-API-call, cost, or elapsed-time budget. Refer to
+```yaml
+run_config:
+  max_conversation_restarts: 2
+  max_conversation_correction_steps: 1
+```
+
+This example allows one initial response and one correction per conversation,
+with up to two restarts: at most six model-validation attempts per cell. To
+disable validation retries, explicitly set both values to `0`. Omit either field
+to use its default from the installed Data Designer version. Unknown fields and
+invalid values are rejected by the native `RunConfig` model.
+
+The workflow defaults to `disable_early_shutdown: true`, `buffer_size: batch_size`,
+`max_concurrent_row_groups: 1`, `display_tui: false`, and `otel_metrics_port: null`.
+Explicit `run_config` values take precedence over these runtime preferences.
+Python callers can supply a `data_designer.config.RunConfig` instance directly.
+
+If enabled, corrections append the invalid response and validation feedback to
+the conversation. Local request-budget checks cover the initial rendered request;
+they do not bound that additional correction history. Provider transport retries
+follow Data Designer policy separately. Batch size and retry settings do not
+define a total API-call, cost, or elapsed-time budget. Refer to
 [Resume an Interrupted Run](multimodal.md#resume-an-interrupted-run) for recovery.
+
+The removed `missing_response_attempts` field is rejected. To preserve an earlier
+limit of `N` fresh attempts, set `run_config.max_conversation_restarts` to `N - 1`
+and `run_config.max_conversation_correction_steps` to `0`. Changing runtime
+settings changes the frozen run identity; start a new output directory.
 
 ### Continue After Failed Records
 
@@ -53,33 +75,42 @@ failed_record_policy: skip
 ```
 
 The default `error` policy stops when required structured responses remain
-unavailable. With `skip`, the structured column records a diagnostic after Data
-Designer's native validation retries are exhausted. This adds no retry loop and
-does not change the native retry budget. `missing_response_attempts` keeps its
-separate meaning; a recorded failure is terminal and is not retried by that loop
-or by resume. Unexplained missing rows, duplicate identities, provider errors,
-and integrity errors are never converted into skipped records.
+unavailable. With `skip`, Data Designer uses the same native retry settings as
+the `error` policy. Only an exhausted
+model-validation error becomes an explicit failed-record diagnostic. This
+includes malformed JSON, duplicate keys, and schema violations. A recorded
+failure is terminal and is not retried by resume. Provider authentication,
+permission, timeout, resource, and programming errors retain their existing
+failure/retry behavior. Missing or duplicate Data Designer row identities and
+integrity errors are never converted into skipped records.
 
 | Failed stage | Disposition |
 | --- | --- |
 | TOC confirmation | Preserve the source and omit unverified TOC projections. |
 | Visual or document enrichment | Preserve original text/images and omit the failed enrichment. |
-| Summary or summary combination | Omit the unavailable summary from generation inputs. |
+| Summary, summary combination, or related summary | Omit the unavailable summary from generation inputs. |
 | Summary judgment | Exclude the summary; a failed judgment cannot become a pass. |
 | Query generation | Exclude the context's requested query slots. |
-| Query metadata, self-sufficiency, relevance, or localization | Exclude the affected query; successful responses remain cached. |
+| Query metadata, self-sufficiency, relevance, or localization | Exclude the affected query; successful sibling judgments and observed support remain in diagnostics. |
 
 The original corpus and quality thresholds are preserved. If no queries pass,
-export still fails. Inspect `generation_failures.json` in the run directory and
-portable bundle for stage, request ID, source/context/query identity where
-applicable, validation detail, native attempt limit, and the last invalid
-response when available. The portable ledger is included in the manifest's
-checksums. `report.json.generation_failures` counts failures by stage, failed
-requested slots, and excluded query IDs. Failed query-generation slots contribute
-to `requested_slots`, separately from model abstentions and quality rejections.
-Earlier planning failures have no known query-slot count.
+export still fails.
+
+Each Data Designer boundary records skipped row IDs, stage, original context/source
+IDs, requested slots/query where applicable, failed columns, configured attempt
+limit, error details, and observed sibling responses. The diagnostic points to
+the preserved original or recovery Parquet artifact and its checksum. The final
+`generation_failures.json` is copied into the portable bundle and checksummed
+by `run_manifest.json`. Failed query judgments include the excluded `query_id`
+in the ledger. `report.json.generation_failures` counts failures by stage, failed
+requested slots, and distinct `excluded_query_ids`. Failed query-generation slots
+contribute to `requested_slots`, separately from model abstentions and quality
+rejections. Earlier planning failures have no known query-slot count.
 Queries that fail a later judgment or localization still count in
 `funnel.generated` and the `retention_fraction` denominator, once per query.
+When these failures occur, `funnel.after_generation_failures` records the
+remaining candidates before quality gates. Subsequent funnel stages apply only
+to those candidates; operational failures remain separate from quality rejections.
 For example, three generated queries with one localization failure and two
 accepted queries report three generated and a retention fraction of `2/3`.
 
@@ -91,10 +122,13 @@ before treating a cell as a model response. Failed records have `None` in any
 configured trace and reasoning-content columns, including when every record in
 a batch fails, so downstream expressions can still reference those columns.
 
-Resume preserves both cached successes and recorded failures. Changing the
-policy or upgrading the implementation changes the frozen run identity; use a
-new output directory. Failure rates and exclusions can affect sample composition,
-so include them when comparing generation yield.
+Completed resume reuses successful and explicitly skipped records without more
+model calls. Missing-row recovery still runs once per affected stage during an
+explicit resume, using the same native retry settings and configured failure
+policy. Changing the policy or upgrading the implementation changes the frozen
+run identity; use a new output directory. Never edit identity or checkpoint
+metadata to bypass these checks. Failure rates and exclusions can affect sample
+composition, so include them when comparing generation yield.
 
 ## Source Records
 
@@ -110,7 +144,7 @@ file, separate from run configuration:
 | `images` | `[]` | Zero or one local image path. Relative paths resolve from the source file's directory. |
 | `language` | `source` | Nonempty language label used in context grouping. |
 | `source_uri` | `null` | Optional source provenance string. The loader does not download this URI. |
-| `page_number` | `null` | Optional positive page number for structural section planning. |
+| `page_number` | `null` | Optional positive canonical page number for structural section planning and support localization. |
 
 The loader rejects empty files, duplicate unit IDs, missing image files, and
 records containing neither text nor an image. A single unit is not split during
@@ -321,6 +355,28 @@ Use `judge` for the default judgment model. Override individual stages under
 | Relevance | Query, source text, and available images | `judges.relevance` |
 | Support localization | Query, source text, and available images | `judges.localization` |
 
+Support localization also receives each source's `document_id`, canonical
+`page_number`, and one-based `image_number` in the attached image sequence. This
+keeps document boundaries and page references explicit when several sources are
+judged together. Text-only sources have `image_number: null` and do not advance
+image numbering; unknown page numbers remain `null`. No configuration change is
+required. Other stages retain their existing source payloads.
+
+Localization labels retrieval relevance. Grade 2 means a source unit independently
+supports the complete query; grade 1 means it supplies useful partial evidence.
+For a comparison or multi-hop query, retain a unit that supports only one part
+as grade 1. Irrelevant units are omitted; an unsupported query has an empty
+`supports` list. These are source-local silver labels, not exhaustive gold qrels.
+
+The model is instructed to use both source text and available images. Visible
+support can be relevant even when extracted text omits it. Text evidence uses a
+short exact extracted-text `quote` and an empty `visual_evidence`; image evidence
+describes the visible support in `visual_evidence` and may leave `quote` empty.
+`text_and_image` evidence supplies both. Every positive unit explains its role
+in `contribution`. Summaries, topic similarity, and generated answers do not
+establish support. These instructions require no new configuration and do not
+change the response schema or evidence-validation rules.
+
 An omitted or `null` stage uses `judge`. Each override is a complete
 [Model Settings](#model-settings) object. Required fields must be supplied;
 optional fields use their own defaults rather than inheriting values from
@@ -376,10 +432,10 @@ model-budget validation. The run manifest records the fallback under
 `shared_generator_judge` is true only when every active judge, including the
 fallback used for TOC confirmation, uses the generator's model identifier and endpoint.
 
-Cached responses include the resolved model settings and tokenizer content hash.
-Changing one override cannot reuse that stage's incompatible response. Changing
-settings in an existing run still violates its frozen identity; use a new output
-directory. Omitting overrides preserves the original judge request cache keys.
+Native stage configurations record the resolved model settings, and the frozen
+run identity includes the active tokenizer content hashes. Changing an override
+or its tokenizer prevents resume with incompatible checkpoints; use a new output
+directory. Omitting overrides routes each judgment through the fallback model.
 Stage configuration does not establish better judgment quality; compare reviewed
 examples when choosing models.
 
@@ -540,11 +596,14 @@ A successful run writes the following artifacts under its output directory:
 | `inputs/sources.jsonl` | Reusable source records for directory input. Image paths resolve relative to this file. |
 | `inputs/source_manifest.json` | Directory input file hashes, byte counts, and unit IDs, with tokenizer identity when a token cap is configured. |
 | `inputs/assets/` | Frozen copies of source images. Created only when sources include images. |
-| `inference/responses/` | Validated responses keyed by request content, with integrity hashes. |
-| `inference/attempts/<attempt-id>/` | Requested IDs, a seed Parquet file with source text and encoded images, Data Designer artifacts, and an outcome or failure record when available. |
+| `data_designer/multimodal/workflow-metadata.json` | Native workflow and named-stage status. |
+| `data_designer/multimodal/<stage>/` | Stage configuration, seed rows with local image references, model responses, and errors. |
+| `data_designer/multimodal/<stage>/boundary/` | Deterministic state, the next stage's seed, and integrity checksums. |
+| `data_designer/multimodal/<stage>/recovery/attempt-*/` | Separate recovery seeds and responses for missing rows in saved batches. |
+| `generation_failures.json`, `bundle/generation_failures.json` | Skipped-record diagnostics when `failed_record_policy: skip`; copied into the completed bundle and checksummed. |
 | `planning/` | Planning artifacts when produced by the selected strategy. |
 | `candidates.json`, `context_outcomes.json` | Accepted/rejected candidates, selection decisions, and generation slots. |
-| `complete.json` | Integrity inventory for the completed bundle and prepared directory inputs. |
+| `complete.json` | Integrity inventory for the completed bundle, frozen images, and prepared directory inputs. |
 | `bundle/generation_result.json` | Portable handoff referencing the schema-v2 bundle manifest. |
 | `bundle/run_manifest.json` | Policies, models, counts, relative artifact paths, sizes, and checksums. |
 | `bundle/retrieval_units.jsonl`, `bundle/assets/` | Canonical corpus units and copied images. |

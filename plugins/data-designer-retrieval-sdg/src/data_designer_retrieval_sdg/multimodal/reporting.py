@@ -39,6 +39,8 @@ def generation_report(
     survivors = candidates
     generated_count = len({c.query_id for c in candidates} | (failed_query_ids or set()))
     funnel = {"generated": generated_count}
+    if failed_query_ids:
+        funnel["after_generation_failures"] = len(candidates)
     for name in ("insufficient_standalone_query", "query_contains_answer", "insufficient_relevance"):
         survivors = [c for c in survivors if name not in c.rejection_reasons]
         funnel["after_" + name] = len(survivors)

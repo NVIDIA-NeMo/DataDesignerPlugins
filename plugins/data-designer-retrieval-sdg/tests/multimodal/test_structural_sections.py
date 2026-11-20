@@ -7,17 +7,15 @@ import json
 
 import pytest
 from test_multimodal_sdg import fixture_config
+from workflow_test_utils import install_inference
 
-from data_designer_retrieval_sdg.multimodal.inference import DataDesignerInference
 from data_designer_retrieval_sdg.multimodal.models import GenerationContext, TOCConfirmation
 from data_designer_retrieval_sdg.multimodal.sections import (
     build_sections,
-    section_contexts,
     toc_candidate,
     verify_section_coverage,
 )
 from data_designer_retrieval_sdg.multimodal.source_models import RetrievalSource
-from data_designer_retrieval_sdg.multimodal.storage import fingerprint, write_json
 
 
 def sources_with_text(texts, *, pages=True, document="manual", language="en"):
@@ -157,39 +155,6 @@ def test_coverage_guard_rejects_corrupted_memberships(tmp_path, bad):
         verify_section_coverage(sections, sources, 10)
 
 
-class CachedTOCInference(DataDesignerInference):
-    """Exercise real cache/schema orchestration with an in-memory model substitute."""
-
-    def __init__(self, root, config):
-        super().__init__(root, config)
-        self.calls = 0
-
-    def run_batch(self, pending):
-        self.calls += 1
-        for key, request in pending:
-            assert request.schema is TOCConfirmation and request.role == "judge"
-            response = TOCConfirmation(explanation="Actual contents list", has_table_of_contents=True).model_dump()
-            write_json(
-                self.root / "responses" / f"{key}.json",
-                {"request_id": key, "response": response, "response_sha256": fingerprint(response)},
-            )
-
-
-def test_toc_confirmation_uses_existing_cache_and_writes_decision_audit(tmp_path):
-    config = fixture_config(tmp_path)
-    texts = ["Contents\nAlpha ... 1\nBeta ... 3\nGamma ... 5"] + ["Text"] * 7
-    texts[2], texts[4] = "# Alpha", "# Beta"
-    sources = sources_with_text(texts)
-    inference = CachedTOCInference(tmp_path / "inference", config)
-    first = section_contexts(sources, config, inference)
-    second = section_contexts(sources, config, inference)
-    assert second == first and inference.calls == 1
-    audit = json.loads((config.output_dir / "planning/section_boundaries.json").read_text())
-    assert audit["documents"][0]["offset"] == 2
-    assert audit["coverage"]["exact_ordered_coverage"]
-    assert len(list((inference.root / "responses").glob("*.json"))) == 1
-
-
 def test_denied_confirmation_does_not_enable_toc_offsets(tmp_path):
     texts = ["Contents\nAlpha ... 1\nBeta ... 3\nGamma ... 5"] + ["Text"] * 7
     texts[2], texts[4] = "# Alpha", "# Beta"
@@ -216,9 +181,7 @@ def test_workflow_confirms_automatic_tocs_but_preserves_explicit_contexts(tmp_pa
     rows[2]["text"], rows[5]["text"] = "# Alpha\nPressure 20 bar.", "# Beta\nService interval 6 months."
     config.sources_file.write_text("".join(json.dumps(row) + "\n" for row in rows))
     inference = SectionInference()
-    monkeypatch.setattr(
-        "data_designer_retrieval_sdg.multimodal.workflow.DataDesignerInference", lambda *args: inference
-    )
+    completion = install_inference(monkeypatch, inference)
     original = inference.generate
     # Use the existing public workflow with a synthetic model response only for the new schema.
     from unittest.mock import patch
@@ -234,6 +197,9 @@ def test_workflow_confirms_automatic_tocs_but_preserves_explicit_contexts(tmp_pa
         audit = json.loads(path.read_text())
         assert audit["coverage"]["covered_units"] == len(rows)
         assert audit["documents"][0]["offset"] == 2
+    calls = completion.await_count
+    assert run_multimodal_sdg(config.model_copy(update={"resume": True})) == handoff
+    assert completion.await_count == calls
 
 
 class TOCWorkflowResponses:

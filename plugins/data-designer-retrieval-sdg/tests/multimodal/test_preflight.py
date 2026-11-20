@@ -177,6 +177,20 @@ def test_incomplete_resume_checks_models_and_preserves_cached_generation(tmp_pat
     assert transport.calls == calls
 
 
+def test_incomplete_resume_checks_native_metadata_before_probes(tmp_path, transport):
+    config = skip_config(tmp_path, "unit")
+    run_multimodal_sdg(config)
+    (config.output_dir / "complete.json").unlink()
+    metadata = config.output_dir / "data_designer/multimodal/workflow-metadata.json"
+    metadata.write_text("invalid metadata")
+    calls = transport.calls.copy()
+    with pytest.raises(ValueError, match="resume metadata is invalid"):
+        run_multimodal_sdg(config.model_copy(update={"resume": True}))
+    assert metadata.read_text() == "invalid metadata"
+    assert len(transport.probes) == 1
+    assert transport.calls == calls
+
+
 def test_existing_or_incompatible_runs_fail_before_probes(tmp_path, transport):
     config = skip_config(tmp_path, "unit")
     run_multimodal_sdg(config)
